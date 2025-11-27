@@ -1,17 +1,32 @@
+name: Deploy Backend
+
+# Trigger workflow on push to main branch
+on:
+  push:
+    branches:
+      - main
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
+    # Environment variables (from GitHub Secrets)
+    env:
+      DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+      DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+      SPRING_DATASOURCE_URL: ${{ secrets.SPRING_DATASOURCE_URL }}
+      SPRING_DATASOURCE_USERNAME: ${{ secrets.SPRING_DATASOURCE_USERNAME }}
+      SPRING_DATASOURCE_PASSWORD: ${{ secrets.SPRING_DATASOURCE_PASSWORD }}
+      NEXT_PUBLIC_API_URL: ${{ secrets.NEXT_PUBLIC_API_URL }}
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Deploy
+      - name: Deploy backend
         run: |
-          echo "Backend DB URL: ${{ secrets.SPRING_DATASOURCE_URL }}"
-          docker run -e SPRING_DATASOURCE_URL=${{ secrets.SPRING_DATASOURCE_URL }} \
-                     -e SPRING_DATASOURCE_USERNAME=${{ secrets.SPRING_DATASOURCE_USERNAME }} \
-                     -e SPRING_DATASOURCE_PASSWORD=${{ secrets.SPRING_DATASOURCE_PASSWORD }} \
-                     yourdockerusername/iga-backend:latest
-
-
-on:
+          echo "Backend DB URL: $SPRING_DATASOURCE_URL"
+          docker run -e SPRING_DATASOURCE_URL=$SPRING_DATASOURCE_URL \
+                     -e SPRING_DATASOURCE_USERNAME=$SPRING_DATASOURCE_USERNAME \
+                     -e SPRING_DATASOURCE_PASSWORD=$SPRING_DATASOURCE_PASSWORD \
+                     hamisishehe/iga-backend:latest
