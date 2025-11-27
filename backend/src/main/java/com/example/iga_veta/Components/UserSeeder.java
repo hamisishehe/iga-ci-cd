@@ -1,0 +1,63 @@
+package com.example.iga_veta.Components;
+
+import com.example.iga_veta.Model.*;
+import com.example.iga_veta.Repository.CentreRepository;
+import com.example.iga_veta.Repository.DepartmentRepository;
+import com.example.iga_veta.Repository.UserRepository;
+import org.springframework.boot.CommandLineRunner;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.stereotype.Component;
+
+@Component
+public class UserSeeder implements CommandLineRunner {
+
+    private final UserRepository userRepository;
+    private final CentreRepository centreRepository;
+    private final DepartmentRepository departmentRepository;
+    private final PasswordEncoder passwordEncoder;
+
+    public UserSeeder(UserRepository userRepository,
+                      CentreRepository centreRepository,
+                      DepartmentRepository departmentRepository,
+                      PasswordEncoder passwordEncoder) {
+        this.userRepository = userRepository;
+        this.centreRepository = centreRepository;
+        this.departmentRepository = departmentRepository;
+        this.passwordEncoder = passwordEncoder;
+    }
+
+    @Override
+    public void run(String... args) {
+        if (userRepository.count() == 0) {
+
+            // Create Centre
+//            Centre centre = new Centre();
+//            centre.setName("Main Centre");
+//            centreRepository.save(centre);
+
+            // Create Department
+//            Department department = new Department();
+//            department.setName("IT Department");
+//            departmentRepository.save(department);
+
+            // Create User
+            User admin = new User();
+            admin.setFirstName("hamis");
+            admin.setMiddleName("S.");
+            admin.setLastName("Shafii");
+            admin.setUserName("admin");
+            admin.setEmail("admin@example.com");
+            admin.setPhoneNumber("1234567890");
+            admin.setPassword(passwordEncoder.encode("password123"));
+            admin.setRole(User.Role.ADMIN);
+            admin.setUserType(User.UserType.CENTRE);
+            admin.setStatus(User.Status.ACTIVE);
+            admin.setCentres(null);
+            admin.setDepartments(null);
+
+            userRepository.save(admin);
+
+            System.out.println("✅ Seeded initial user data.");
+        }
+    }
+}
