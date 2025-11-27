@@ -24,8 +24,11 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/iga-database
       SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: Hamisi2233.
+      JWT_SECRET: secret
+      JWT_EXPIRATION: 86400000
     ports:
       - "8080:8080"
+
 
   # Next.js frontend
   frontend:
