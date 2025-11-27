@@ -14,7 +14,7 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
 
-  # Spring Boot backend
+  # Spring Boot backen
   app:
     build: ./backend
     container_name: iga-backend
