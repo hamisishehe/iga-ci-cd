@@ -1,7 +1,7 @@
 version: "3.9"
 
 services:
-  # PostgreSQL databasee
+  # PostgreSQL database
   db:
     image: postgres:16
     container_name: pgdb
@@ -13,31 +13,35 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
-  # Spring Boot backen
+  # Spring Boot backend
   app:
     build: ./backend
     container_name: iga-backend
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/iga-database
       SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: Hamisi2233.
-      JWT_SECRET: secret
-      JWT_EXPIRATION: 86400000
     ports:
       - "8080:8080"
-
 
   # Next.js frontend
   frontend:
     build: ./frontend
     container_name: iga-frontend
     depends_on:
-      - app
+      app:
+        condition: service_started
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost:8080 # point frontend to backend container
+      NEXT_PUBLIC_API_URL: http://app:8080
     ports:
       - "3000:3000"
 
