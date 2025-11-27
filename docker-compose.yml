@@ -1,7 +1,7 @@
 version: "3.9"
 
 services:
-  # PostgreSQL database
+  # PostgreSQL databasee
   db:
     image: postgres:16
     container_name: pgdb
