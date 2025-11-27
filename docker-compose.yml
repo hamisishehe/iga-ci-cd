@@ -1,0 +1,42 @@
+version: "3.9"
+
+services:
+  # PostgreSQL database
+  db:
+    image: postgres:16
+    container_name: pgdb
+    environment:
+      POSTGRES_DB: iga-database
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: Hamisi2233.
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  # Spring Boot backend
+  app:
+    build: ./backend
+    container_name: iga-backend
+    depends_on:
+      - db
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/iga-database
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: Hamisi2233.
+    ports:
+      - "8080:8080"
+
+  # Next.js frontend
+  frontend:
+    build: ./frontend
+    container_name: iga-frontend
+    depends_on:
+      - app
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8080 # point frontend to backend container
+    ports:
+      - "3000:3000"
+
+volumes:
+  pgdata:
