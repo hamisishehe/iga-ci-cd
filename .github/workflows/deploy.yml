@@ -39,10 +39,10 @@ jobs:
             cd ~/app || mkdir -p ~/app && cd ~/app
 
             cat > backend.env <<EOF
-  SPRING_DATASOURCE_URL=${{ secrets.SPRING_DATASOURCE_URL }}
-  SPRING_DATASOURCE_USERNAME=${{ secrets.SPRING_DATASOURCE_USERNAME }}
-  SPRING_DATASOURCE_PASSWORD=${{ secrets.SPRING_DATASOURCE_PASSWORD }}
-  EOF
+            SPRING_DATASOURCE_URL=${{ secrets.SPRING_DATASOURCE_URL }}
+            SPRING_DATASOURCE_USERNAME=${{ secrets.SPRING_DATASOURCE_USERNAME }}
+            SPRING_DATASOURCE_PASSWORD=${{ secrets.SPRING_DATASOURCE_PASSWORD }}
+            EOF
   
             docker rm -f iga-backend || true
             docker pull ${{ env.IMAGE }}
