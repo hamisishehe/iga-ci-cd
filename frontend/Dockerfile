@@ -1,17 +1,17 @@
-# Install dependencies only first (caching)
+# Stage 1: Dependencies
 FROM node:20-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm install --frozen-lockfile
+RUN npm ci
 
-# Build the app
+# Stage 2: Build
 FROM node:20-alpine AS builder
 WORKDIR /app
 COPY . .
 COPY --from=deps /app/node_modules ./node_modules
 RUN npm run build
 
-# Production image
+# Stage 3: Production
 FROM node:20-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
