@@ -117,14 +117,14 @@ jobs:
 
             # Deploy with Docker Compose
             echo "Stopping old containers..."
-            docker compose down --remove-orphans || true
-
+            docker compose -f docker-compose.yml down --remove-orphans || true
+          
             echo "Pulling latest images..."
-            docker compose pull
-
+            docker compose -f docker-compose.yml pull
+          
             echo "Starting services with latest images..."
-            docker compose up -d --force-recreate
-
+            docker compose -f docker-compose.yml up -d --force-recreate
+          
             echo "Deployment completed successfully!"
             echo "Backend running on http://$(hostname -I | awk '{print $1}'):8080"
             echo "Frontend available on http://$(hostname -I | awk '{print $1}'):3000"
