@@ -24,7 +24,7 @@ export default function LoginPage() {
     setIsLoading(true);
 
     const apiUrl =
-      process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api";
+      process.env.NEXT_PUBLIC_API_URL || "http://206.183.130.101/:8080/api";
 
     const sanitizedEmail = email.trim();
     const sanitizedPassword = password.trim();
