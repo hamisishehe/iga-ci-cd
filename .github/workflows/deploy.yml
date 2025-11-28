@@ -1,6 +1,6 @@
 name: Deploy Full Application
 
-# Trigger on push to main branch
+# Trigger deployment on push to main branch
 on:
   push:
     branches:
@@ -9,7 +9,6 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-
     env:
       BACKEND_IMAGE: ${{ secrets.DOCKER_USERNAME }}/iga-backend:latest
       FRONTEND_IMAGE: ${{ secrets.DOCKER_USERNAME }}/iga-frontend:latest
@@ -17,7 +16,7 @@ jobs:
     steps:
       # 1. Checkout repository
       - name: Checkout code
-        uses: actions/checkout@v4  # Updated to latest version
+        uses: actions/checkout@v4
 
       # 2. Login to Docker Hub
       - name: Login to Docker Hub
@@ -29,23 +28,23 @@ jobs:
       # 3. Build and push backend image
       - name: Build and push backend image
         run: |
-          docker build -t ${{ env.BACKEND_IMAGE }} ./backend
-          docker push ${{ env.BACKEND_IMAGE }}
+          docker build -t $BACKEND_IMAGE ./backend
+          docker push $BACKEND_IMAGE
 
       # 4. Build and push frontend image
       - name: Build and push frontend image
         run: |
-          docker build -t ${{ env.FRONTEND_IMAGE }} ./frontend
-          docker push ${{ env.FRONTEND_IMAGE }}
+          docker build -t $FRONTEND_IMAGE ./frontend
+          docker push $FRONTEND_IMAGE
 
-      # 5. Deploy to remote server via SSH
+      # 5. Deploy to remote production server via SSH
       - name: Deploy to Production Server
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SERVER_IP }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
-          script_stop: true  # Stops on first error
+          script_stop: true
           script: |
             set -e
 
@@ -53,6 +52,17 @@ jobs:
             mkdir -p $APP_DIR
             cd $APP_DIR
 
+            # Clone or update the repository
+            if [ -d ".git" ]; then
+              echo "Updating existing repository..."
+              git reset --hard HEAD
+              git pull origin main
+            else
+              echo "Cloning repository..."
+              git clone https://github.com/hamisishehe/iga-ci-cd.git .
+            fi
+
+            # Create backend.env file with database credentials
             echo "Creating backend.env file..."
             cat > backend.env <<EOF
             SPRING_DATASOURCE_URL=${{ secrets.SPRING_DATASOURCE_URL }}
@@ -60,8 +70,9 @@ jobs:
             SPRING_DATASOURCE_PASSWORD=${{ secrets.SPRING_DATASOURCE_PASSWORD }}
             EOF
 
-            echo "Creating docker-compose.override.yml with latest images..."
-            cat > docker-compose.override.yml <<EOF
+            # Create/update docker-compose.yml with latest image tags
+            echo "Creating docker-compose.yml..."
+            cat > docker-compose.yml <<EOF
             version: "3.9"
 
             services:
@@ -104,9 +115,16 @@ jobs:
               pgdata:
             EOF
 
-            echo "Pulling latest images and restarting services..."
+            # Deploy with Docker Compose
+            echo "Stopping old containers..."
             docker compose down --remove-orphans || true
-            docker compose pull  # Ensures latest images are pulled (redundant but safe)
-            docker compose up -d --force-recreate --build
+
+            echo "Pulling latest images..."
+            docker compose pull
+
+            echo "Starting services with latest images..."
+            docker compose up -d --force-recreate
 
             echo "Deployment completed successfully!"
+            echo "Backend running on http://$(hostname -I | awk '{print $1}'):8080"
+            echo "Frontend available on http://$(hostname -I | awk '{print $1}'):3000"
