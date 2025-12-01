@@ -1,10 +1,11 @@
 name: Deploy Full Application
 
+# Trigger on push to main or manually from GitHub UI
 on:
   push:
     branches:
       - main
-  workflow_dispatch:  # Manual trigger from GitHub UI
+  workflow_dispatch:
 
 jobs:
   build-and-deploy:
@@ -14,25 +15,30 @@ jobs:
       FRONTEND_IMAGE: ${{ secrets.DOCKER_USERNAME }}/iga-frontend:latest
 
     steps:
+      # 1. Checkout code
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # 2. Login to Docker Hub
       - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      - name: Build and push backend image
+      # 3. Build and push backend
+      - name: Build & Push Backend Image
         run: |
           docker build -t $BACKEND_IMAGE ./backend
           docker push $BACKEND_IMAGE
 
-      - name: Build and push frontend image
+      # 4. Build and push frontend
+      - name: Build & Push Frontend Image
         run: |
           docker build -t $FRONTEND_IMAGE ./frontend
           docker push $FRONTEND_IMAGE
 
+      # 5. Deploy to Production Server (FINAL WORKING VERSION)
       - name: Deploy to Production Server
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -42,43 +48,46 @@ jobs:
           port: 22
           script_stop: true
           debug: true
-          command_timeout: 15m
+          command_timeout: 20m
           envs: BACKEND_IMAGE,FRONTEND_IMAGE
           script: |
             set -euo pipefail
 
-            echo "=== DEPLOYMENT STARTED ==="
-            echo "User: $(whoami) @ $(hostname)"
-            echo "Public IP: $(curl -s ifconfig.me || echo 'unknown')"
+            echo "=================================================="
+            echo "DEPLOYMENT STARTED - $(date)"
+            echo "User: $(whoami) | Host: $(hostname)"
+            echo "=================================================="
 
-            # Verify Docker & Compose
-            docker version
-            docker compose version
+            # Use FULL absolute path — NEVER use ~ in CI/CD
+            APP_DIR="/home/${{ secrets.SERVER_USER }}/app"
+            echo "Target directory: $APP_DIR"
 
-            # Ensure app directory exists and cd into it
-            APP_DIR=~/app
+            # Create directory and enter it
             mkdir -p "$APP_DIR"
             cd "$APP_DIR"
+            echo "Now in: $(pwd)"
 
-            # Update or clone repo
+            # Update or clone the repo
             if [ -d ".git" ]; then
-              echo "Updating repository..."
-              git fetch --all
+              echo "Updating existing repository..."
+              git fetch --all --prune
               git reset --hard origin/main
-              git clean -fd
+              git clean -fdx
             else
               echo "Cloning repository..."
+              rm -rf "$APP_DIR"/* "$APP_DIR"/.* 2>/dev/null || true
               git clone https://github.com/hamisishehe/iga-ci-cd.git .
             fi
 
-            # Create backend.env from secrets
+            # Create backend.env with database credentials
             cat > backend.env <<EOF
             SPRING_DATASOURCE_URL=${{ secrets.SPRING_DATASOURCE_URL }}
             SPRING_DATASOURCE_USERNAME=${{ secrets.SPRING_DATASOURCE_USERNAME }}
             SPRING_DATASOURCE_PASSWORD=${{ secrets.SPRING_DATASOURCE_PASSWORD }}
             EOF
+            echo "backend.env created securely"
 
-            # Generate clean docker-compose.yml
+            # Create docker-compose.yml with latest images
             cat > docker-compose.yml <<'EOF'
             version: "3.9"
             services:
@@ -92,49 +101,51 @@ jobs:
                   POSTGRES_PASSWORD: ${{ secrets.SPRING_DATASOURCE_PASSWORD }}
                 volumes:
                   - pgdata:/var/lib/postgresql/data
-                networks: [app-network]
 
               app:
                 image: ${{ env.BACKEND_IMAGE }}
                 container_name: iga-backend
                 restart: unless-stopped
-                depends_on: [db]
-                env_file: backend.env
+                depends_on:
+                  - db
+                env_file:
+                  - backend.env
                 ports:
                   - "8080:8080"
-                networks: [app-network]
 
               frontend:
                 image: ${{ env.FRONTEND_IMAGE }}
                 container_name: iga-frontend
                 restart: unless-stopped
-                depends_on: [app]
+                depends_on:
+                  - app
                 environment:
                   NEXT_PUBLIC_API_URL: http://app:8080
                 ports:
                   - "3000:3000"
-                networks: [app-network]
 
             volumes:
               pgdata:
-
-            networks:
-              app-network:
-                driver: bridge
             EOF
 
-            # Deploy
+            echo "docker-compose.yml generated"
+
+            # Deploy with Docker Compose
             echo "Stopping old containers..."
-            docker compose down --remove-orphans || true
+            docker compose down --remove-orphans --volumes || true
 
             echo "Pulling latest images..."
-            docker compose pull
+            docker compose pull --quiet
 
-            echo "Starting services..."
+            echo "Starting all services..."
             docker compose up -d --force-recreate --remove-orphans
 
-            echo "DEPLOYMENT SUCCESSFUL!"
-            echo "Backend  → http://$(curl -s ifconfig.me || hostname -I | awk '{print $1}'):8080"
-            echo "Frontend → http://$(curl -s ifconfig.me || hostname -I | awk '{print $1}'):3000"
+            echo ""
+            echo "=================================================="
+            echo "DEPLOYMENT COMPLETED SUCCESSFULLY!"
+            echo "Backend:   http://$(curl -s ifconfig.me || hostname -I | awk '{print $1}'):8080"
+            echo "Frontend:  http://$(curl -s ifconfig.me || hostname -I | awk '{print $1}'):3000"
+            echo "=================================================="
             echo ""
             docker compose ps
+            echo "Done at $(date)"
