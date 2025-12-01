@@ -1,22 +1,25 @@
 name: Deploy Full Application
 
-# Trigger deployment on push to main branch
+# Trigger on push to main (you can also add tags or manual workflow_dispatch)
 on:
   push:
     branches:
       - main
+  workflow_dispatch:  # Allows manual trigger from GitHub UI
 
 jobs:
-  deploy:
+  build-and-deploy:
     runs-on: ubuntu-latest
     env:
       BACKEND_IMAGE: ${{ secrets.DOCKER_USERNAME }}/iga-backend:latest
       FRONTEND_IMAGE: ${{ secrets.DOCKER_USERNAME }}/iga-frontend:latest
 
     steps:
-      # 1. Checkout repository
-      - name: Checkout code
+      # 1. Checkout code
+      - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Helpful for git history if needed
 
       # 2. Login to Docker Hub
       - name: Login to Docker Hub
@@ -25,57 +28,66 @@ jobs:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      # 3. Build and push backend image
+      # 3. Build & Push Backend
       - name: Build and push backend image
         run: |
           docker build -t $BACKEND_IMAGE ./backend
           docker push $BACKEND_IMAGE
 
-      # 4. Build and push frontend image
+      # 4. Build & Push Frontend
       - name: Build and push frontend image
         run: |
           docker build -t $FRONTEND_IMAGE ./frontend
           docker push $FRONTEND_IMAGE
 
-      # 5. Deploy to remote production server via SSH
+      # 5. Deploy to Production Server via SSH (with full debugging)
       - name: Deploy to Production Server
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SERVER_IP }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
-          script_stop: true
+          port: 22
+          script_stop: true          # Stop on first error
+          debug: true                # VERY IMPORTANT: shows full remote output
           envs: BACKEND_IMAGE,FRONTEND_IMAGE
           script: |
-            set -e
+            set -euo pipefail          # Fail fast, print commands, undefined vars = error
+            echo "=== Remote Deployment Started ==="
+            echo "User: $(whoami) | Host: $(hostname) | IP: $(hostname -I || echo 'unknown')"
+
+            # Show Docker & Compose versions (critical for debugging)
+            echo "=== Docker & Compose Info ==="
+            docker version || echo "Docker not working"
+            docker compose version || echo "docker compose NOT installed!"
 
             APP_DIR=~/app
-            mkdir -p $APP_DIR
-            cd $APP_DIR
+            echo "=== Working in $APP_DIR ==="
+            mkdir -p "$APP_DIR"
+            cd "$APP_DIR"
 
-            # Clone or update the repository
+            # Git pull or clone
             if [ -d ".git" ]; then
-              echo "Updating existing repository..."
-              git reset --hard HEAD
-              git pull origin main
+              echo "Updating existing repo..."
+              git fetch --all
+              git reset --hard origin/main
             else
-              echo "Cloning repository..."
+              echo "Cloning fresh repository..."
               git clone https://github.com/hamisishehe/iga-ci-cd.git .
             fi
 
-            # Create backend.env file with database credentials
-            echo "Creating backend.env file..."
+            # Create backend.env securely
+            echo "Creating backend.env..."
             cat > backend.env <<EOF
             SPRING_DATASOURCE_URL=${{ secrets.SPRING_DATASOURCE_URL }}
             SPRING_DATASOURCE_USERNAME=${{ secrets.SPRING_DATASOURCE_USERNAME }}
             SPRING_DATASOURCE_PASSWORD=${{ secrets.SPRING_DATASOURCE_PASSWORD }}
             EOF
 
-            # Create/update docker-compose.yml with latest image tags
+            # Generate docker-compose.yml with latest images
             echo "Creating docker-compose.yml..."
             cat > docker-compose.yml <<EOF
             version: "3.9"
-
             services:
               db:
                 image: postgres:16-alpine
@@ -87,8 +99,9 @@ jobs:
                   POSTGRES_PASSWORD: ${{ secrets.SPRING_DATASOURCE_PASSWORD }}
                 volumes:
                   - pgdata:/var/lib/postgresql/data
-                ports:
-                  - "5432:5432"
+                # Remove port 5432 if you don't access DB from outside
+                # ports:
+                #   - "5432:5432"
 
               app:
                 image: ${{ env.BACKEND_IMAGE }}
@@ -116,16 +129,17 @@ jobs:
               pgdata:
             EOF
 
-            # Deploy with Docker Compose
-            echo "Stopping old containers..."
-            docker compose -f docker-compose.yml down --remove-orphans || true
-          
-            echo "Pulling latest images..."
-            docker compose -f docker-compose.yml pull
-          
-            echo "Starting services with latest images..."
-            docker compose -f docker-compose.yml up -d --force-recreate
-          
-            echo "Deployment completed successfully!"
-            echo "Backend running on http://$(hostname -I | awk '{print $1}'):8080"
-            echo "Frontend available on http://$(hostname -I | awk '{print $1}'):3000"
+            # Final deployment with maximum visibility
+            echo "=== Stopping old containers ==="
+            docker compose down --remove-orphans || true
+
+            echo "=== Pulling latest images ==="
+            docker compose pull --quiet
+
+            echo "=== Starting new containers ==="
+            docker compose up -d --force-recreate --remove-orphans
+
+            echo "=== Deployment SUCCESSFUL! ==="
+            echo "Backend:  http://$(hostname -I | awk '{print $1}' | head -n1):8080"
+            echo "Frontend: http://$(hostname -I | awk '{print $1}' | head -n1):3000"
+            echo "Check status with: docker compose ps"
