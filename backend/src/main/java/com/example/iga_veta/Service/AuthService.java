@@ -75,6 +75,7 @@ public class AuthService {
         response.put("zone", user.getCentres().getZones().getName());
         response.put("username", user.getUserName());
         response.put("email", user.getEmail());
+        response.put("userId",user.getId().toString() );
 
         return response;
     }

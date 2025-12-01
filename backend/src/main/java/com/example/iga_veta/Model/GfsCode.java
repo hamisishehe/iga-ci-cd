@@ -3,7 +3,9 @@ package com.example.iga_veta.Model;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
+import lombok.AllArgsConstructor;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 import org.apache.commons.lang3.math.Fraction;
 
 import java.text.DecimalFormat;
@@ -11,6 +13,9 @@ import java.util.List;
 
 @Entity
 @Data
+@AllArgsConstructor
+@NoArgsConstructor
+
 @Table(name = "gfs_code")
 public class GfsCode {
     @Id

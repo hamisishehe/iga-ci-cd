@@ -11,6 +11,7 @@ interface AuthData {
   centre: string;
   userType: string;
   zone: string;
+  userId:string;
 }
 
 interface AuthContextType {
@@ -18,9 +19,10 @@ interface AuthContextType {
   token: string | null;
   role: string | undefined;
   loading: boolean;
-  login: (token: string, role: string, email: string, username: string, centre: string, userType: string, zone:string) => void;
+  login: (token: string, role: string, email: string, username: string, centre: string, userType: string, zone:string, id:string) => void;
   logout: () => void;
   user?: AuthData;
+  
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -47,6 +49,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         centre: localStorage.getItem("centre") || "",
         userType: localStorage.getItem("userType") || "",
         zone: localStorage.getItem("zone") || "",
+        userId: localStorage.getItem("userId") || "",
       };
       setToken(storedToken);
       setRole(storedRole);
@@ -60,7 +63,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setLoading(false);
   }, []);
 
-  const login = (token: string, role:string, email:string, username:string, centre:string, userType:string, zone:string) => {
+  const login = (token: string, role:string, email:string, username:string, centre:string, userType:string, zone:string, userid:string) => {
     localStorage.setItem("authToken", token);
     localStorage.setItem("userRole", role);
     localStorage.setItem("email", email);
@@ -69,10 +72,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     localStorage.setItem("userType", userType);
     localStorage.setItem("zone", zone);
     localStorage.setItem("isAuthenticated", "true");
+    localStorage.setItem("userId", userid);
 
     setToken(token);
     setRole(role);
-    setUser({ token, role, email, username, centre, userType, zone });
     setIsAuthenticated(true);
   };
 
@@ -85,6 +88,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     localStorage.removeItem("userType");
     localStorage.removeItem("zone");
     localStorage.removeItem("isAuthenticated");
+    localStorage.removeItem("userId");
 
     setToken(null);
     setRole(undefined);

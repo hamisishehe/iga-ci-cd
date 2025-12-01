@@ -37,13 +37,16 @@ export default function ApportionmentReport() {
 
   useEffect(() => {
     setMounted(true);
+     const userType = localStorage.getItem("userType");
+  const userCentre: string = localStorage.getItem("centre") || "";
+  const userZone: string = localStorage.getItem("zone") || "";
 
     const userPayload = JSON.parse(localStorage.getItem("userInfo") || "{}");
-    setUserType(userPayload.userType || "");
-    setUserCentre(userPayload.centre || "");
-    setUserZone(userPayload.zone || "");
+    setUserType(userType || "");
+    setUserCentre(userCentre || "");
+    setUserZone(userZone || "");
 
-    if (userPayload.userType === "CENTRE") setCentre(userPayload.centre || "all");
+    if (userType === "CENTRE") setCentre(userCentre || "all");
 
     const today = new Date();
     const year = today.getFullYear();
@@ -54,7 +57,7 @@ export default function ApportionmentReport() {
     setStartDate(firstDay);
     setEndDate(lastDay);
 
-    fetchData(firstDay, lastDay, userPayload.centre || "all");
+    fetchData(firstDay, lastDay, userCentre || "all");
   }, []);
 
   const fetchData = async (start: string, end: string, centreName: string) => {
@@ -218,9 +221,6 @@ export default function ApportionmentReport() {
           <Button className="bg-blue-950 text-white" onClick={() => fetchData(startDate, endDate, centre)}>
             Filter
           </Button>
-          <Button className="bg-green-600 text-white" onClick={exportExcel}>
-            Export Excel
-          </Button>
         </CardContent>
       </Card>
 
@@ -231,7 +231,7 @@ export default function ApportionmentReport() {
         </CardHeader>
         <CardContent className="overflow-x-auto">
           <table className="min-w-full border border-gray-300 table-auto">
-            <thead className="bg-blue-950 text-white">
+            <thead className="text-blue-950">
               <tr>
                 <th className="border px-2 py-1">#</th>
                 <th className="border px-2 py-1">Date</th>
@@ -290,6 +290,12 @@ export default function ApportionmentReport() {
             </tbody>
           </table>
         </CardContent>
+
+           <div>
+             <Button className="bg-green-600 text-white w-32" onClick={exportExcel}>
+            Export Excel
+          </Button>
+           </div>
       </Card>
 
       {error && <div className="text-red-600">{error}</div>}

@@ -10,6 +10,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.ResponseEntity;
 import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.multipart.MultipartFile;
@@ -33,6 +34,8 @@ public class CollectionService {
     @Autowired
     private CustomerRepository customerRepository;
 
+    @Autowired
+    private DepartmentRepository departmentRepository;
 
     @Autowired
     private CentreRepository centreRepository;
@@ -46,8 +49,17 @@ public class CollectionService {
     @Autowired
     private ZoneRepository zoneRepository;
 
+    @Autowired
+    private PasswordEncoder passwordEncoder;
+
+
+
+
 
     private final RestTemplate restTemplate;
+
+    @Autowired
+    private UserRepository userRepository;
 
     public CollectionService(RestTemplate restTemplate) {
         this.restTemplate = restTemplate;
@@ -56,7 +68,7 @@ public class CollectionService {
 
     private static final String API_URL = "http://41.59.229.41:6092/api/collections/fetch";
 
-    @Scheduled(fixedRate = 60000) // every 320 seconds (~5 min)
+    @Scheduled(fixedRate = 1200000)// every 320 seconds (~5 min)
     public void fetchDataPeriodically() {
         fetchDataFromApi();
     }
@@ -210,6 +222,12 @@ public class CollectionService {
             collection.setDate(date);
 
             collectionsRepository.save(collection);
+
+
+            Centre getCentre = centreRepository.findAll().stream().findFirst().orElseThrow();
+            Department getDepartment = departmentRepository.findAll().stream().findFirst().orElseThrow();
+
+
 
         }
     }

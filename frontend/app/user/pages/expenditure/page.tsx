@@ -7,9 +7,11 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Breadcrumb, BreadcrumbList, BreadcrumbItem, BreadcrumbLink, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
+import Swal from "sweetalert2";
 
 interface Service {
   serviceName: string;
+  amount_paid_to_paid:number;
 }
 
 interface Expense {
@@ -44,6 +46,7 @@ export default function Expenditure() {
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api";
 
   const [services, setServices] = useState<Service[]>([]);
+  const [servicesAmount, setServicesAmount] = useState<Service[]>([]);
   const [selectedService, setSelectedService] = useState("");
 
   const [userType, setUserType] = useState("");
@@ -111,13 +114,16 @@ export default function Expenditure() {
       if (filteredRows.length > 0) {
         setSelectedApposhmentId(filteredRows[0].id);
         const firstServices = filteredRows[0].services || [];
+        const firstServicesAmount = filteredRows[0].services || [];
         setServices(firstServices);
+        setServicesAmount(firstServicesAmount)
         if (firstServices.length > 0) setSelectedService(firstServices[0].serviceName);
         fetchExpenses(filteredRows[0].id);
       } else {
         setSelectedApposhmentId(null);
         setExpenses([]);
         setServices([]);
+        setServicesAmount([]);
       }
     } catch (err: any) {
       console.error(err);
@@ -136,6 +142,7 @@ export default function Expenditure() {
 
 
       setExpenses(data || []);
+
     } catch (err) {
       console.error(err);
       setExpenses([]);
@@ -180,20 +187,43 @@ export default function Expenditure() {
     };
 
     try {
-      await fetch(`${apiUrl}/apposhment_distribution/save`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(newExpense),
-      });
-      setExpenses(prev => [...prev, newExpense]);
-      setExpenseAmount("");
-      setExpenseDescription("");
-      setSuccessMessage("✅ Expense saved successfully!");
-      setTimeout(() => setSuccessMessage(""), 3000);
-    } catch (err) {
-      console.error(err);
-      setExpenseError("Failed to save expense.");
-    }
+  const response = await fetch(`${apiUrl}/apposhment_distribution/save`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(newExpense),
+  });
+
+  const rawText = await response.text();  
+  console.log("RAW:", rawText);
+
+  // Try to parse JSON only if possible
+  let json;
+  try {
+    json = JSON.parse(rawText);
+  } catch (e) {
+    json = rawText; // Use text as fallback
+  }
+
+  // Client handling
+  if (response.status === 200 && rawText === "Not enough money to distribute") {
+    Swal.fire("Warning", "Not enough money to distribute", "warning");
+    return;
+  }
+
+  Swal.fire({
+    title: "Success!",
+    text: "Expense saved successfully!",
+    icon: "success",
+  });
+
+  setExpenseAmount("");
+  setExpenseDescription("");
+
+} catch (err) {
+  console.error(err);
+  setExpenseError("Failed to save expense.");
+}
+
   };
 
   if (loading) return <div className="text-center mt-10 text-lg font-semibold">Loading...</div>;
@@ -256,7 +286,7 @@ export default function Expenditure() {
               </SelectTrigger>
               <SelectContent>
                 {services.map((s, i) => (
-                  <SelectItem key={i} value={s.serviceName}>{s.serviceName}</SelectItem>
+                  <SelectItem key={i} value={s.serviceName}>{s.serviceName} || BALANCE {s.amount_paid_to_paid}  TSH </SelectItem>
                 ))}
               </SelectContent>
             </Select>

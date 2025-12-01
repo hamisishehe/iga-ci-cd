@@ -71,6 +71,7 @@ public class ApposhmentDistributionService {
 
         if (fullamount.compareTo(remaining) > 0) {
             System.out.println("Not enough money to distribute");
+            return "Not enough money to distribute";
         }
         else {
             ApposhmentDistribution apposhmentDistribution = new ApposhmentDistribution();
@@ -79,10 +80,11 @@ public class ApposhmentDistributionService {
             apposhmentDistribution.setName(service_name);
             apposhmentDistribution.setApposhments(apposhment);
             apposhmentDistributionRepository.save(apposhmentDistribution);
+            return "apposhment distribution saved";
         }
 
 
-        return "apposhment distribution saved";
+
 
     }
 

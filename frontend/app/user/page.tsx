@@ -1,4 +1,3 @@
-// Example of a correct page
-export default function UserPage() {
-  return <div>User Pageee</div>;
+export default function HomePage(){
+    return "home"
 }

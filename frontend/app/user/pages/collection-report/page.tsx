@@ -25,6 +25,25 @@ import pdfFonts from "pdfmake/build/vfs_fonts";
 
 pdfMake.vfs = pdfFonts.vfs;
 
+interface ApiCollectionItem {
+  id: number;
+  amount: number | string;
+  date: string;
+  customer?: {
+    name?: string;
+    centre?: {
+      name?: string;
+      zones?: {
+        name?: string;
+      };
+    };
+  };
+  gfs_code?: {
+    code?: string;
+    description?: string;
+  };
+}
+
 interface CollectionRecord {
   id: number;
   name: string;
@@ -33,7 +52,7 @@ interface CollectionRecord {
   serviceCode: string;
   service: string;
   amount: number;
-  date: string; 
+  date: string;
 }
 
 interface ServiceSummary {
@@ -64,45 +83,54 @@ export default function CollectionReport() {
   const userCentre = localStorage.getItem("centre") || "";
   const userZone = localStorage.getItem("zone") || "";
   const userType = (localStorage.getItem("userType") || "").toUpperCase();
+  let isCentreUser = null;
 
-  const isChiefAccountant = userRole === "CHIEF_ACCOUNTANT";
-  const isCentreUser = userType === "CENTRE" || isChiefAccountant;
-  const isZoneUser = userType === "ZONE";
+
+  if (userRole !== 'DG') {
+      isCentreUser = userCentre;
+  }
+ 
+
+  const isZoneUser = userZone;
   const isHQUser = userType === "HQ";
 
   // -----------------------------
   // Set default dates to current month
   // -----------------------------
- useEffect(() => {
+  useEffect(() => {
     const now = new Date();
     const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
     const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-   
+
     const formatLocalDate = (d: Date) => {
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
-};
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, "0");
+      const dd = String(d.getDate()).padStart(2, "0");
+      return `${yyyy}-${mm}-${dd}`;
+    };
 
-setFromDate(formatLocalDate(firstDay));
-setToDate(formatLocalDate(lastDay));
-
+    setFromDate(formatLocalDate(firstDay));
+    setToDate(formatLocalDate(lastDay));
   }, []);
 
   // -----------------------------
   // Fetch & filter data
   // -----------------------------
-   useEffect(() => {
+  useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
+
+          if (isCentreUser) {
+        setCenter(userCentre);
+      }
+      
       try {
         const res = await fetch(`${apiUrl}/collections/get`, {
           headers: { Authorization: `Bearer ${authToken}` },
         });
         if (!res.ok) throw new Error("Network error");
 
-        const json: any[] = await res.json();
+        const json: ApiCollectionItem[] = await res.json();
 
         const mappedData: CollectionRecord[] = json.map((item) => ({
           id: item.id,
@@ -118,8 +146,21 @@ setToDate(formatLocalDate(lastDay));
           date: item.date ? item.date.split("T")[0] : "",
         }));
 
+        // Filter immediately based on user role
+        let userFilteredData = mappedData;
         
-        setData(mappedData);
+        if (userCentre) {
+          userFilteredData = userFilteredData.filter(
+            (d) => d.center === userCentre
+          );
+        }
+        if (userZone && !userCentre) {
+          userFilteredData = userFilteredData.filter(
+            (d) => d.zone === userZone
+          );
+        }
+
+        setData(userFilteredData); // <-- Use the filtered data here!
       } catch (err) {
         console.error("Error fetching:", err);
         setData([]);
@@ -129,7 +170,6 @@ setToDate(formatLocalDate(lastDay));
     };
     fetchData();
   }, [apiUrl, authToken, isCentreUser, isZoneUser, userCentre, userZone]);
-
 
   // -----------------------------
   // Date helpers
@@ -144,13 +184,22 @@ setToDate(formatLocalDate(lastDay));
     const from = fromDate ? toStartOfDay(fromDate) : null;
     const to = toDate ? toEndOfDay(toDate) : null;
 
-    const filtered = data.filter(item => {
+    const filtered = data.filter((item) => {
       if (!item.date) return false;
       const itemDate = new Date(item.date);
       const inRange = (!from || itemDate >= from) && (!to || itemDate <= to);
       const matchService = service === "ALL" ? true : item.service === service;
-      const matchCenter = isCentreUser ? true : center === "ALL" ? true : item.center === center;
-      const matchZone = isHQUser ? (zone === "ALL" ? true : item.zone === zone) : true;
+      const matchCenter = userCentre
+        ? item.center === userCentre
+        : center === "ALL"
+        ? true
+        : item.center === center;
+
+      const matchZone = isHQUser
+        ? zone === "ALL"
+          ? true
+          : item.zone === zone
+        : true;
 
       return inRange && matchService && matchCenter && matchZone;
     });
@@ -162,7 +211,6 @@ setToDate(formatLocalDate(lastDay));
   useEffect(() => {
     handleFilter();
   }, [data.length, fromDate, toDate, service, center, zone]);
-
 
   useEffect(() => {
     handleFilter();
@@ -177,12 +225,14 @@ setToDate(formatLocalDate(lastDay));
   const totalPages = Math.max(1, Math.ceil(filteredData.length / rowsPerPage));
   const totalAmount = filteredData.reduce((s, i) => s + i.amount, 0);
 
-  
-
   const summaryByService: ServiceSummary[] = Object.values(
     filteredData.reduce<Record<string, ServiceSummary>>((acc, curr) => {
       if (!acc[curr.serviceCode])
-        acc[curr.serviceCode] = { serviceCode: curr.serviceCode, service: curr.service, total: 0 };
+        acc[curr.serviceCode] = {
+          serviceCode: curr.serviceCode,
+          service: curr.service,
+          total: 0,
+        };
       acc[curr.serviceCode].total += curr.amount;
       return acc;
     }, {})
@@ -192,13 +242,31 @@ setToDate(formatLocalDate(lastDay));
   // Export functions
   // -----------------------------
   const exportPDF = () => {
-   
+    
   };
 
   const exportExcel = () => {
     const wsData = [
-      ["#", "Customer", "Center", "Zone", "Service Code", "Service", "Amount", "Date"],
-      ...filteredData.map((r, i) => [i + 1, r.name, r.center, r.zone, r.serviceCode, r.service, r.amount, r.date]),
+      [
+        "#",
+        "Customer",
+        "Center",
+        "Zone",
+        "Service Code",
+        "Service",
+        "Amount",
+        "Date",
+      ],
+      ...filteredData.map((r, i) => [
+        i + 1,
+        r.name,
+        r.center,
+        r.zone,
+        r.serviceCode,
+        r.service,
+        r.amount,
+        r.date,
+      ]),
       ["", "", "", "", "", "TOTAL", totalAmount, ""],
     ];
 
@@ -216,104 +284,134 @@ setToDate(formatLocalDate(lastDay));
     );
   }
 
-  const uniqueCenters = isCentreUser ? [userCentre] : Array.from(new Set(data.map((d) => d.center))).filter(Boolean);
-  const uniqueZones = isZoneUser ? [userZone] : Array.from(new Set(data.map((d) => d.zone))).filter(Boolean);
+  const uniqueCenters = isCentreUser
+    ? [userCentre]
+    : Array.from(new Set(data.map((d) => d.center))).filter(Boolean);
+  const uniqueZones = isZoneUser
+    ? [userZone]
+    : Array.from(new Set(data.map((d) => d.zone))).filter(Boolean);
 
   // -----------------------------
   // Render
   // -----------------------------
   return (
     <div className="p-6 space-y-6">
-         <Breadcrumb>
-              <BreadcrumbList>
-                <BreadcrumbItem>
-                  <BreadcrumbLink href="/user/pages/dashboard" >
-                    {userRole === "DG" ? "Director General" : "CHIEF_ACCOUNTANT"}
-                  </BreadcrumbLink>
-                </BreadcrumbItem>
-                <BreadcrumbSeparator />
-                <BreadcrumbItem>Dashboard</BreadcrumbItem>
-              </BreadcrumbList>
-            </Breadcrumb>
+      <Breadcrumb className="px-5">
+        <BreadcrumbList>
+          <BreadcrumbItem>
+            <BreadcrumbLink href="/user/pages/dashboard" className=" font-bold">
+              Dashboard
+            </BreadcrumbLink>
+          </BreadcrumbItem>
+          <BreadcrumbSeparator />
+          <BreadcrumbItem>Collections</BreadcrumbItem>
+        </BreadcrumbList>
+      </Breadcrumb>
 
-      <Card>
+      <Card className=" border-none outline-none">
         <CardHeader>
-          <CardTitle>Collection Report</CardTitle>
+          <CardTitle>{isCentreUser && `${userCentre}`}</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="mb-4 text-sm text-blue-700 font-semibold text-center">
-            {isCentreUser && `📍 Centre: ${userCentre}`}
-            {isZoneUser && `🌍 Zone: ${userZone}`}
-            {isHQUser && `🏢 HQ: All Centres and Zones`}
-          </div>
+         
 
           {/* Filters */}
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-6 gap-4 mb-6">
-
             <div>
               <label className="text-sm font-medium">From</label>
-              <Input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
+              <Input
+                type="date"
+                value={fromDate}
+                onChange={(e) => setFromDate(e.target.value)}
+              />
             </div>
 
             <div>
               <label className="text-sm font-medium">To</label>
-              <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
+              <Input
+                type="date"
+                value={toDate}
+                onChange={(e) => setToDate(e.target.value)}
+              />
             </div>
 
             <div>
               <label className="text-sm font-medium">Service</label>
               <Select onValueChange={setService} value={service}>
-                <SelectTrigger><SelectValue placeholder="All" /></SelectTrigger>
+                <SelectTrigger>
+                  <SelectValue placeholder="All" />
+                </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="ALL">All</SelectItem>
-                  {Array.from(new Set(data.map((d) => d.service))).filter(Boolean).map((srv, i) => (
-                    <SelectItem key={i} value={srv}>{srv}</SelectItem>
-                  ))}
+                  {Array.from(new Set(data.map((d) => d.service)))
+                    .filter(Boolean)
+                    .map((srv, i) => (
+                      <SelectItem key={i} value={srv}>
+                        {srv}
+                      </SelectItem>
+                    ))}
                 </SelectContent>
               </Select>
             </div>
 
+
+        { userRole == 'DG' ? 
             <div>
               <label className="text-sm font-medium">Center</label>
               <Select onValueChange={setCenter} value={center}>
-                <SelectTrigger><SelectValue placeholder="All" /></SelectTrigger>
+                <SelectTrigger>
+                  <SelectValue placeholder="All" />
+                </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="ALL">All</SelectItem>
                   {uniqueCenters.map((c, i) => (
-                    <SelectItem key={i} value={c}>{c}</SelectItem>
+                    <SelectItem key={i} value={c}>
+                      {c}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
+         : null }   
 
-            {isHQUser && (
+         {userRole == 'DG' && (
               <div>
                 <label className="text-sm font-medium">Zone</label>
                 <Select onValueChange={setZone} value={zone}>
-                  <SelectTrigger><SelectValue placeholder="All" /></SelectTrigger>
+                  <SelectTrigger>
+                    <SelectValue placeholder="All" />
+                  </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="ALL">All</SelectItem>
                     {uniqueZones.map((z, i) => (
-                      <SelectItem key={i} value={z}>{z}</SelectItem>
+                      <SelectItem key={i} value={z}>
+                        {z}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
             )}
 
-            <div className="flex items-end">
-              <Button className="w-full bg-blue-950" onClick={handleFilter}>Filter</Button>
-            </div>
-
+          
           </div>
 
           {/* Table */}
           <div className="overflow-auto border rounded-md">
-            <table className="min-w-full text-sm text-left border-collapse">
-              <thead className="bg-sky-100 text-gray-700">
+            <table className="min-w-full text-sm text-left border-collapse table-fixed">
+              <thead className=" text-blue-950">
                 <tr>
-                  {["#", "Customer", "Center", "Zone", "Service Code", "Service", "Amount (TZS)", "Date Paid"].map((h) => (
-                    <th key={h} className="p-3 border">{h}</th>
+                  {[
+                    "#",
+                    "Customer",
+                    "Service Code",
+                    "Service",
+                    "Amount (TZS)",
+                    "Date Paid",
+                  ].map((h) => (
+                    <th key={h} className="p-3 border">
+                      {h}
+                    </th>
                   ))}
                 </tr>
               </thead>
@@ -322,17 +420,19 @@ setToDate(formatLocalDate(lastDay));
                   <tr key={`${row.id}-${i}`} className="hover:bg-sky-50">
                     <td className="p-2 border">{indexOfFirstRow + i + 1}</td>
                     <td className="p-2 border">{row.name}</td>
-                    <td className="p-2 border">{row.center}</td>
-                    <td className="p-2 border">{row.zone}</td>
                     <td className="p-2 border">{row.serviceCode}</td>
-                    <td className="p-2 border">{row.service}</td>
-                    <td className="p-2 border text-right">{row.amount.toLocaleString()}</td>
+                    <td className="p-2 border text-start">{row.service}</td>
+                    <td className="p-2 border text-left">
+                      {row.amount.toLocaleString()}
+                    </td>
                     <td className="p-2 border">{row.date}</td>
                   </tr>
                 ))}
                 {filteredData.length === 0 && (
                   <tr>
-                    <td className="p-4 border text-center" colSpan={8}>No records found.</td>
+                    <td className="p-4 border text-center" colSpan={8}>
+                      No records found.
+                    </td>
                   </tr>
                 )}
               </tbody>
@@ -341,7 +441,8 @@ setToDate(formatLocalDate(lastDay));
 
           {/* Pagination */}
           <div className="flex justify-between items-center mt-4">
-            <Button variant="outline"
+            <Button
+              variant="outline"
               disabled={currentPage === 1}
               onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
             >
@@ -352,7 +453,8 @@ setToDate(formatLocalDate(lastDay));
               Page {currentPage} of {totalPages}
             </div>
 
-            <Button variant="outline"
+            <Button
+              variant="outline"
               disabled={currentPage === totalPages}
               onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
             >
@@ -381,12 +483,16 @@ setToDate(formatLocalDate(lastDay));
                   <tr key={srv.serviceCode} className="hover:bg-sky-50">
                     <td className="p-2 border">{srv.serviceCode}</td>
                     <td className="p-2 border">{srv.service}</td>
-                    <td className="p-2 border text-right font-semibold">{srv.total.toLocaleString()}</td>
+                    <td className="p-2 border text-right font-semibold">
+                      {srv.total.toLocaleString()}
+                    </td>
                   </tr>
                 ))}
                 {summaryByService.length === 0 && (
                   <tr>
-                    <td className="p-4 border text-center" colSpan={3}>No summary data.</td>
+                    <td className="p-4 border text-center" colSpan={3}>
+                      No summary data.
+                    </td>
                   </tr>
                 )}
               </tbody>
@@ -395,15 +501,20 @@ setToDate(formatLocalDate(lastDay));
 
           {/* Export */}
           <div className="flex gap-3 mt-6">
-            <Button onClick={exportExcel} className="bg-green-600 hover:bg-green-700">
+            <Button
+              onClick={exportExcel}
+              className="bg-green-600 hover:bg-green-700"
+            >
               <FileSpreadsheet className="mr-2 h-4 w-4" /> Excel
             </Button>
 
-            <Button onClick={exportPDF} className="bg-slate-700 hover:bg-slate-800 text-white">
+            <Button
+              onClick={exportPDF}
+              className="bg-slate-700 hover:bg-slate-800 text-white"
+            >
               Export PDF
             </Button>
           </div>
-
         </CardContent>
       </Card>
     </div>

@@ -199,7 +199,7 @@ public class UserService {
             return "User not found";
         }
         User user = userOpt.get();
-        user.setPassword(passwordEncoder.encode("veta@2025"));
+        user.setPassword(passwordEncoder.encode("Veta@2025"));
         userRepository.save(user);
         return "Password reset to default successfully";
     }

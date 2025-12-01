@@ -28,14 +28,38 @@ import {
   BreadcrumbList,
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
+import { Button } from "@/components/ui/button";
 
-ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, Tooltip, Legend);
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  ArcElement,
+  Tooltip,
+  Legend
+);
 
-interface ApiGfsCode { code?: string; description?: string; }
-interface ApiCentreZones { name?: string; }
-interface ApiCentre { name?: string; zones?: ApiCentreZones; }
-interface ApiCustomer { name?: string; centre?: ApiCentre; }
-interface ApiItem { date?: string; amount?: number; customer?: ApiCustomer; gfs_code?: ApiGfsCode; }
+interface ApiGfsCode {
+  code?: string;
+  description?: string;
+}
+interface ApiCentreZones {
+  name?: string;
+}
+interface ApiCentre {
+  name?: string;
+  zones?: ApiCentreZones;
+}
+interface ApiCustomer {
+  name?: string;
+  centre?: ApiCentre;
+}
+interface ApiItem {
+  date?: string;
+  amount?: number;
+  customer?: ApiCustomer;
+  gfs_code?: ApiGfsCode;
+}
 
 interface Payment {
   name: string;
@@ -49,8 +73,15 @@ interface Payment {
   dateObj: Date;
 }
 
-interface ServiceSummary { serviceCode: string; service: string; total: number; }
-interface CenterSummary { center: string; total: number; }
+interface ServiceSummary {
+  serviceCode: string;
+  service: string;
+  total: number;
+}
+interface CenterSummary {
+  center: string;
+  total: number;
+}
 
 interface Summary {
   totalIncome: number;
@@ -64,8 +95,11 @@ interface Summary {
 export default function DashboardPage() {
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api";
   const [loading, setLoading] = useState(true);
-  const [role, setRole] = useState<string>(""); // e.g., "DG" or "Accountant"
+  const [role, setRole] = useState<string>("");
   const [userCentre, setUserCentre] = useState<string>("");
+  const [filterType, setFilterType] = useState<"day" | "yesterday" | "month">(
+    "month"
+  );
 
   const [summary, setSummary] = useState<Summary>({
     totalIncome: 0,
@@ -80,7 +114,8 @@ export default function DashboardPage() {
 
   const formatServiceName = (service?: string): string => {
     if (!service) return "-";
-    if (service === "Receipts from Application Fee") return "LONG AND SHORT COURSE APPLICATION FEE";
+    if (service === "Receipts from Application Fee")
+      return "LONG AND SHORT COURSE APPLICATION FEE";
     if (service === "OTH") return "SHORT COURSES";
     if (service === "Miscellaneous receipts") return "SEPARATE PRODUCTION UNIT";
     return service.toUpperCase();
@@ -88,125 +123,138 @@ export default function DashboardPage() {
 
   const formatCourseName = (service?: string): string => {
     if (!service) return "-";
-    if (service === "OTH") return "SHORT COURSES, TAILOR MADE, CONTINUOUS LEARNING WORKSHOPS";
+    if (service === "OTH")
+      return "SHORT COURSES, TAILOR MADE, CONTINUOUS LEARNING WORKSHOPS";
     if (service === "Miscellaneous receipts") return "SEPARATE PRODUCTION UNIT";
     return service.toUpperCase();
   };
 
-  const fetchData = useCallback(async () => {
-  try {
-    setLoading(true);
+  const applyFilter = (payments: Payment[]): Payment[] => {
+    const now = new Date();
 
-    const storedRole = localStorage.getItem("userRole") || "";
-    const storedCentre = localStorage.getItem("centre") || "";
-    setRole(storedRole);
-    setUserCentre(storedCentre);
-
-    const res = await fetch(`${apiUrl}/collections/get`);
-    if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-    const data: ApiItem[] = await res.json();
-
-    // Map API → Payment model
-    const mappedData: Payment[] = data.map((item) => {
-      const dateIso = item.date ?? "";
-      const dateObj = new Date(dateIso);
-      const datePart = dateIso.split("T")[0] || "";
-      const serviceDesc = item.gfs_code?.description ?? "";
-      return {
-        name: item.customer?.name ?? "Unknown",
-        center: item.customer?.centre?.name ?? "No Center",
-        zone: item.customer?.centre?.zones?.name ?? "-",
-        serviceCode: item.gfs_code?.code ?? "N/A",
-        service: serviceDesc,
-        course: formatCourseName(serviceDesc),
-        amount: Number(item.amount ?? 0),
-        date: datePart,
-        dateObj,
-      };
-    });
-
-    // Filter by role
-    let filteredData = mappedData;
-    if (storedRole === "CHIEF_ACCOUNTANT") {
-      const now = new Date();
-      const currentMonth = now.getMonth();
-      const currentYear = now.getFullYear();
-      filteredData = mappedData.filter(
+    if (filterType === "day") {
+      // Today
+      return payments.filter(
         (p) =>
-          p.center === storedCentre &&
-          p.dateObj.getMonth() === currentMonth &&
-          p.dateObj.getFullYear() === currentYear
+          p.dateObj.getDate() === now.getDate() &&
+          p.dateObj.getMonth() === now.getMonth() &&
+          p.dateObj.getFullYear() === now.getFullYear()
+      );
+    } else if (filterType === "yesterday") {
+      // Yesterday
+      const yesterday = new Date();
+      yesterday.setDate(now.getDate() - 1);
+      return payments.filter(
+        (p) =>
+          p.dateObj.getDate() === yesterday.getDate() &&
+          p.dateObj.getMonth() === yesterday.getMonth() &&
+          p.dateObj.getFullYear() === yesterday.getFullYear()
+      );
+    } else {
+      // This Month
+      return payments.filter(
+        (p) =>
+          p.dateObj.getMonth() === now.getMonth() &&
+          p.dateObj.getFullYear() === now.getFullYear()
       );
     }
+  };
 
-    // Clear previous summary to avoid stale data
-    setSummary({
-      totalIncome: 0,
-      totalTransactions: 0,
-      topServices: [],
-      topCenters: [],
-      bottomCenters: [],
-      recentPayments: [],
-    });
+  const fetchData = useCallback(async () => {
+    try {
+      setLoading(true);
 
-    // Summary calculations
-    const serviceAcc: Record<string, ServiceSummary> = {};
-    const centerAcc: Record<string, CenterSummary> = {};
+      const storedRole = localStorage.getItem("userRole") || "";
+      const storedCentre = localStorage.getItem("centre") || "";
+      setRole(storedRole);
+      setUserCentre(storedCentre);
 
-    for (const p of filteredData) {
-      const sKey = p.serviceCode || p.service;
-      if (!serviceAcc[sKey]) serviceAcc[sKey] = { serviceCode: sKey, service: p.service, total: 0 };
-      serviceAcc[sKey].total += p.amount;
+      const res = await fetch(`${apiUrl}/collections/get`);
+      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+      const data: ApiItem[] = await res.json();
 
-      const cKey = p.center || "UNKNOWN";
-      if (!centerAcc[cKey]) centerAcc[cKey] = { center: cKey, total: 0 };
-      centerAcc[cKey].total += p.amount;
+      const mappedData: Payment[] = data.map((item) => {
+        const dateIso = item.date ?? "";
+        const dateObj = new Date(dateIso);
+        const datePart = dateIso.split("T")[0] || "";
+        const serviceDesc = item.gfs_code?.description ?? "";
+        return {
+          name: item.customer?.name ?? "Unknown",
+          center: item.customer?.centre?.name ?? "No Center",
+          zone: item.customer?.centre?.zones?.name ?? "-",
+          serviceCode: item.gfs_code?.code ?? "N/A",
+          service: serviceDesc,
+          course: formatCourseName(serviceDesc),
+          amount: Number(item.amount ?? 0),
+          date: datePart,
+          dateObj,
+        };
+      });
+
+      let filteredData = mappedData;
+      // Filter by role
+      if (storedRole === "CHIEF_ACCOUNTANT") {
+        filteredData = mappedData.filter((p) => p.center === storedCentre);
+      }
+
+      // Apply day/month filter
+      filteredData = applyFilter(filteredData);
+
+      // Summary calculations
+      const serviceAcc: Record<string, ServiceSummary> = {};
+      const centerAcc: Record<string, CenterSummary> = {};
+
+      for (const p of filteredData) {
+        const sKey = p.serviceCode || p.service;
+        if (!serviceAcc[sKey])
+          serviceAcc[sKey] = {
+            serviceCode: sKey,
+            service: p.service,
+            total: 0,
+          };
+        serviceAcc[sKey].total += p.amount;
+
+        const cKey = p.center || "UNKNOWN";
+        if (!centerAcc[cKey]) centerAcc[cKey] = { center: cKey, total: 0 };
+        centerAcc[cKey].total += p.amount;
+      }
+
+      const serviceSummary = Object.values(serviceAcc).sort(
+        (a, b) => b.total - a.total
+      );
+      const centersSummary = Object.values(centerAcc);
+      const topCenters = [...centersSummary]
+        .sort((a, b) => b.total - a.total)
+        .slice(0, 3);
+      const bottomCenters = [...centersSummary]
+        .sort((a, b) => a.total - b.total)
+        .slice(0, 3);
+
+      const uniquePaymentsMap = new Map<string, Payment>();
+      for (const p of mappedData) {
+        const key = `${p.name}-${p.service}-${p.amount}-${p.date}`;
+        if (!uniquePaymentsMap.has(key)) uniquePaymentsMap.set(key, p);
+      }
+      const recentPayments = [...uniquePaymentsMap.values()]
+        .sort((a, b) => b.dateObj.getTime() - a.dateObj.getTime())
+        .slice(0, 8);
+
+      setSummary({
+        totalIncome: filteredData.reduce((sum, p) => sum + p.amount, 0),
+        totalTransactions: filteredData.length,
+        topServices: serviceSummary.slice(0, 3),
+        topCenters,
+        bottomCenters,
+        recentPayments,
+      });
+
+      setLastUpdated(new Date().toLocaleTimeString());
+      setLoading(false);
+    } catch (error) {
+      console.error("❌ Error fetching dashboard data:", error);
+      setLoading(false);
     }
-
-    const serviceSummary = Object.values(serviceAcc).sort((a, b) => b.total - a.total);
-    const centersSummary = Object.values(centerAcc);
-    const topCenters = [...centersSummary].sort((a, b) => b.total - a.total).slice(0, 3);
-    const bottomCenters = [...centersSummary].sort((a, b) => a.total - b.total).slice(0, 3);
-
-    const totalIncome = serviceSummary.reduce((sum, s) => sum + s.total, 0);
-    const totalTransactions = filteredData.length;
-
-
-    const uniquePaymentsMap = new Map<string, Payment>();
-
-for (const p of mappedData) {
-  // create a unique key for each payment
-  const key = `${p.name}-${p.service}-${p.amount}-${p.date}`;
-  if (!uniquePaymentsMap.has(key)) {
-    uniquePaymentsMap.set(key, p);
-  }
-}
-
-// take the first 8 unique payments, sorted by date descending
-const recentPayments = [...uniquePaymentsMap.values()]
-  .sort((a, b) => b.dateObj.getTime() - a.dateObj.getTime())
-  .slice(0, 8);
-
-
-
-    setSummary({
-  totalIncome: filteredData.reduce((sum, p) => sum + p.amount, 0),
-  totalTransactions: filteredData.length,
-  topServices: Object.values(serviceAcc).sort((a, b) => b.total - a.total).slice(0, 3),
-  topCenters: topCenters,
-  bottomCenters: bottomCenters,
-  recentPayments: recentPayments, // <- unfiltered
-});
-
-
-    setLastUpdated(new Date().toLocaleTimeString());
-    setLoading(false);
-  } catch (error) {
-    console.error("❌ Error fetching dashboard data:", error);
-    setLoading(false);
-  }
-}, [apiUrl]);
-
+  }, [apiUrl, filterType]);
 
   useEffect(() => {
     fetchData();
@@ -262,8 +310,8 @@ const recentPayments = [...uniquePaymentsMap.values()]
       <Breadcrumb>
         <BreadcrumbList>
           <BreadcrumbItem>
-            <BreadcrumbLink href="/user/pages/dashboard" >
-              {role === "DG" ? "Director General" : "CHIEF_ACCOUNTANT"}
+            <BreadcrumbLink href="/user/pages/dashboard">
+              {role === "DG" ? "Director General" : "Accountant"}
             </BreadcrumbLink>
           </BreadcrumbItem>
           <BreadcrumbSeparator />
@@ -271,29 +319,74 @@ const recentPayments = [...uniquePaymentsMap.values()]
         </BreadcrumbList>
       </Breadcrumb>
 
+      {/* Filter Buttons */}
+      <div className="flex gap-2 mb-4">
+       
+        <Button
+          variant={filterType === "yesterday" ? "default" : "outline"}
+          onClick={() => setFilterType("yesterday")}
+        >
+          Yesterday
+        </Button>
+         <Button
+          variant={filterType === "day" ? "default" : "outline"}
+          onClick={() => setFilterType("day")}
+        >
+          Today
+        </Button>
+        <Button
+          variant={filterType === "month" ? "default" : "outline"}
+          onClick={() => setFilterType("month")}
+        >
+          This Month
+        </Button>
+      </div>
+
       {/* Stats Cards */}
-      <div className={`grid gap-4 ${role === "DG" ? "sm:grid-cols-2 lg:grid-cols-4" : "sm:grid-cols-2 lg:grid-cols-3"}`}>
+      <div
+        className={`grid gap-4 ${
+          role === "DG"
+            ? "sm:grid-cols-2 lg:grid-cols-4"
+            : "sm:grid-cols-2 lg:grid-cols-3"
+        }`}
+      >
         <Card className="text-center">
           <CardContent className="pt-6">
             <Banknote size={30} className="mx-auto text-green-500 mb-2" />
-            <CardTitle>Total Income (This Month)</CardTitle>
-            <p className="text-lg font-bold text-green-600">{summary.totalIncome.toLocaleString()} TZS</p>
+            <CardTitle>
+              Total Income ({filterType === "day" ? "Today" : "This Month"})
+            </CardTitle>
+            <p className="text-lg font-bold text-green-600">
+              {summary.totalIncome.toLocaleString()} TZS
+            </p>
           </CardContent>
         </Card>
 
         <Card className="text-center">
           <CardContent className="pt-6">
             <FileText size={30} className="mx-auto text-blue-500 mb-2" />
-            <CardTitle>Total Transactions (This Month)</CardTitle>
-            <p className="text-lg font-bold text-blue-600">{summary.totalTransactions}</p>
+            <CardTitle>
+              Total Transactions (
+              {filterType === "day" ? "Today" : "This Month"})
+            </CardTitle>
+            <p className="text-lg font-bold text-blue-600">
+              {summary.totalTransactions}
+            </p>
           </CardContent>
         </Card>
 
         <Card className="text-center h-fit">
           <CardContent className="pt-6">
-            <PieChart size={30} className="mx-auto text-yellow-500 mb-2 h-full" />
+            <PieChart
+              size={30}
+              className="mx-auto text-yellow-500 mb-2 h-full"
+            />
             <CardTitle>Top Service</CardTitle>
-            <p className="text-lg font-bold text-yellow-600">{summary.topServices[0]?.service ? formatServiceName(summary.topServices[0].service) : "-"}</p>
+            <p className="text-lg font-bold text-yellow-600">
+              {summary.topServices[0]?.service
+                ? formatServiceName(summary.topServices[0].service)
+                : "-"}
+            </p>
           </CardContent>
         </Card>
 
@@ -302,7 +395,9 @@ const recentPayments = [...uniquePaymentsMap.values()]
             <CardContent className="pt-6">
               <Building2 size={30} className="mx-auto text-indigo-500 mb-2" />
               <CardTitle>Top Center</CardTitle>
-              <p className="text-lg font-bold text-indigo-600">{summary.topCenters[0]?.center || "-"}</p>
+              <p className="text-lg font-bold text-indigo-600">
+                {summary.topCenters[0]?.center || "-"}
+              </p>
             </CardContent>
           </Card>
         )}
@@ -318,7 +413,10 @@ const recentPayments = [...uniquePaymentsMap.values()]
               <CardTitle>Top Services</CardTitle>
             </CardHeader>
             <CardContent className="h-64 sm:h-80">
-              <Bar data={barData} options={{ responsive: true, maintainAspectRatio: false }} />
+              <Bar
+                data={barData}
+                options={{ responsive: true, maintainAspectRatio: false }}
+              />
             </CardContent>
           </Card>
 
@@ -328,7 +426,10 @@ const recentPayments = [...uniquePaymentsMap.values()]
                 <CardTitle>Top 3 Centers</CardTitle>
               </CardHeader>
               <CardContent className="h-56 sm:h-64">
-                <Doughnut data={topCentersData} options={{ responsive: true, maintainAspectRatio: false }} />
+                <Doughnut
+                  data={topCentersData}
+                  options={{ responsive: true, maintainAspectRatio: false }}
+                />
               </CardContent>
             </Card>
 
@@ -337,7 +438,10 @@ const recentPayments = [...uniquePaymentsMap.values()]
                 <CardTitle>Bottom 3 Centers</CardTitle>
               </CardHeader>
               <CardContent className="h-56 sm:h-64">
-                <Doughnut data={bottomCentersData} options={{ responsive: true, maintainAspectRatio: false }} />
+                <Doughnut
+                  data={bottomCentersData}
+                  options={{ responsive: true, maintainAspectRatio: false }}
+                />
               </CardContent>
             </Card>
           </div>
@@ -351,7 +455,10 @@ const recentPayments = [...uniquePaymentsMap.values()]
               <CardTitle>Top Services</CardTitle>
             </CardHeader>
             <CardContent className="h-64 sm:h-80">
-              <Bar data={barData} options={{ responsive: true, maintainAspectRatio: false }} />
+              <Bar
+                data={barData}
+                options={{ responsive: true, maintainAspectRatio: false }}
+              />
             </CardContent>
           </Card>
         </div>
@@ -364,7 +471,12 @@ const recentPayments = [...uniquePaymentsMap.values()]
         <CardHeader>
           <CardTitle>Recent Payments</CardTitle>
           <CardDescription>
-            Latest 8 transactions {role === "CHIEF_ACCOUNTANT" ? `(filtered by your center, this month)` : ""}
+            Latest 8 transactions{" "}
+            {role === "CHIEF_ACCOUNTANT"
+              ? `(filtered by your center, ${
+                  filterType === "day" ? "today" : "this month"
+                })`
+              : ""}
           </CardDescription>
         </CardHeader>
         <CardContent>
