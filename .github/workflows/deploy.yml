@@ -45,6 +45,7 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           script_stop: true
+          envs: BACKEND_IMAGE,FRONTEND_IMAGE
           script: |
             set -e
 
