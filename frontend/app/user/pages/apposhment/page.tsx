@@ -179,6 +179,9 @@ export default function ApportionmentReport() {
     
       <Card>
         <CardHeader>
+         
+          <CardTitle>{`${userCentre}`}</CardTitle>
+   
           
         </CardHeader>
         <CardContent className="flex flex-wrap gap-4 items-end">
@@ -231,12 +234,10 @@ export default function ApportionmentReport() {
         </CardHeader>
         <CardContent className="overflow-x-auto">
           <table className="min-w-full border border-gray-300 table-auto">
-            <thead className="text-blue-950">
+            <thead className="bg-blue-950 text-white">
               <tr>
                 <th className="border px-2 py-1">#</th>
-                <th className="border px-2 py-1">Date</th>
                 <th className="border px-2 py-1">Course Name</th>
-                <th className="border px-2 py-1">Centre</th>
                 <th className="border px-2 py-1">Amount Remitted</th>
                 <th className="border px-2 py-1">Executors</th>
                 <th className="border px-2 py-1">Supporters</th>
@@ -249,9 +250,7 @@ export default function ApportionmentReport() {
                 data.map((row, i) => (
                   <tr key={i}>
                     <td className="border px-2 py-1">{i + 1}</td>
-                    <td className="border px-2 py-1">{row.date}</td>
                     <td className="border px-2 py-1">{row.courseName}</td>
-                    <td className="border px-2 py-1">{row.centre}</td>
                     <td className="border px-2 py-1">{formatNumber(row.amountRemitted)}</td>
                     <td className="border px-2 py-1">{formatNumber(row.executors)}</td>
                     <td className="border px-2 py-1">{formatNumber(row.supporters)}</td>
@@ -269,7 +268,7 @@ export default function ApportionmentReport() {
               {data.length > 0 && (
                 <>
                   <tr className="bg-gray-200 font-bold">
-                    <td colSpan={4} className="text-center border px-2 py-1">
+                    <td colSpan={2} className="text-center border px-2 py-1">
                       TOTAL
                     </td>
                     <td className="border px-2 py-1">{formatNumber(totals.amountRemitted)}</td>
@@ -279,11 +278,11 @@ export default function ApportionmentReport() {
                     <td className="border px-2 py-1">{formatNumber(totals.amountToBePaid)}</td>
                   </tr>
                   <tr className="bg-gray-200 font-bold">
-                    <td colSpan={4} className="text-center border px-2 py-1">
+                    <td colSpan={2} className="text-center border px-2 py-1">
                       REMAINING BALANCE
                     </td>
                     <td className="border px-2 py-1">{formatNumber(remaining)}</td>
-                    <td colSpan={4}></td>
+                    <td colSpan={1}></td>
                   </tr>
                 </>
               )}
@@ -291,8 +290,8 @@ export default function ApportionmentReport() {
           </table>
         </CardContent>
 
-           <div>
-             <Button className="bg-green-600 text-white w-32" onClick={exportExcel}>
+           <div className="pl-5">
+             <Button className="bg-green-600 text-white w-32 " onClick={exportExcel}>
             Export Excel
           </Button>
            </div>

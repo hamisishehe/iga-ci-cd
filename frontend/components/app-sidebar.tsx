@@ -13,6 +13,7 @@ import {
   IconCoin,
   IconDashboard,
   IconHierarchy,
+  IconLogs,
   IconReceipt,
   IconUser,
 } from "@tabler/icons-react";
@@ -38,10 +39,15 @@ const NAV_ITEMS = [
   { title: "Manage Centres", url: "/user/admin/centres", icon: IconBuilding, roles: ["ADMIN"] },
   { title: "Manage Zones", url: "/user/admin/zones", icon: IconBuildingCommunity, roles: ["ADMIN"] },
   { title: "Manage Departments", url: "/user/admin/departments", icon: IconHierarchy, roles: ["ADMIN"] },
+  { title: "logs", url: "/user/admin/logs", icon: IconLogs, roles: ["ADMIN"] },
+
+
+
+
   { title: "Dashboard", url: "/user/pages/dashboard", icon: IconDashboard, roles: ["DG", "CHIEF_ACCOUNTANT"] },
-  { title: "Collection Report", url: "/user/pages/collection-report", icon: IconReceipt, roles: ["DG", "CHIEF_ACCOUNTANT"] },
-  { title: "Distribution Report", url: "/user/pages/distribution-report", icon: IconArrowDownDashed, roles: ["DG", "CHIEF_ACCOUNTANT"] },
-  { title: "Apposhment Report", url: "/user/pages/apposhment", icon: IconArrowsShuffle, roles: ["CHIEF_ACCOUNTANT"] },
+  { title: "Collection", url: "/user/pages/collection-report", icon: IconReceipt, roles: ["DG", "CHIEF_ACCOUNTANT"] },
+  { title: "Distribution", url: "/user/pages/distribution-report", icon: IconArrowDownDashed, roles: ["DG", "CHIEF_ACCOUNTANT"] },
+  { title: "Apposhment", url: "/user/pages/apposhment", icon: IconArrowsShuffle, roles: ["CHIEF_ACCOUNTANT"] },
   { title: "Use of Proceeds", url: "/user/pages/expenditure", icon: IconCoin, roles: ["CHIEF_ACCOUNTANT"] },
 
 ];

@@ -24,11 +24,14 @@ export function SiteHeader() {
 
   const [darkMode, setDarkMode] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
+  const [role, setRole] = useState<string | null>(null);
 
   const handleLogout = () => {
     logout();
     router.push("/");
   };
+
+   
 
   const toggleTheme = () => {
     setDarkMode(!darkMode);
@@ -48,6 +51,10 @@ export function SiteHeader() {
     const handleFullScreenChange = () => {
       setFullscreen(!!document.fullscreenElement);
     };
+
+     setRole(localStorage.getItem("userRole"));
+ 
+
     document.addEventListener("fullscreenchange", handleFullScreenChange);
     return () => document.removeEventListener("fullscreenchange", handleFullScreenChange);
   }, []);
@@ -83,7 +90,13 @@ export function SiteHeader() {
             <DropdownMenuContent className="w-48 mr-2" align="end" forceMount>
               <DropdownMenuLabel>My Account</DropdownMenuLabel>
               <DropdownMenuSeparator />
-              <Link href='/user/pages/profile'>
+
+
+             
+
+             <Link href={role === "ADMIN" ? "/user/admin/profile" : "/user/pages/profile"}>
+
+
               <DropdownMenuItem>
                 <User className="mr-2 h-4 w-4 text-gray-700" />
                 Profile

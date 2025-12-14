@@ -1,4 +1,4 @@
-package com.example.iga_veta.Components;
+package com.example.iga_veta.components;
 
 import com.example.iga_veta.Model.GfsCode;
 import com.example.iga_veta.Repository.Gfs_codeRepository;

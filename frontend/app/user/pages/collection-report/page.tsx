@@ -399,7 +399,7 @@ export default function CollectionReport() {
           {/* Table */}
           <div className="overflow-auto border rounded-md">
             <table className="min-w-full text-sm text-left border-collapse table-fixed">
-              <thead className=" text-blue-950">
+              <thead className=" text-white bg-blue-950">
                 <tr>
                   {[
                     "#",
@@ -418,14 +418,14 @@ export default function CollectionReport() {
               <tbody>
                 {currentRows.map((row, i) => (
                   <tr key={`${row.id}-${i}`} className="hover:bg-sky-50">
-                    <td className="p-2 border">{indexOfFirstRow + i + 1}</td>
-                    <td className="p-2 border">{row.name}</td>
-                    <td className="p-2 border">{row.serviceCode}</td>
-                    <td className="p-2 border text-start">{row.service}</td>
-                    <td className="p-2 border text-left">
+                    <td className="p-1 border">{indexOfFirstRow + i + 1}</td>
+                    <td className="p-1 border">{row.name}</td>
+                    <td className="p-1 border">{row.serviceCode}</td>
+                    <td className="p-1 border text-start">{row.service}</td>
+                    <td className="p-1 border text-left">
                       {row.amount.toLocaleString()}
                     </td>
-                    <td className="p-2 border">{row.date}</td>
+                    <td className="p-1 border">{row.date}</td>
                   </tr>
                 ))}
                 {filteredData.length === 0 && (
@@ -463,15 +463,13 @@ export default function CollectionReport() {
           </div>
 
           {/* Summary */}
-          <div className="mt-6 text-lg font-semibold">
-            Total Income: {totalAmount.toLocaleString()} TZS
-          </div>
+         
 
           {/* Summary by Service */}
-          <h3 className="mt-6 mb-2 font-bold">Summary per Service</h3>
-          <div className="overflow-auto border rounded-md">
-            <table className="min-w-full text-sm border-collapse">
-              <thead className="bg-sky-100 text-gray-700">
+          <h3 className="mt-6 mb-2 font-bold">Summary Per Service</h3>
+          <div className="overflow-auto border rounded-md ">
+            <table className="min-w-full text-sm  ">
+              <thead className="bg-blue-950 text-white">
                 <tr>
                   <th className="p-3 border">Service Code</th>
                   <th className="p-3 border">Service Name</th>
@@ -496,6 +494,19 @@ export default function CollectionReport() {
                   </tr>
                 )}
               </tbody>
+
+              <tfoot className=" font-bold">
+                <tr>
+                  <td className="p-3 border" colSpan={2}>
+                  Total Income: 
+                  </td>
+                  <td className="p-3 border text-right">
+                     <div className="mt-6 text-lg font-semibold">
+           {totalAmount.toLocaleString()} TZS
+          </div>
+                  </td>
+                </tr>
+              </tfoot>
             </table>
           </div>
 

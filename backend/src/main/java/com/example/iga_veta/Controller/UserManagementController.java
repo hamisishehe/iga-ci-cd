@@ -20,7 +20,6 @@ import java.util.Optional;
 @RequestMapping("/api/users")
 public class UserManagementController {
 
-
     @Autowired
     private UserService userService;
 
@@ -85,7 +84,9 @@ public class UserManagementController {
     public ResponseEntity<String> updateUser(
             @PathVariable Long userId,
             @RequestBody Map<String, String> body) {
-        try {
+
+            System.out.println("=====================>");
+            System.out.println(body);
 
             String firstName = body.get("firstName");
             String middleName = body.get("middleName");
@@ -95,8 +96,8 @@ public class UserManagementController {
             String phoneNumber = body.get("phoneNumber");
             String password = body.get("password");
 
-            Long centreId = body.containsKey("centreId") ? Long.valueOf(body.get("centreId")) : null;
-            Long departmentId = body.containsKey("departmentId") ? Long.valueOf(body.get("departmentId")) : null;
+            Long centreId = Long.valueOf(body.get("centreId"));
+            Long departmentId = Long.valueOf(body.get("departmentId"));
 
             User.Role role = body.containsKey("role") ? parseEnumSafely(User.Role.class, body.get("role"), null) : null;
             User.UserType userType = body.containsKey("userType") ? parseEnumSafely(User.UserType.class, body.get("userType"), null) : null;
@@ -110,10 +111,7 @@ public class UserManagementController {
 
             return ResponseEntity.ok(result);
 
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body("Error: " + e.getMessage());
-        }
+
     }
 
     private <T extends Enum<T>> T parseEnumSafely(Class<T> enumClass, String value, T defaultValue) {

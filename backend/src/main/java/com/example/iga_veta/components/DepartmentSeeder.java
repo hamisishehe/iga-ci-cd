@@ -1,4 +1,4 @@
-package com.example.iga_veta.Components;
+package com.example.iga_veta.components;
 
 import com.example.iga_veta.Model.Department;
 import com.example.iga_veta.Repository.DepartmentRepository;

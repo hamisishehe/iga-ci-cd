@@ -29,6 +29,7 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
 import { Button } from "@/components/ui/button";
+import { fi } from "zod/v4/locales";
 
 ChartJS.register(
   CategoryScale,
@@ -129,55 +130,64 @@ export default function DashboardPage() {
     return service.toUpperCase();
   };
 
-  const applyFilter = (payments: Payment[]): Payment[] => {
-    const now = new Date();
+  const filterByDate = (payments: Payment[], filterType: "day" | "yesterday" | "month") => {
+  const now = new Date();
+
+  // Start of today (00:00:00)
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+
+  // Start & end of yesterday
+  const yesterdayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+  const yesterdayEnd = todayStart;
+
+  // Start & end of this month
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+
+  return payments.filter((p) => {
+    const d = p.dateObj;
 
     if (filterType === "day") {
-      // Today
-      return payments.filter(
-        (p) =>
-          p.dateObj.getDate() === now.getDate() &&
-          p.dateObj.getMonth() === now.getMonth() &&
-          p.dateObj.getFullYear() === now.getFullYear()
-      );
-    } else if (filterType === "yesterday") {
-      // Yesterday
-      const yesterday = new Date();
-      yesterday.setDate(now.getDate() - 1);
-      return payments.filter(
-        (p) =>
-          p.dateObj.getDate() === yesterday.getDate() &&
-          p.dateObj.getMonth() === yesterday.getMonth() &&
-          p.dateObj.getFullYear() === yesterday.getFullYear()
-      );
-    } else {
-      // This Month
-      return payments.filter(
-        (p) =>
-          p.dateObj.getMonth() === now.getMonth() &&
-          p.dateObj.getFullYear() === now.getFullYear()
-      );
+      return d >= todayStart && d < todayEnd;
     }
-  };
 
-  const fetchData = useCallback(async () => {
-    try {
-      setLoading(true);
+    if (filterType === "yesterday") {
+      return d >= yesterdayStart && d < yesterdayEnd;
+    }
 
-      const storedRole = localStorage.getItem("userRole") || "";
-      const storedCentre = localStorage.getItem("centre") || "";
-      setRole(storedRole);
-      setUserCentre(storedCentre);
+    // this month
+    return d >= monthStart && d < monthEnd;
+  });
+};
 
-      const res = await fetch(`${apiUrl}/collections/get`);
-      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-      const data: ApiItem[] = await res.json();
 
-      const mappedData: Payment[] = data.map((item) => {
+const fetchData = useCallback(async () => {
+  
+  try {
+    setLoading(true);
+
+    const storedRole = localStorage.getItem("userRole") || "";
+    const storedCentre = localStorage.getItem("centre") || "";
+    setRole(storedRole);
+    setUserCentre(storedCentre);
+
+    const res = await fetch(`${apiUrl}/collections/get`);
+    if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+    const data: ApiItem[] = await res.json();
+
+    const mappedData: Payment[] = data
+      .map((item) => {
         const dateIso = item.date ?? "";
+        if (!dateIso) return null; // skip invalid
+
         const dateObj = new Date(dateIso);
-        const datePart = dateIso.split("T")[0] || "";
+        // Handle invalid dates
+        if (isNaN(dateObj.getTime())) return null;
+
+        const datePart = dateIso.split("T")[0];
         const serviceDesc = item.gfs_code?.description ?? "";
+
         return {
           name: item.customer?.name ?? "Unknown",
           center: item.customer?.centre?.name ?? "No Center",
@@ -189,77 +199,86 @@ export default function DashboardPage() {
           date: datePart,
           dateObj,
         };
-      });
+      })
+      .filter(Boolean) as Payment[]; // remove nulls
 
-      let filteredData = mappedData;
-      // Filter by role
-      if (storedRole === "CHIEF_ACCOUNTANT") {
-        filteredData = mappedData.filter((p) => p.center === storedCentre);
+    // Step 1: Role-based filtering (CHIEF_ACCOUNTANT sees only their center)
+   // Step 1: Role-based filtering
+let filteredData: Payment[] =
+  storedRole === "CHIEF_ACCOUNTANT"
+    ? mappedData.filter((p) => p.center === storedCentre)
+    : mappedData;
+
+// Step 2: Date filtering (Today / Yesterday / Month)
+filteredData = filterByDate(filteredData, filterType);
+
+
+
+    // Rest of summary calculation remains same...
+    const serviceAcc: Record<string, ServiceSummary> = {};
+    const centerAcc: Record<string, CenterSummary> = {};
+
+    for (const p of filteredData) {
+      const sKey = p.serviceCode || p.service || "Unknown";
+      if (!serviceAcc[sKey]) {
+        serviceAcc[sKey] = {
+          serviceCode: sKey,
+          service: p.service,
+          total: 0,
+        };
       }
+      serviceAcc[sKey].total += p.amount;
 
-      // Apply day/month filter
-      filteredData = applyFilter(filteredData);
-
-      // Summary calculations
-      const serviceAcc: Record<string, ServiceSummary> = {};
-      const centerAcc: Record<string, CenterSummary> = {};
-
-      for (const p of filteredData) {
-        const sKey = p.serviceCode || p.service;
-        if (!serviceAcc[sKey])
-          serviceAcc[sKey] = {
-            serviceCode: sKey,
-            service: p.service,
-            total: 0,
-          };
-        serviceAcc[sKey].total += p.amount;
-
-        const cKey = p.center || "UNKNOWN";
-        if (!centerAcc[cKey]) centerAcc[cKey] = { center: cKey, total: 0 };
-        centerAcc[cKey].total += p.amount;
+      const cKey = p.center || "Unknown";
+      if (!centerAcc[cKey]) {
+        centerAcc[cKey] = { center: cKey, total: 0 };
       }
-
-      const serviceSummary = Object.values(serviceAcc).sort(
-        (a, b) => b.total - a.total
-      );
-      const centersSummary = Object.values(centerAcc);
-      const topCenters = [...centersSummary]
-        .sort((a, b) => b.total - a.total)
-        .slice(0, 3);
-      const bottomCenters = [...centersSummary]
-        .sort((a, b) => a.total - b.total)
-        .slice(0, 3);
-
-      const uniquePaymentsMap = new Map<string, Payment>();
-      for (const p of mappedData) {
-        const key = `${p.name}-${p.service}-${p.amount}-${p.date}`;
-        if (!uniquePaymentsMap.has(key)) uniquePaymentsMap.set(key, p);
-      }
-      const recentPayments = [...uniquePaymentsMap.values()]
-        .sort((a, b) => b.dateObj.getTime() - a.dateObj.getTime())
-        .slice(0, 8);
-
-      setSummary({
-        totalIncome: filteredData.reduce((sum, p) => sum + p.amount, 0),
-        totalTransactions: filteredData.length,
-        topServices: serviceSummary.slice(0, 3),
-        topCenters,
-        bottomCenters,
-        recentPayments,
-      });
-
-      setLastUpdated(new Date().toLocaleTimeString());
-      setLoading(false);
-    } catch (error) {
-      console.error("❌ Error fetching dashboard data:", error);
-      setLoading(false);
+      centerAcc[cKey].total += p.amount;
     }
-  }, [apiUrl, filterType]);
+
+    const serviceSummary = Object.values(serviceAcc)
+      .sort((a, b) => b.total - a.total);
+
+    const centersSummary = Object.values(centerAcc);
+    const topCenters = [...centersSummary]
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 3);
+    const bottomCenters = [...centersSummary]
+      .sort((a, b) => a.total - b.total)
+      .slice(0, 3);
+
+    // Recent payments - global (not filtered by time), latest 8 unique
+    const uniquePaymentsMap = new Map<string, Payment>();
+    for (const p of mappedData) {
+      const key = `${p.name}-${p.service}-${p.amount}-${p.date}`;
+      if (!uniquePaymentsMap.has(key)) {
+        uniquePaymentsMap.set(key, p);
+      }
+    }
+    const recentPayments = Array.from(uniquePaymentsMap.values())
+      .sort((a, b) => b.dateObj.getTime() - a.dateObj.getTime())
+      .slice(0, 8);
+
+    setSummary({
+      totalIncome: filteredData.reduce((sum, p) => sum + p.amount, 0),
+      totalTransactions: filteredData.length,
+      topServices: serviceSummary.slice(0, 3),
+      topCenters,
+      bottomCenters,
+      recentPayments,
+    });
+
+    setLastUpdated(new Date().toLocaleTimeString());
+    setLoading(false);
+  } catch (error) {
+    console.error("Error fetching dashboard data:", error);
+    setLoading(false);
+  }
+}, [apiUrl, filterType, userCentre]); 
 
   useEffect(() => {
     fetchData();
-    const interval = setInterval(fetchData, 60000);
-    return () => clearInterval(interval);
+
   }, [fetchData]);
 
   // Chart data
@@ -354,7 +373,14 @@ export default function DashboardPage() {
           <CardContent className="pt-6">
             <Banknote size={30} className="mx-auto text-green-500 mb-2" />
             <CardTitle>
-              Total Income ({filterType === "day" ? "Today" : "This Month"})
+             Total Income (
+  {filterType === "day"
+    ? "Today"
+    : filterType === "yesterday"
+    ? "Yesterday"
+    : "This Month"}
+)
+
             </CardTitle>
             <p className="text-lg font-bold text-green-600">
               {summary.totalIncome.toLocaleString()} TZS
@@ -367,7 +393,7 @@ export default function DashboardPage() {
             <FileText size={30} className="mx-auto text-blue-500 mb-2" />
             <CardTitle>
               Total Transactions (
-              {filterType === "day" ? "Today" : "This Month"})
+              {filterType === "day" ? "Today" : filterType === "yesterday" ? "Yesterday" : "This Month"})
             </CardTitle>
             <p className="text-lg font-bold text-blue-600">
               {summary.totalTransactions}

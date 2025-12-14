@@ -8,6 +8,7 @@ import com.example.iga_veta.Model.Centre;
 import com.example.iga_veta.Model.ServiceItem;
 import com.example.iga_veta.Model.ServiceRequest;
 import com.example.iga_veta.Repository.ApposhmentRepository;
+import com.example.iga_veta.Repository.AuditLogRepository;
 import com.example.iga_veta.Repository.CentreRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -24,6 +25,9 @@ public class ApposhmentService {
 
     @Autowired
     private ApposhmentRepository apposhmentRepository;
+
+    @Autowired
+    private AuditLogRepository auditLogRepository;
 
     @Autowired
     private CentreRepository centreRepository;

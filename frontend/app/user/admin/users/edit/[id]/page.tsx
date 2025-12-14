@@ -31,6 +31,7 @@ type Role =
   | "RFM"
   | "CHIEF_ACCOUNTANT"
   | "ACCOUNTANT";
+
 type UserType = "CENTRE" | "ZONE" | "HQ";
 type Status = "ACTIVE" | "INACTIVE" | "PENDING";
 
@@ -44,7 +45,7 @@ interface Department {
   name: string;
 }
 
-interface User {
+interface UserResponse {
   id: number;
   firstName: string;
   middleName: string;
@@ -57,14 +58,19 @@ interface User {
   status: Status;
   centreId: number;
   departmentId: number;
+
+  // sometimes backend returns nested:
+  centres?: { id: number; name: string };
+  departments?: { id: number; name: string };
 }
 
 export default function EditUserPage() {
+  const [error, setError] = useState("");
   const router = useRouter();
   const { id } = useParams();
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api";
 
-  const [form, setForm] = useState<User>({
+  const [form, setForm] = useState<UserResponse>({
     id: 0,
     firstName: "",
     middleName: "",
@@ -92,12 +98,21 @@ export default function EditUserPage() {
   const fetchUserById = async () => {
     try {
       const res = await fetch(`${apiUrl}/users/get/${id}`);
-      if (res.ok) {
-        const data: User = await res.json();
-        setForm(data);
-      } else {
+
+      if (!res.ok) {
         toast("Failed to load user");
+        return;
       }
+
+      const data: UserResponse = await res.json();
+
+      console.log("USER FETCHED:", data);
+
+      setForm({
+        ...data,
+        centreId: data.centreId || data.centres?.id || 0,
+        departmentId: data.departmentId || data.departments?.id || 0,
+      });
     } catch {
       toast("Error fetching user");
     } finally {
@@ -108,10 +123,7 @@ export default function EditUserPage() {
   const fetchCentres = async () => {
     try {
       const res = await fetch(`${apiUrl}/centre/get`);
-      if (res.ok) {
-        const data: Centre[] = await res.json();
-        setCentres(data);
-      }
+      if (res.ok) setCentres(await res.json());
     } catch {
       toast("Error loading centres");
     }
@@ -120,10 +132,7 @@ export default function EditUserPage() {
   const fetchDepartments = async () => {
     try {
       const res = await fetch(`${apiUrl}/department/get`);
-      if (res.ok) {
-        const data: Department[] = await res.json();
-        setDepartments(data);
-      }
+      if (res.ok) setDepartments(await res.json());
     } catch {
       toast("Error loading departments");
     }
@@ -131,16 +140,36 @@ export default function EditUserPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!form.departmentId) {
+    setError("Department is required");
+    return;
+  }
+
+    const payload = {
+      firstName: form.firstName,
+      middleName: form.middleName,
+      lastName: form.lastName,
+      userName: form.userName,
+      email: form.email,
+      phoneNumber: form.phoneNumber,
+      role: form.role,
+      userType: form.userType,
+      status: form.status,
+      centreId: String(form.centreId),
+      departmentId: String(form.departmentId),
+    };
+
     try {
       const res = await fetch(`${apiUrl}/users/update/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify(payload),
       });
 
       if (res.ok) {
         toast("User updated successfully");
-        router.push("/users");
+        router.push("/user/admin/users");
       } else {
         toast("Failed to update user");
       }
@@ -149,12 +178,14 @@ export default function EditUserPage() {
     }
   };
 
-  if (loading) return <div className="p-6 text-center">Loading user data...</div>;
+  if (loading) {
+    return <div className="p-6 text-center">Loading user data...</div>;
+  }
 
   return (
     <div className="w-full mx-auto p-8 space-y-6">
       {/* Breadcrumb */}
-       <Breadcrumb className="mb-6">
+      <Breadcrumb className="mb-6">
         <BreadcrumbList>
           <BreadcrumbItem>
             <BreadcrumbLink href="/user/admin/dashboard">Dashboard</BreadcrumbLink>
@@ -164,21 +195,18 @@ export default function EditUserPage() {
             <BreadcrumbLink href="/user/admin/users">Users</BreadcrumbLink>
           </BreadcrumbItem>
           <BreadcrumbSeparator />
-          <BreadcrumbItem>Add User</BreadcrumbItem>
+          <BreadcrumbItem>Edit User</BreadcrumbItem>
         </BreadcrumbList>
       </Breadcrumb>
 
-      {/* Card */}
       <Card className="border rounded-2xl shadow-md">
         <CardHeader>
-          <CardTitle className="text-2xl font-semibold text-gray-800 text-start">
-            Edit User
-          </CardTitle>
+          <CardTitle className="text-2xl font-semibold">Edit User</CardTitle>
         </CardHeader>
 
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-5">
-            {/* User Info */}
+            {/* Names */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <Input
                 placeholder="First Name"
@@ -197,70 +225,89 @@ export default function EditUserPage() {
               <Input
                 placeholder="Last Name"
                 value={form.lastName}
-                onChange={(e) => setForm({ ...form, lastName: e.target.value })}
+                onChange={(e) =>
+                  setForm({ ...form, lastName: e.target.value })
+                }
               />
             </div>
 
+            {/* Username + Email */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <Input
                 placeholder="Username"
                 value={form.userName}
-                onChange={(e) => setForm({ ...form, userName: e.target.value })}
+                onChange={(e) =>
+                  setForm({ ...form, userName: e.target.value })
+                }
               />
               <Input
                 placeholder="Email"
                 type="email"
                 value={form.email}
-                onChange={(e) => setForm({ ...form, email: e.target.value })}
+                onChange={(e) =>
+                  setForm({ ...form, email: e.target.value })
+                }
               />
             </div>
 
+            {/* Phone */}
             <Input
               placeholder="Phone Number"
               value={form.phoneNumber}
-              onChange={(e) => setForm({ ...form, phoneNumber: e.target.value })}
+              onChange={(e) =>
+                setForm({ ...form, phoneNumber: e.target.value })
+              }
             />
 
-            {/* Centre & Department */}
+            {/* Centre + Department */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <Select
-                value={form.centreId ? form.centreId.toString() : ""}
+                value={String(form.centreId)}
                 onValueChange={(v) =>
-                  setForm({ ...form, centreId: parseInt(v) })
+                  setForm({ ...form, centreId: Number(v) })
                 }
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select Centre" />
                 </SelectTrigger>
                 <SelectContent>
-                  {centres.map((centre) => (
-                    <SelectItem key={centre.id} value={centre.id.toString()}>
-                      {centre.name}
+                  {centres.map((c) => (
+                    <SelectItem key={c.id} value={String(c.id)}>
+                      {c.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
 
-              <Select
-                value={form.departmentId ? form.departmentId.toString() : ""}
-                onValueChange={(v) =>
-                  setForm({ ...form, departmentId: parseInt(v) })
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select Department" />
-                </SelectTrigger>
-                <SelectContent>
-                  {departments.map((dep) => (
-                    <SelectItem key={dep.id} value={dep.id.toString()}>
-                      {dep.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+             <Select
+  value={form.departmentId ? String(form.departmentId) : ""}
+  onValueChange={(v) => {
+    setForm({ ...form, departmentId: Number(v) });
+    setError(""); // clear error when selected
+  }}
+>
+  <SelectTrigger
+    className={error ? "border-red-500 focus:ring-red-500" : ""}
+  >
+    <SelectValue placeholder="Select Department" />
+  </SelectTrigger>
+
+  <SelectContent>
+    {departments.map((d) => (
+      <SelectItem key={d.id} value={String(d.id)}>
+        {d.name}
+      </SelectItem>
+    ))}
+  </SelectContent>
+</Select>
+
+{error && (
+  <p className="text-sm text-red-500 mt-1">{error}</p>
+)}
+
             </div>
 
-            {/* Role / User Type / Status */}
+            {/* Role / Type / Status */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <Select
                 value={form.role}
@@ -290,9 +337,7 @@ export default function EditUserPage() {
 
               <Select
                 value={form.userType}
-                onValueChange={(v: UserType) =>
-                  setForm({ ...form, userType: v })
-                }
+                onValueChange={(v: UserType) => setForm({ ...form, userType: v })}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select User Type" />
@@ -306,7 +351,9 @@ export default function EditUserPage() {
 
               <Select
                 value={form.status}
-                onValueChange={(v: Status) => setForm({ ...form, status: v })}
+                onValueChange={(v: Status) =>
+                  setForm({ ...form, status: v })
+                }
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select Status" />
@@ -324,7 +371,7 @@ export default function EditUserPage() {
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => router.push("/users")}
+                onClick={() => router.push("/user/admin/users")}
               >
                 Cancel
               </Button>

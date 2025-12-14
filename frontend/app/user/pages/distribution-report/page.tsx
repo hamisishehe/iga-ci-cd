@@ -12,7 +12,7 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
 import Swal from "sweetalert2";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 export default function DistributionReportPage() {
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api";
@@ -405,8 +405,10 @@ export default function DistributionReportPage() {
         json = null;
       }
 
+      console.log("Save Apportionment Response:", res.body);
+
+
       if (res.status === 200 && json ==='Apposhment already exists!') {
-        setApportionmentSaved(true);
         Swal.fire({
           title: "Success!",
           text: "Apportionment saved successfully!",
@@ -455,8 +457,10 @@ export default function DistributionReportPage() {
       {/* Filters */}
       <Card>
 
-        <CardHeader>
-          </CardHeader>
+         <CardHeader>
+          <CardTitle>{isCentreUser && `${userCentre}`}</CardTitle>
+        </CardHeader>
+
 
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-12 gap-3 mb-6 items-end mt-6">
@@ -558,35 +562,35 @@ export default function DistributionReportPage() {
       <div className="overflow-auto border rounded-md">
             <table className="min-w-full text-sm text-left border-collapse table-fixed ">
           <thead className=" sticky top-0">
-            <tr>
-              <th className="px-3 py-2 border">#</th>
-              <th className="px-3 py-2 border">Course</th>
-              <th className="px-3 py-2 border">Description</th>
-              <th className="px-3 py-2 border text-right">Collections</th>
-              <th className="px-3 py-2 border text-right">Expenditure</th>
-              <th className="px-3 py-2 border text-right">Profit Markup As Per GIGA</th>
-              <th className="px-3 py-2 border text-right">
+            <tr className=" bg-blue-950 text-white">
+              <th className="px-1 py-1 border text-sm font-normal">#</th>
+              <th className="px-1 py-1 border  font-normal">Course</th>
+              <th className="px-1 py-1 border  font-normal">Description</th>
+              <th className="px-1 py-1 border text-right  font-normal">Collections</th>
+              <th className="px-1 py-1 border text-right  font-normal">Expenditure</th>
+              <th className="px-1 py-1 border text-right text-sm  font-normal">Profit Markup As Per GIGA</th>
+              <th className="px-1 py-1 border text-right  font-normal">
                 Contribution Central IGA
               </th>
-              <th className="px-3 py-2 border text-right">
+              <th className="px-1 py-1 border text-right  font-normal">
                 Facilitation Central
               </th>
-              <th className="px-3 py-2 border text-right">
+              <th className="px-1 py-1 border text-right  font-normal">
                 Facilitation Zonal
               </th>
-              <th className="px-3 py-2 border text-right">
+              <th className="px-3 py-2 border text-right  font-normal">
                 Facilitation Centre
               </th>
-              <th className="px-3 py-2 border text-right">
+              <th className="px-1 py-1 border text-right  font-normal" >
                 Support Production
               </th>
-              <th className="px-3 py-2 border text-right">
+              <th className="px-1 py-1 border text-right  font-normal">
                 Contribution Centre IGA
               </th>
-              <th className="px-3 py-2 border text-right">
+              <th className="border text-left text-sm  font-normal">
                 Depreciation/Incentive
               </th>
-              <th className="px-3 py-2 border text-right">
+              <th className="px-1 py-1 border text-right  font-normal">
                 Remitted To Centre
               </th>
             </tr>
@@ -595,11 +599,11 @@ export default function DistributionReportPage() {
             {currentRows.length > 0 ? (
               currentRows.map((row, index) => (
                 <tr key={row.id ?? `row-${index}`} className="border-t">
-                  <td className="px-3 py-2">{indexOfFirstRow + index + 1}</td>
-                  <td className="px-3 py-2">
+                  <td className="px-1 py-1">{indexOfFirstRow + index + 1}</td>
+                  <td className="px-1 py-1">
                     {getCourseLabel(row.gfs_code_description)}
                   </td>
-                  <td className="px-3 py-2">
+                  <td className="px-1 py-1">
                     {getDescriptionLabel(row.gfs_code_description)}
                   </td>
                   <td className="px-3 py-2 text-right">
