@@ -2,10 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Swal from "sweetalert2";
+import { toast } from "sonner";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { toast } from "sonner";
-import Swal from "sweetalert2";
 import {
   Breadcrumb,
   BreadcrumbList,
@@ -14,7 +15,7 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
 
-/* ===================== INTERFACES ===================== */
+/* ===================== TYPES ===================== */
 
 interface Zone {
   id: number;
@@ -30,115 +31,101 @@ interface Centre {
   zones: Zone;
 }
 
+/* ===================== CONSTANTS ===================== */
+
+const ROWS_PER_PAGE = 5;
+
 /* ===================== COMPONENT ===================== */
 
 export default function CentresPage() {
   const router = useRouter();
-  const apiUrl =
+
+  const API_URL =
     process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api";
 
+  /* ===================== STATE ===================== */
+
   const [centres, setCentres] = useState<Centre[]>([]);
-  const [zones, setZones] = useState<Zone[]>([]);
   const [search, setSearch] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
-  const [rowsPerPage] = useState(5);
 
-  /* ===================== FETCH DATA ===================== */
+  /* ===================== FETCH CENTRES ===================== */
 
   useEffect(() => {
-    fetchCentres();
-    fetchZones();
+    loadCentres();
   }, []);
 
-  const fetchCentres = async () => {
+  const loadCentres = async () => {
     try {
-      const res = await fetch(`${apiUrl}/centre/get`);
-      if (res.ok) {
-        const data = await res.json();
-        setCentres(data);
-        console.log(data);
-      }
-    } catch {
-      toast("Error loading centres");
-    }
-  };
+      const res = await fetch(`${API_URL}/centre/get`);
+      if (!res.ok) throw new Error();
 
-  const fetchZones = async () => {
-    try {
-      const res = await fetch(`${apiUrl}/zone/get`);
-      if (res.ok) {
-        const data = await res.json();
-        setZones(data);
-        console.log(data);
-      }
+      const data = await res.json();
+      setCentres(data);
     } catch {
-      toast("Error loading zones");
+      toast.error("Failed to load centres");
     }
   };
 
   /* ===================== UPDATE CENTRE ===================== */
 
   const handleEditCentre = async (centre: Centre) => {
-    const zoneOptions = zones
+    const zoneOptions = centres
       .map(
-        (z) =>
-          `<option value="${z.id}" ${
-            z.id === centre.zones?.id ? "selected" : ""
-          }>${z.name}</option>`
+        (c) =>
+          `<option value="${c.zones.id}" ${
+            c.zones.id === centre.zones.id ? "selected" : ""
+          }>
+            ${c.zones.name}
+          </option>`
       )
       .join("");
 
     const result = await Swal.fire({
       title: "Update Centre",
       html: `
-        <input id="name" class="swal2-input" placeholder="Centre Name" value="${centre.name}">
-        <input id="rank" class="swal2-input" placeholder="Rank" value="${centre.rank}">
-        <select id="zone" class="swal2-select">${zoneOptions}</select>
+        <input id="name" class="swal2-input" value="${centre.name}" placeholder="Centre Name" />
+        <input id="rank" class="swal2-input" value="${centre.rank}" placeholder="Rank" />
+        <select id="zone" class="swal2-select">
+          ${zoneOptions}
+        </select>
       `,
-      focusConfirm: false,
       showCancelButton: true,
       confirmButtonText: "Update",
+      focusConfirm: false,
       preConfirm: () => {
-        const name = (
-          document.getElementById("name") as HTMLInputElement
-        ).value;
-        const rank = (
-          document.getElementById("rank") as HTMLInputElement
-        ).value;
-        const zoneId = (
-          document.getElementById("zone") as HTMLSelectElement
-        ).value;
+        const name = (document.getElementById("name") as HTMLInputElement).value;
+        const rank = (document.getElementById("rank") as HTMLInputElement).value;
+        const zoneId = (document.getElementById("zone") as HTMLSelectElement).value;
 
         if (!name || !rank || !zoneId) {
           Swal.showValidationMessage("All fields are required");
-          return null;
+          return;
         }
 
-        return { name, rank, zoneId };
+        return { name, rank, zoneId: Number(zoneId) };
       },
     });
 
     if (!result.isConfirmed || !result.value) return;
 
     try {
-      const res = await fetch(`${apiUrl}/centre/update/${centre.id}`, {
+      const res = await fetch(`${API_URL}/centre/update/${centre.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: result.value.name,
           rank: result.value.rank,
-          zone_id: Number(result.value.zoneId),
+          zone_id: result.value.zoneId,
         }),
       });
 
-      if (res.ok) {
-        toast.success("Centre updated successfully");
-        fetchCentres();
-      } else {
-        toast.error("Failed to update centre");
-      }
+      if (!res.ok) throw new Error();
+
+      toast.success("Centre updated successfully");
+      loadCentres();
     } catch {
-      toast.error("Error updating centre");
+      toast.error("Failed to update centre");
     }
   };
 
@@ -148,22 +135,19 @@ export default function CentresPage() {
     c.name.toLowerCase().includes(search.toLowerCase())
   );
 
-  const totalPages = Math.ceil(filteredCentres.length / rowsPerPage);
-  const startIndex = (currentPage - 1) * rowsPerPage;
+  const totalPages = Math.ceil(filteredCentres.length / ROWS_PER_PAGE);
+  const startIndex = (currentPage - 1) * ROWS_PER_PAGE;
+
   const paginatedCentres = filteredCentres.slice(
     startIndex,
-    startIndex + rowsPerPage
+    startIndex + ROWS_PER_PAGE
   );
-
-  const nextPage = () =>
-    currentPage < totalPages && setCurrentPage((p) => p + 1);
-  const prevPage = () =>
-    currentPage > 1 && setCurrentPage((p) => p - 1);
 
   /* ===================== UI ===================== */
 
   return (
     <div className="space-y-6 p-6">
+      {/* Breadcrumb */}
       <Breadcrumb>
         <BreadcrumbList>
           <BreadcrumbItem>
@@ -201,6 +185,7 @@ export default function CentresPage() {
               <th className="p-3 text-left">Action</th>
             </tr>
           </thead>
+
           <tbody>
             {paginatedCentres.length ? (
               paginatedCentres.map((c, i) => (
@@ -223,7 +208,7 @@ export default function CentresPage() {
             ) : (
               <tr>
                 <td colSpan={5} className="py-6 text-center text-gray-500">
-                  No Centres found
+                  No centres found
                 </td>
               </tr>
             )}
@@ -235,18 +220,24 @@ export default function CentresPage() {
       <div className="flex justify-between items-center">
         <span className="text-sm text-gray-600">
           Showing {startIndex + 1}–
-          {Math.min(startIndex + rowsPerPage, filteredCentres.length)} of{" "}
+          {Math.min(startIndex + ROWS_PER_PAGE, filteredCentres.length)} of{" "}
           {filteredCentres.length}
         </span>
+
         <div className="flex gap-2">
-          <Button size="sm" variant="outline" disabled={currentPage === 1} onClick={prevPage}>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={currentPage === 1}
+            onClick={() => setCurrentPage((p) => p - 1)}
+          >
             Prev
           </Button>
           <Button
             size="sm"
             variant="outline"
             disabled={currentPage === totalPages}
-            onClick={nextPage}
+            onClick={() => setCurrentPage((p) => p + 1)}
           >
             Next
           </Button>

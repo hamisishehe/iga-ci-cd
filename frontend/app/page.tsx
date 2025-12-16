@@ -70,6 +70,7 @@ export default function LoginPage() {
 
         if (data.role === "ADMIN") {
           router.push("/user/admin/dashboard");
+          
         } else {
           router.push("/user/pages/dashboard");
         }

@@ -95,6 +95,8 @@ interface Summary {
 
 export default function DashboardPage() {
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api";
+
+  const CENTER_RESTRICTED_ROLES = ["CHIEF_ACCOUNTANT", "ACCOUNTANT"];
   const [loading, setLoading] = useState(true);
   const [role, setRole] = useState<string>("");
   const [userCentre, setUserCentre] = useState<string>("");
@@ -204,10 +206,9 @@ const fetchData = useCallback(async () => {
 
     // Step 1: Role-based filtering (CHIEF_ACCOUNTANT sees only their center)
    // Step 1: Role-based filtering
-let filteredData: Payment[] =
-  storedRole === "CHIEF_ACCOUNTANT"
-    ? mappedData.filter((p) => p.center === storedCentre)
-    : mappedData;
+let filteredData: Payment[] = CENTER_RESTRICTED_ROLES.includes(storedRole)
+  ? mappedData.filter((p) => p.center === storedCentre)
+  : mappedData;
 
 // Step 2: Date filtering (Today / Yesterday / Month)
 filteredData = filterByDate(filteredData, filterType);

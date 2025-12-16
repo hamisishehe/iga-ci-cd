@@ -59,17 +59,35 @@ interface UserResponse {
   centreId: number;
   departmentId: number;
 
-  // sometimes backend returns nested:
   centres?: { id: number; name: string };
   departments?: { id: number; name: string };
 }
 
+const FINANCE_ROLES: Role[] = ["ACCOUNTANT", "CHIEF_ACCOUNTANT"];
+const ALL_ROLES: Role[] = [
+  "ADMIN",
+  "MANAGER",
+  "CASHIER",
+  "STAFF",
+  "DG",
+  "DF",
+  "RFM",
+  "CHIEF_ACCOUNTANT",
+  "ACCOUNTANT",
+];
+
+// get current logged-in userType from localStorage
+const getAuthScope = (): UserType => {
+  return (localStorage.getItem("userType") as UserType) || "CENTRE";
+};
+
 export default function EditUserPage() {
-  const [error, setError] = useState("");
   const router = useRouter();
   const { id } = useParams();
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api";
+  const userTypeScope = getAuthScope();
 
+  const [error, setError] = useState("");
   const [form, setForm] = useState<UserResponse>({
     id: 0,
     firstName: "",
@@ -78,8 +96,8 @@ export default function EditUserPage() {
     userName: "",
     email: "",
     phoneNumber: "",
-    role: "STAFF",
-    userType: "CENTRE",
+    role: "ACCOUNTANT",
+    userType: userTypeScope, // default based on logged-in user
     status: "ACTIVE",
     centreId: 0,
     departmentId: 0,
@@ -88,6 +106,9 @@ export default function EditUserPage() {
   const [centres, setCentres] = useState<Centre[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // allowed roles based on current user scope
+  const allowedRoles = userTypeScope === "HQ" ? ALL_ROLES : FINANCE_ROLES;
 
   useEffect(() => {
     fetchCentres();
@@ -98,20 +119,14 @@ export default function EditUserPage() {
   const fetchUserById = async () => {
     try {
       const res = await fetch(`${apiUrl}/users/get/${id}`);
-
-      if (!res.ok) {
-        toast("Failed to load user");
-        return;
-      }
-
+      if (!res.ok) return toast("Failed to load user");
       const data: UserResponse = await res.json();
-
-      console.log("USER FETCHED:", data);
 
       setForm({
         ...data,
         centreId: data.centreId || data.centres?.id || 0,
         departmentId: data.departmentId || data.departments?.id || 0,
+        userType: userTypeScope !== "HQ" ? userTypeScope : data.userType,
       });
     } catch {
       toast("Error fetching user");
@@ -142,9 +157,9 @@ export default function EditUserPage() {
     e.preventDefault();
 
     if (!form.departmentId) {
-    setError("Department is required");
-    return;
-  }
+      setError("Department is required");
+      return;
+    }
 
     const payload = {
       firstName: form.firstName,
@@ -166,25 +181,19 @@ export default function EditUserPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-
       if (res.ok) {
         toast("User updated successfully");
         router.push("/user/admin/users");
-      } else {
-        toast("Failed to update user");
-      }
+      } else toast("Failed to update user");
     } catch {
       toast("Error updating user");
     }
   };
 
-  if (loading) {
-    return <div className="p-6 text-center">Loading user data...</div>;
-  }
+  if (loading) return <div className="p-6 text-center">Loading user data...</div>;
 
   return (
     <div className="w-full mx-auto p-8 space-y-6">
-      {/* Breadcrumb */}
       <Breadcrumb className="mb-6">
         <BreadcrumbList>
           <BreadcrumbItem>
@@ -211,23 +220,17 @@ export default function EditUserPage() {
               <Input
                 placeholder="First Name"
                 value={form.firstName}
-                onChange={(e) =>
-                  setForm({ ...form, firstName: e.target.value })
-                }
+                onChange={(e) => setForm({ ...form, firstName: e.target.value })}
               />
               <Input
                 placeholder="Middle Name"
                 value={form.middleName}
-                onChange={(e) =>
-                  setForm({ ...form, middleName: e.target.value })
-                }
+                onChange={(e) => setForm({ ...form, middleName: e.target.value })}
               />
               <Input
                 placeholder="Last Name"
                 value={form.lastName}
-                onChange={(e) =>
-                  setForm({ ...form, lastName: e.target.value })
-                }
+                onChange={(e) => setForm({ ...form, lastName: e.target.value })}
               />
             </div>
 
@@ -236,17 +239,13 @@ export default function EditUserPage() {
               <Input
                 placeholder="Username"
                 value={form.userName}
-                onChange={(e) =>
-                  setForm({ ...form, userName: e.target.value })
-                }
+                onChange={(e) => setForm({ ...form, userName: e.target.value })}
               />
               <Input
                 placeholder="Email"
                 type="email"
                 value={form.email}
-                onChange={(e) =>
-                  setForm({ ...form, email: e.target.value })
-                }
+                onChange={(e) => setForm({ ...form, email: e.target.value })}
               />
             </div>
 
@@ -254,18 +253,14 @@ export default function EditUserPage() {
             <Input
               placeholder="Phone Number"
               value={form.phoneNumber}
-              onChange={(e) =>
-                setForm({ ...form, phoneNumber: e.target.value })
-              }
+              onChange={(e) => setForm({ ...form, phoneNumber: e.target.value })}
             />
 
             {/* Centre + Department */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <Select
                 value={String(form.centreId)}
-                onValueChange={(v) =>
-                  setForm({ ...form, centreId: Number(v) })
-                }
+                onValueChange={(v) => setForm({ ...form, centreId: Number(v) })}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select Centre" />
@@ -279,32 +274,25 @@ export default function EditUserPage() {
                 </SelectContent>
               </Select>
 
-             <Select
-  value={form.departmentId ? String(form.departmentId) : ""}
-  onValueChange={(v) => {
-    setForm({ ...form, departmentId: Number(v) });
-    setError(""); // clear error when selected
-  }}
->
-  <SelectTrigger
-    className={error ? "border-red-500 focus:ring-red-500" : ""}
-  >
-    <SelectValue placeholder="Select Department" />
-  </SelectTrigger>
-
-  <SelectContent>
-    {departments.map((d) => (
-      <SelectItem key={d.id} value={String(d.id)}>
-        {d.name}
-      </SelectItem>
-    ))}
-  </SelectContent>
-</Select>
-
-{error && (
-  <p className="text-sm text-red-500 mt-1">{error}</p>
-)}
-
+              <Select
+                value={form.departmentId ? String(form.departmentId) : ""}
+                onValueChange={(v) => {
+                  setForm({ ...form, departmentId: Number(v) });
+                  setError("");
+                }}
+              >
+                <SelectTrigger className={error ? "border-red-500 focus:ring-red-500" : ""}>
+                  <SelectValue placeholder="Select Department" />
+                </SelectTrigger>
+                <SelectContent>
+                  {departments.map((d) => (
+                    <SelectItem key={d.id} value={String(d.id)}>
+                      {d.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {error && <p className="text-sm text-red-500 mt-1">{error}</p>}
             </div>
 
             {/* Role / Type / Status */}
@@ -312,22 +300,13 @@ export default function EditUserPage() {
               <Select
                 value={form.role}
                 onValueChange={(v: Role) => setForm({ ...form, role: v })}
+                disabled={userTypeScope !== "HQ"}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select Role" />
                 </SelectTrigger>
                 <SelectContent>
-                  {[
-                    "ADMIN",
-                    "MANAGER",
-                    "CASHIER",
-                    "STAFF",
-                    "DG",
-                    "DF",
-                    "RFM",
-                    "CHIEF_ACCOUNTANT",
-                    "ACCOUNTANT",
-                  ].map((r) => (
+                  {allowedRoles.map((r) => (
                     <SelectItem key={r} value={r}>
                       {r}
                     </SelectItem>
@@ -335,25 +314,31 @@ export default function EditUserPage() {
                 </SelectContent>
               </Select>
 
-              <Select
-                value={form.userType}
-                onValueChange={(v: UserType) => setForm({ ...form, userType: v })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select User Type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="CENTRE">CENTRE</SelectItem>
-                  <SelectItem value="ZONE">ZONE</SelectItem>
-                  <SelectItem value="HQ">HQ</SelectItem>
-                </SelectContent>
-              </Select>
+              {userTypeScope === "HQ" ? (
+                <Select
+                  value={form.userType}
+                  onValueChange={(v: UserType) => setForm({ ...form, userType: v })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select User Type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="CENTRE">CENTRE</SelectItem>
+                    <SelectItem value="ZONE">ZONE</SelectItem>
+                    <SelectItem value="HQ">HQ</SelectItem>
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Input
+                  value={form.userType}
+                  disabled
+                  className="bg-gray-100 cursor-not-allowed"
+                />
+              )}
 
               <Select
                 value={form.status}
-                onValueChange={(v: Status) =>
-                  setForm({ ...form, status: v })
-                }
+                onValueChange={(v: Status) => setForm({ ...form, status: v })}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select Status" />

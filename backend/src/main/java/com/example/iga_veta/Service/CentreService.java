@@ -47,26 +47,31 @@ public class CentreService {
     }
 
 
-    public String updateCentre(Centre centre){
+    public String updateCentre(Long centreId, Centre updatedCentre, Long zoneId) {
 
-       Centre centre1 = centreRepository.findById(centre.getId()).orElseThrow();
+        Centre centre = centreRepository.findById(centreId)
+                .orElseThrow(() -> new RuntimeException("Centre not found"));
 
-       if (centre1 != null){
-           if (centre.getName() != null){
-               centre1.setName(centre.getName());
-           }
-           if (centre.getCode() != null){
-               centre1.setCode(centre.getCode());
-           }
-           if (centre.getRank() != null){
-               centre1.setRank(centre.getRank());
-           }
+        if (updatedCentre.getName() != null) {
+            centre.setName(updatedCentre.getName());
+        }
 
-           centreRepository.save(centre1);
-           return "Centre updated";
-       }
+        if (updatedCentre.getCode() != null) {
+            centre.setCode(updatedCentre.getCode());
+        }
 
-       return "Centre not found";
+        if (updatedCentre.getRank() != null) {
+            centre.setRank(updatedCentre.getRank());
+        }
 
+        if (zoneId != null) {
+            Zone zone = zoneRepository.findById(zoneId)
+                    .orElseThrow(() -> new RuntimeException("Zone not found"));
+            centre.setZones(zone);
+        }
+
+        centreRepository.save(centre);
+        return "Centre updated successfully";
     }
+
 }

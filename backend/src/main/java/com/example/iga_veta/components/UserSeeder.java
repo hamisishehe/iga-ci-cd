@@ -1,4 +1,4 @@
-package com.example.iga_veta.Components;
+package com.example.iga_veta.components;
 
 import com.example.iga_veta.Model.*;
 import com.example.iga_veta.Repository.CentreRepository;
@@ -36,7 +36,8 @@ public class UserSeeder implements CommandLineRunner {
             List<Centre> centres = centreRepository.findAll();
             List<Department> departments = departmentRepository.findAll();
 
-            // Create User from seeder class
+            // Create User seeder class
+            //app
             User admin = new User();
             admin.setFirstName("hamis");
             admin.setMiddleName("S.");

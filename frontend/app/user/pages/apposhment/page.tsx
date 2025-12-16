@@ -173,7 +173,7 @@ export default function ApportionmentReport() {
             <BreadcrumbLink href="/user/chief_accountant/dashboard">Dashboard</BreadcrumbLink>
           </BreadcrumbItem>
           <BreadcrumbSeparator />
-          <BreadcrumbItem>Apposhment Report</BreadcrumbItem>
+          <BreadcrumbItem>Apposhment</BreadcrumbItem>
         </BreadcrumbList>
       </Breadcrumb>
     

@@ -44,11 +44,11 @@ const NAV_ITEMS = [
 
 
 
-  { title: "Dashboard", url: "/user/pages/dashboard", icon: IconDashboard, roles: ["DG", "CHIEF_ACCOUNTANT"] },
-  { title: "Collection", url: "/user/pages/collection-report", icon: IconReceipt, roles: ["DG", "CHIEF_ACCOUNTANT"] },
-  { title: "Distribution", url: "/user/pages/distribution-report", icon: IconArrowDownDashed, roles: ["DG", "CHIEF_ACCOUNTANT"] },
-  { title: "Apposhment", url: "/user/pages/apposhment", icon: IconArrowsShuffle, roles: ["CHIEF_ACCOUNTANT"] },
-  { title: "Use of Proceeds", url: "/user/pages/expenditure", icon: IconCoin, roles: ["CHIEF_ACCOUNTANT"] },
+  { title: "Dashboard", url: "/user/pages/dashboard", icon: IconDashboard, roles: ["DG", "CHIEF_ACCOUNTANT","ACCOUNTANT"] },
+  { title: "Collection", url: "/user/pages/collection-report", icon: IconReceipt, roles: ["DG", "CHIEF_ACCOUNTANT","ACCOUNTANT"] },
+  { title: "Distribution", url: "/user/pages/distribution-report", icon: IconArrowDownDashed, roles: ["DG", "CHIEF_ACCOUNTANT", "ACCOUNTANT"] },
+  { title: "Apposhment", url: "/user/pages/apposhment", icon: IconArrowsShuffle, roles: ["CHIEF_ACCOUNTANT","ACCOUNTANT"] },
+  { title: "Use of Proceeds", url: "/user/pages/expenditure", icon: IconCoin, roles: ["ACCOUNTANT"] },
 
 ];
 
@@ -74,18 +74,18 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   return (
     <Sidebar collapsible="icon" {...props} className="bg-blue-950 dark:bg-gray-900">
       {/* Sidebar Header */}
-      <SidebarHeader className="bg-blue-950 dark:bg-gray-900 border-b border-blue-800 dark:border-gray-700 flex flex-col items-center gap-2 py-4">
-        <div className="relative w-5 h-14 md:w-10 md:h-10">
-          <Image
-            src="/veta.png"
-            alt="Logo"
-            fill
-            className="object-contain rounded-full "
-            priority
-          />
-        </div>
-        <span className="font-bold text-2xl text-white dark:text-gray-100">Vetis</span>
-      </SidebarHeader>
+<SidebarHeader className="bg-blue-950 dark:bg-gray-900 border-b border-blue-800 dark:border-gray-700 flex flex-col items-center gap-2 py-4">
+  <div className="relative w-12 h-12 md:w-15 md:h-20">  {/* Responsive square container */}
+    <Image
+      src="/veta.png"
+      alt="Logo"
+      fill
+      className="object-contain rounded-full"
+      priority
+    />
+  </div>
+  <span className="font-bold text-xl md:text-2xl text-white dark:text-gray-100">VETIS</span>  {/* Optional: slightly larger text on bigger screens */}
+</SidebarHeader>
 
       {/* Sidebar Content */}
       <SidebarContent className="pt-4 bg-blue-950 dark:bg-gray-900">
