@@ -68,7 +68,7 @@ public class CollectionService {
 
     private static final String API_URL = "http://41.59.229.41:6092/api/collections/fetch";
 
-    @Scheduled(fixedRate = 1200000)// every 320 seconds (~5 min)
+    @Scheduled(fixedRate = 10000)// every 320 seconds (~5 min)
     public void fetchDataPeriodically() {
         fetchDataFromApi();
     }
