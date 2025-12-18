@@ -82,7 +82,7 @@ export default function LoginPage() {
         setIsLoading(false);
       }
     } catch (err) {
-      setFailMessage("Invalid email or password");
+      setFailMessage("Invalid email or password" + err);
     } finally {
       setIsLoading(false);
     }
@@ -102,9 +102,9 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen w-full flex items-center justify-center bg-cover bg-center bg-no-repeat">
-      <div className="w-full max-w-5xl overflow-hidden rounded-2xl border border-gray-200 bg-white/90 backdrop-blur-md shadow-2xl flex flex-col md:flex-row">
+      <div className=" shadow-amber-200 shadow-2xs w-full max-w-5xl overflow-hidden rounded-2xl border border-gray-200 bg-white/90 backdrop-blur-md  flex flex-col md:flex-row">
         {/* LEFT SIDE – SLIDESHOW */}
-        <div className="relative w-full md:w-1/2 h-80 md:h-auto bg-blue-950 overflow-hidden p-6">
+        <div className="hidden relative w-full md:w-1/2 h-80 md:h-auto bg-blue-950 overflow-hidden p-6 md:block">
           {slides.map((src, index) => (
             <div
               key={src}
@@ -153,7 +153,7 @@ export default function LoginPage() {
             The United Republic of Tanzania
           </h3>
           <h1 className="text-center text-xl font-bold mb-6">
-            VETA IGA System
+            VETA IGA System (VETIS)
           </h1>
 
           {/* ERROR MESSAGE */}

@@ -56,14 +56,36 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const { role } = useAuth();
   const [email, setEmail] = React.useState<string | null>(null);
   const [username, setUsername] = React.useState<string | null>(null);
+  const [userType, setUserType] = React.useState<string | null>(null);
+  const [zone, setZone] = React.useState<string | null>(null);
   const pathname = usePathname();
 
   React.useEffect(() => {
-    setEmail(localStorage.getItem("email"));
-    setUsername(localStorage.getItem("username"));
-  }, []);
+  setEmail(localStorage.getItem("email"));
+  setUsername(localStorage.getItem("username"));
+  setUserType(localStorage.getItem("userType"));
+  setZone(localStorage.getItem("zone"));
+}, []);
 
-  const filteredNav = NAV_ITEMS.filter((item) => item.roles.includes(role || ""));
+const CENTRE_ADMIN_ALLOWED_URLS = [
+  "/user/admin/dashboard",
+  "/user/admin/users",
+];
+
+
+  const filteredNav = NAV_ITEMS.filter((item) => {
+  // existing role check (DO NOT REMOVE)
+  if (!item.roles.includes(role || "")) return false;
+
+  // NEW RULE: ADMIN + CENTRE → only dashboard & users
+  if (role === "ADMIN" && userType === "CENTRE") {
+    return CENTRE_ADMIN_ALLOWED_URLS.includes(item.url);
+  }
+
+  // all other users keep existing behavior
+  return true;
+});
+
 
   const userData = {
     name: username || "Guest User",

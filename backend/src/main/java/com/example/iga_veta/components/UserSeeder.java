@@ -47,7 +47,7 @@ public class UserSeeder implements CommandLineRunner {
             admin.setPhoneNumber("1234567890");
             admin.setPassword(passwordEncoder.encode("password123"));
             admin.setRole(User.Role.ADMIN);
-            admin.setUserType(User.UserType.CENTRE);
+            admin.setUserType(User.UserType.HQ);
             admin.setStatus(User.Status.ACTIVE);
             admin.setCentres(centres.get(0));
             admin.setDepartments(departments.get(0));
