@@ -68,7 +68,7 @@ public class CollectionService {
 
     private static final String API_URL = "http://41.59.229.41:6092/api/collections/fetch";
 
-    @Scheduled(fixedRate = 50000)// every 320 seconds (~5 min)
+    @Scheduled(fixedRate = 10000)// every 320 seconds (~5 min)
     public void fetchDataPeriodically() {
         fetchDataFromApi();
     }
@@ -114,6 +114,11 @@ public class CollectionService {
 
         // Extract collections
         List<Map<String, Object>> collections = (List<Map<String, Object>>) responseMap.get("collections");
+
+        if (!apiLastFetchedDate.isAfter(lastFetchedDateFromDb)) {
+            System.out.println("No newer data than last fetched date.");
+            return;
+        }
 
         // Track API items
         int apiItemsCount = collections.size();
@@ -200,14 +205,14 @@ public class CollectionService {
                     });
 
             // Adjustments
-            if (controlNumber != null && gfsCode.getCode().equals("142202540053")
-                    && amount.compareTo(new BigDecimal("5000")) >= 0) {
-                amount = new BigDecimal("5000");
-            }
-            if (controlNumber != null && gfsCode.getCode().equals("142301600001")
-                    && amount.compareTo(new BigDecimal("5000")) >= 0) {
-                amount = amount.subtract(new BigDecimal("5000"));
-            }
+//            if (controlNumber != null && gfsCode.getCode().equals("142202540053")
+//                    && amount.compareTo(new BigDecimal("5000")) >= 0) {
+//                amount = new BigDecimal("5000");
+//            }
+//            if (controlNumber != null && gfsCode.getCode().equals("142301600001")
+//                    && amount.compareTo(new BigDecimal("5000")) >= 0) {
+//                amount = amount.subtract(new BigDecimal("5000"));
+//            }
 
 
             // 4️⃣ Save Collection (always, even if duplicate)
