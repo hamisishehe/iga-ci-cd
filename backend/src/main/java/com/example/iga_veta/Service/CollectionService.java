@@ -205,14 +205,14 @@ public class CollectionService {
                     });
 
             // Adjustments
-//            if (controlNumber != null && gfsCode.getCode().equals("142202540053")
-//                    && amount.compareTo(new BigDecimal("5000")) >= 0) {
-//                amount = new BigDecimal("5000");
-//            }
-//            if (controlNumber != null && gfsCode.getCode().equals("142301600001")
-//                    && amount.compareTo(new BigDecimal("5000")) >= 0) {
-//                amount = amount.subtract(new BigDecimal("5000"));
-//            }
+            if (controlNumber != null && gfsCode.getCode().equals("142202540053")
+                    && amount.compareTo(new BigDecimal("5000")) >= 0) {
+                amount = new BigDecimal("5000");
+            }
+            if (controlNumber != null && gfsCode.getCode().equals("142301600001")
+                    && amount.compareTo(new BigDecimal("5000")) >= 0) {
+                amount = amount.subtract(new BigDecimal("5000"));
+            }
 
 
             // 4️⃣ Save Collection (always, even if duplicate)

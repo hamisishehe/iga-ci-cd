@@ -41,6 +41,7 @@ public class JwtService {
         return extractClaim(token, Claims::getSubject);
     }
 
+
     public String getRoleFromToken(String token) {
         return (String) getAllClaimsFromToken(token).get("role");
     }

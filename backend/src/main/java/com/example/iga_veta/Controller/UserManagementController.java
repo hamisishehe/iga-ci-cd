@@ -1,7 +1,9 @@
 package com.example.iga_veta.Controller;
 
 
+import com.example.iga_veta.Model.ApiUsage;
 import com.example.iga_veta.Model.User;
+import com.example.iga_veta.Repository.ApiUsageRepository;
 import com.example.iga_veta.Repository.UserRepository;
 import com.example.iga_veta.Service.JwtService;
 import com.example.iga_veta.Service.UserService;
@@ -12,6 +14,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -29,19 +32,26 @@ public class UserManagementController {
     @Autowired
     private JwtService jwtService;
 
+    @Autowired
+    private ApiUsageRepository apiUsageRepository;
+
+
     @GetMapping("/get")
     public List<User> getUsers() {
+        trackUsage("/get_all", "GET");
         return userService.getAllUsers();
     }
 
     @GetMapping("/get/{id}")
     public User getUser(@PathVariable Long id){
+        trackUsage("/get_all-id", "GET");
         return userService.getUserById(id);
     }
 
 
     @GetMapping("/get-by-centre-and-departments")
     public List<User> getUsersForCurrentUser() {
+        trackUsage("/get_all-by_centre", "GET");
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         String email = auth.getName();
 
@@ -53,6 +63,7 @@ public class UserManagementController {
 
     @PostMapping("/save")
     public String addUser(@RequestBody Map<String, String> body) {
+        trackUsage("/create_user", "GET");
         try {
             String firstName = body.getOrDefault("firstName", "");
             String middleName = body.getOrDefault("middleName", "");
@@ -84,6 +95,7 @@ public class UserManagementController {
     public ResponseEntity<String> updateUser(
             @PathVariable Long userId,
             @RequestBody Map<String, String> body) {
+        trackUsage("/update_user_details", "GET");
 
             System.out.println("=====================>");
             System.out.println(body);
@@ -125,6 +137,7 @@ public class UserManagementController {
 
     @PostMapping("/change-password")
     public String changePassword(@RequestBody  Map<String, String> Payload) {
+        trackUsage("/change_user_password", "GET");
         Long userId = Long.valueOf(Payload.get("userId"));
         String oldPassword = Payload.get("oldPassword");
         String newPassword = Payload.get("newPassword");
@@ -140,6 +153,7 @@ public class UserManagementController {
 
     @PutMapping("/reset-password/{id}")
     public String resetPassword(@PathVariable Long id) {
+        trackUsage("/reset_user_password", "GET");
         return userService.resetPassword(id);
     }
 
@@ -148,16 +162,19 @@ public class UserManagementController {
             @RequestParam Long userId,
             @RequestParam User.Role newRole
     ) {
+        trackUsage("/change_role", "GET");
         return userService.changeUserRole(userId, newRole);
     }
 
     @DeleteMapping("/delete/{userId}")
     public String deleteUser(@PathVariable Long userId) {
+        trackUsage("/delete_user", "GET");
         return userService.deleteUser(userId);
     }
 
     @GetMapping("/profile")
     public ResponseEntity<Optional<User>> getUserProfile(@RequestHeader("Authorization") String token) {
+        trackUsage("/get_all_profile", "GET");
         // Extract the token from the "Bearer <token>" format
         String jwt = token.substring(7);
 
@@ -169,6 +186,24 @@ public class UserManagementController {
 
         // Return the user profile
         return ResponseEntity.ok(user);
+    }
+
+    private void trackUsage(String endpoint, String method) {
+
+        try {
+            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+            String username = (auth != null && auth.isAuthenticated()) ? auth.getName() : "anonymous";
+
+            ApiUsage usage = new ApiUsage();
+            usage.setUsername(username);
+            usage.setEndpoint("/User management" + endpoint);
+            usage.setMethod(method);
+            usage.setTimestamp(LocalDateTime.now());
+
+            apiUsageRepository.save(usage);
+        } catch (Exception e) {
+            e.printStackTrace(); // Logging failure should not break the request
+        }
     }
 
 }

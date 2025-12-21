@@ -9,7 +9,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/api/auth")
+@RequestMapping("/auth")
 public class AuthController {
 
 
@@ -19,6 +19,7 @@ public class AuthController {
     @PostMapping("/login")
     public Map<String, String> loginUser(@RequestBody Map<String, String> loginDetails,
                                          HttpServletRequest request) {
+
 
         String email = loginDetails.get("email");
         String password = loginDetails.get("password");
