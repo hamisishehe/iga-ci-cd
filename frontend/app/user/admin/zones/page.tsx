@@ -33,7 +33,23 @@ export default function CentresPage() {
 
   const fetchZones = async () => {
     try {
-      const res = await fetch(`${apiUrl}/zone/get`);
+
+        const token = localStorage.getItem("authToken");
+        const apiKey = process.env.NEXT_PUBLIC_API_KEY;
+    
+        if (!token || !apiKey) {
+          toast("Missing authentication credentials");
+          return;
+        }
+        
+      const res = await fetch(`${apiUrl}/zone/get`, {
+        method: "GET",
+         headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`, 
+        "X-API-KEY": apiKey,              
+      },
+      });
    
       if (res.ok) {
         const data = await res.json();

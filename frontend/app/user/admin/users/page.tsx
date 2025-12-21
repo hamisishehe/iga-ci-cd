@@ -118,7 +118,22 @@ export default function UsersPage() {
 
   const fetchUsers = async () => {
     try {
-      const res = await fetch(`${apiUrl}/users/get`);
+    const token = localStorage.getItem("authToken");
+    const apiKey = process.env.NEXT_PUBLIC_API_KEY;
+
+    if (!token || !apiKey) {
+      toast("Missing authentication credentials");
+      return;
+    }
+
+      const res = await fetch(`${apiUrl}/users/get`, {
+        method: "GET",
+        headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`, 
+        "X-API-KEY": apiKey,              
+      },
+      });
       if (!res.ok) throw new Error();
       const data: User[] = await res.json();
       setUsers(filterUsersByScope(data));
@@ -129,7 +144,22 @@ export default function UsersPage() {
 
   const fetchCentres = async () => {
     try {
-      const res = await fetch(`${apiUrl}/centre/get`);
+    const token = localStorage.getItem("authToken");
+    const apiKey = process.env.NEXT_PUBLIC_API_KEY;
+
+    if (!token || !apiKey) {
+      toast("Missing authentication credentials");
+      return;
+    }
+
+      const res = await fetch(`${apiUrl}/centre/get`, {
+        method: "GET",
+        headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`, 
+        "X-API-KEY": apiKey,              
+      },
+      });
       if (!res.ok) throw new Error();
       const data: Centre[] = await res.json();
       setCentres(filterCentresByScope(data));

@@ -24,7 +24,7 @@ export default function LoginPage() {
     setIsLoading(true);
 
     const apiUrl =
-      process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api";
+      process.env.NEXT_AUTH_URL || "http://localhost:8080/auth";
 
     const sanitizedEmail = email.trim();
     const sanitizedPassword = password.trim();
@@ -47,14 +47,27 @@ export default function LoginPage() {
     }
 
     try {
-      const response = await fetch(`${apiUrl}/auth/login`, {
+      const apiKey = process.env.NEXT_PUBLIC_API_KEY;
+
+      if (!apiKey) {
+        throw new Error("API key is missing in environment variables");
+      }
+
+      const response = await fetch(`${apiUrl}/login`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: safeEmail, password: safePassword }),
+        headers: {
+          "Content-Type": "application/json",
+          "X-API-KEY": apiKey,
+        },
+        body: JSON.stringify({
+          email: safeEmail,
+          password: safePassword,
+        }),
       });
 
       if (response.ok) {
         const data = await response.json();
+
         login(
           data.token,
           data.role,
@@ -66,23 +79,18 @@ export default function LoginPage() {
           data.userId
         );
 
-        console.log("Login successful:", data);
-
         if (data.role === "ADMIN") {
           router.push("/user/admin/dashboard");
-          
         } else {
           router.push("/user/pages/dashboard");
         }
-
-        setIsLoading(false);
       } else {
         const errorData = await response.json();
         setFailMessage(errorData.message || "Invalid email or password");
-        setIsLoading(false);
       }
     } catch (err) {
-      setFailMessage("Invalid email or password" + err);
+      console.error(err);
+      setFailMessage("Login failed");
     } finally {
       setIsLoading(false);
     }
@@ -123,16 +131,15 @@ export default function LoginPage() {
           ))}
 
           <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2 z-10">
-  {slides.map((_, i) => (
-    <span
-      key={i}
-      className={`w-2 h-2 rounded-full ${
-        i === currentSlide ? "bg-white" : "bg-white/50"
-      }`}
-    />
-  ))}
-</div>
-
+            {slides.map((_, i) => (
+              <span
+                key={i}
+                className={`w-2 h-2 rounded-full ${
+                  i === currentSlide ? "bg-white" : "bg-white/50"
+                }`}
+              />
+            ))}
+          </div>
         </div>
 
         {/* RIGHT SIDE – LOGIN FORM */}

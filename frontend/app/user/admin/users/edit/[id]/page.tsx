@@ -118,7 +118,25 @@ export default function EditUserPage() {
 
   const fetchUserById = async () => {
     try {
-      const res = await fetch(`${apiUrl}/users/get/${id}`);
+
+
+         const token = localStorage.getItem("authToken");
+    const apiKey = process.env.NEXT_PUBLIC_API_KEY;
+
+    if (!token || !apiKey) {
+      toast("Missing authentication credentials");
+      return;
+    }
+
+
+      const res = await fetch(`${apiUrl}/users/get/${id}`, {
+        method: "GET",
+            headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`, 
+        "X-API-KEY": apiKey,              
+      },
+      });
       if (!res.ok) return toast("Failed to load user");
       const data: UserResponse = await res.json();
 
@@ -137,7 +155,23 @@ export default function EditUserPage() {
 
   const fetchCentres = async () => {
     try {
-      const res = await fetch(`${apiUrl}/centre/get`);
+
+      
+         const token = localStorage.getItem("authToken");
+    const apiKey = process.env.NEXT_PUBLIC_API_KEY;
+
+    if (!token || !apiKey) {
+      toast("Missing authentication credentials");
+      return;
+    }
+
+      const res = await fetch(`${apiUrl}/centre/get`, {
+             headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`, 
+        "X-API-KEY": apiKey,              
+      },
+      });
       if (res.ok) setCentres(await res.json());
     } catch {
       toast("Error loading centres");
@@ -146,7 +180,23 @@ export default function EditUserPage() {
 
   const fetchDepartments = async () => {
     try {
-      const res = await fetch(`${apiUrl}/department/get`);
+
+           const token = localStorage.getItem("authToken");
+    const apiKey = process.env.NEXT_PUBLIC_API_KEY;
+
+    if (!token || !apiKey) {
+      toast("Missing authentication credentials");
+      return;
+    }
+
+      const res = await fetch(`${apiUrl}/department/get`, {
+        method: "GET",
+             headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`, 
+        "X-API-KEY": apiKey,              
+      },
+      });
       if (res.ok) setDepartments(await res.json());
     } catch {
       toast("Error loading departments");
@@ -176,9 +226,23 @@ export default function EditUserPage() {
     };
 
     try {
+
+           const token = localStorage.getItem("authToken");
+    const apiKey = process.env.NEXT_PUBLIC_API_KEY;
+
+    if (!token || !apiKey) {
+      toast("Missing authentication credentials");
+      return;
+    }
+
+
       const res = await fetch(`${apiUrl}/users/update/${id}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+             headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`, 
+        "X-API-KEY": apiKey,              
+      },
         body: JSON.stringify(payload),
       });
       if (res.ok) {

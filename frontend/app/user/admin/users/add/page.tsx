@@ -124,7 +124,22 @@ export default function AddUserPage() {
 
   const fetchCentres = async () => {
     try {
-      const res = await fetch(`${apiUrl}/centre/get`);
+
+    const token = localStorage.getItem("authToken");
+    const apiKey = process.env.NEXT_PUBLIC_API_KEY;
+
+    if (!token || !apiKey) {
+      toast("Missing authentication credentials");
+      return;
+    }
+
+      const res = await fetch(`${apiUrl}/centre/get`, {
+        headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`, 
+        "X-API-KEY": apiKey,              
+      },
+      });
       setCentres(await res.json());
     } catch {
       toast("Error loading centres");
@@ -133,7 +148,24 @@ export default function AddUserPage() {
 
   const fetchDepartments = async () => {
     try {
-      const res = await fetch(`${apiUrl}/department/get`);
+
+       const token = localStorage.getItem("authToken");
+    const apiKey = process.env.NEXT_PUBLIC_API_KEY;
+
+    if (!token || !apiKey) {
+      toast("Missing authentication credentials");
+      return;
+    }
+
+
+      const res = await fetch(`${apiUrl}/department/get`, {
+        method: "GET",
+        headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`, 
+        "X-API-KEY": apiKey,              
+      },
+      });
       setDepartments(await res.json());
     } catch {
       toast("Error loading departments");
@@ -159,9 +191,22 @@ export default function AddUserPage() {
     setLoading(true);
 
     try {
+       const token = localStorage.getItem("authToken");
+    const apiKey = process.env.NEXT_PUBLIC_API_KEY;
+
+    if (!token || !apiKey) {
+      toast("Missing authentication credentials");
+      return;
+    }
+
+
       const res = await fetch(`${apiUrl}/users/save`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`, 
+        "X-API-KEY": apiKey,              
+      },
         body: JSON.stringify(form),
       });
 
@@ -238,6 +283,30 @@ export default function AddUserPage() {
                 ))}
               </SelectContent>
             </Select>
+
+                    {/* User Type */}
+            <div className="flex flex-row">
+
+              <h1 className=" py-1 px-3 text-black">User Type : </h1>
+            <Select
+              onValueChange={(v) =>
+                handleSelect("userType", v as UserForm["userType"])
+              }
+              value={form.userType}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select User Type" />
+              </SelectTrigger>
+              <SelectContent>
+                {USER_TYPES.map((u) => (
+                  <SelectItem key={u} value={u}>
+                    {u}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            </div>
+
 
             {/* STATUS */}
             <Select value={form.status} onValueChange={(v) => handleSelect("status", v as any)}>

@@ -78,7 +78,7 @@ const CENTRE_ADMIN_ALLOWED_URLS = [
   if (!item.roles.includes(role || "")) return false;
 
   // NEW RULE: ADMIN + CENTRE → only dashboard & users
-  if (role === "ADMIN" && userType === "CENTRE") {
+  if (role === "ADMIN" && (userType === "CENTRE" || userType === "ZONE")) {
     return CENTRE_ADMIN_ALLOWED_URLS.includes(item.url);
   }
 
@@ -101,8 +101,9 @@ const CENTRE_ADMIN_ALLOWED_URLS = [
     <Image
       src="/veta.png"
       alt="Logo"
-      fill
-      className="object-contain rounded-full"
+      height={60}
+      width={60}
+      className="object-fill rounded-full"
       priority
     />
   </div>

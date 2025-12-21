@@ -22,6 +22,7 @@ import {
 import { FileSpreadsheet } from "lucide-react";
 import pdfMake from "pdfmake/build/pdfmake";
 import pdfFonts from "pdfmake/build/vfs_fonts";
+import { toast } from "sonner";
 
 pdfMake.vfs = pdfFonts.vfs;
 
@@ -85,11 +86,9 @@ export default function CollectionReport() {
   const userType = (localStorage.getItem("userType") || "").toUpperCase();
   let isCentreUser = null;
 
-
-  if (userRole !== 'DG') {
-      isCentreUser = userCentre;
+  if (userRole !== "DG") {
+    isCentreUser = userCentre;
   }
- 
 
   const isZoneUser = userZone;
   const isHQUser = userType === "HQ";
@@ -120,14 +119,30 @@ export default function CollectionReport() {
     const fetchData = async () => {
       setLoading(true);
 
-          if (isCentreUser) {
+      if (isCentreUser) {
         setCenter(userCentre);
       }
-      
+
       try {
+        const token = localStorage.getItem("authToken");
+        const apiKey = process.env.NEXT_PUBLIC_API_KEY;
+
+        if (!token || !apiKey) {
+          toast("Missing authentication credentials");
+          return;
+        }
+
+    
         const res = await fetch(`${apiUrl}/collections/get`, {
-          headers: { Authorization: `Bearer ${authToken}` },
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`,
+            "X-API-KEY": apiKey,
+          },
         });
+
+      
         if (!res.ok) throw new Error("Network error");
 
         const json: ApiCollectionItem[] = await res.json();
@@ -148,7 +163,7 @@ export default function CollectionReport() {
 
         // Filter immediately based on user role
         let userFilteredData = mappedData;
-        
+
         if (userCentre) {
           userFilteredData = userFilteredData.filter(
             (d) => d.center === userCentre
@@ -241,9 +256,7 @@ export default function CollectionReport() {
   // -----------------------------
   // Export functions
   // -----------------------------
-  const exportPDF = () => {
-    
-  };
+  const exportPDF = () => {};
 
   const exportExcel = () => {
     const wsData = [
@@ -313,8 +326,6 @@ export default function CollectionReport() {
           <CardTitle>{isCentreUser && `${userCentre}`}</CardTitle>
         </CardHeader>
         <CardContent>
-         
-
           {/* Filters */}
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-6 gap-4 mb-6">
             <div>
@@ -354,27 +365,26 @@ export default function CollectionReport() {
               </Select>
             </div>
 
+            {userRole == "DG" ? (
+              <div>
+                <label className="text-sm font-medium">Center</label>
+                <Select onValueChange={setCenter} value={center}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="All" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ALL">All</SelectItem>
+                    {uniqueCenters.map((c, i) => (
+                      <SelectItem key={i} value={c}>
+                        {c}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : null}
 
-        { userRole == 'DG' ? 
-            <div>
-              <label className="text-sm font-medium">Center</label>
-              <Select onValueChange={setCenter} value={center}>
-                <SelectTrigger>
-                  <SelectValue placeholder="All" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ALL">All</SelectItem>
-                  {uniqueCenters.map((c, i) => (
-                    <SelectItem key={i} value={c}>
-                      {c}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-         : null }   
-
-         {userRole == 'DG' && (
+            {userRole == "DG" && (
               <div>
                 <label className="text-sm font-medium">Zone</label>
                 <Select onValueChange={setZone} value={zone}>
@@ -392,8 +402,6 @@ export default function CollectionReport() {
                 </Select>
               </div>
             )}
-
-          
           </div>
 
           {/* Table */}
@@ -463,7 +471,6 @@ export default function CollectionReport() {
           </div>
 
           {/* Summary */}
-         
 
           {/* Summary by Service */}
           <h3 className="mt-6 mb-2 font-bold">Summary Per Service</h3>
@@ -498,12 +505,12 @@ export default function CollectionReport() {
               <tfoot className=" font-bold">
                 <tr>
                   <td className="p-3 border" colSpan={2}>
-                  Total Income: 
+                    Total Income:
                   </td>
                   <td className="p-3 border text-right">
-                     <div className="mt-6 text-lg font-semibold">
-           {totalAmount.toLocaleString()} TZS
-          </div>
+                    <div className="mt-6 text-lg font-semibold">
+                      {totalAmount.toLocaleString()} TZS
+                    </div>
                   </td>
                 </tr>
               </tfoot>

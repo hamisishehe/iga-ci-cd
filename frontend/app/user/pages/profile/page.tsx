@@ -9,6 +9,7 @@ import { Separator } from "@/components/ui/separator";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { motion } from "framer-motion";
 import Swal from "sweetalert2";
+import { toast } from "sonner";
 
 export default function ProfilePage() {
   const [email, setEmail] = useState("");
@@ -46,9 +47,23 @@ const handlePasswordChange = async () => {
   }
 
   try {
+
+    
+           const token = localStorage.getItem("authToken");
+    const apiKey = process.env.NEXT_PUBLIC_API_KEY;
+
+    if (!token || !apiKey) {
+      toast("Missing authentication credentials");
+      return;
+    }
+    
     const response = await fetch(`${apiUrl}/users/change-password`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+               headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`, 
+        "X-API-KEY": apiKey,              
+      },
       body: JSON.stringify({
         userId: Number(userId),
         oldPassword: currentPassword,

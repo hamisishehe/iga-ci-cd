@@ -4,8 +4,21 @@ import { useEffect, useState } from "react";
 import * as XLSX from "xlsx";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
-import { Breadcrumb, BreadcrumbList, BreadcrumbItem, BreadcrumbLink, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from "@/components/ui/select";
+import {
+  Breadcrumb,
+  BreadcrumbList,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb";
+import { toast } from "sonner";
 
 interface ServiceData {
   apportionmentId: string;
@@ -37,9 +50,9 @@ export default function ApportionmentReport() {
 
   useEffect(() => {
     setMounted(true);
-     const userType = localStorage.getItem("userType");
-  const userCentre: string = localStorage.getItem("centre") || "";
-  const userZone: string = localStorage.getItem("zone") || "";
+    const userType = localStorage.getItem("userType");
+    const userCentre: string = localStorage.getItem("centre") || "";
+    const userZone: string = localStorage.getItem("zone") || "";
 
     const userPayload = JSON.parse(localStorage.getItem("userInfo") || "{}");
     setUserType(userType || "");
@@ -53,7 +66,9 @@ export default function ApportionmentReport() {
     const month = today.getMonth() + 1;
     const pad = (n: number) => n.toString().padStart(2, "0");
     const firstDay = `${year}-${pad(month)}-01`;
-    const lastDay = `${year}-${pad(month)}-${pad(new Date(year, month, 0).getDate())}`;
+    const lastDay = `${year}-${pad(month)}-${pad(
+      new Date(year, month, 0).getDate()
+    )}`;
     setStartDate(firstDay);
     setEndDate(lastDay);
 
@@ -64,7 +79,23 @@ export default function ApportionmentReport() {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch(`${apiUrl}/apposhments/all`);
+      const token = localStorage.getItem("authToken");
+      const apiKey = process.env.NEXT_PUBLIC_API_KEY;
+
+      if (!token || !apiKey) {
+        toast("Missing authentication credentials");
+        return;
+      }
+
+      const res = await fetch(`${apiUrl}/apposhments/all`, {
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`,
+          "X-API-KEY": apiKey,
+        },
+      });
+
+  
       const rows = await res.json();
 
       let filteredRows = [...rows];
@@ -80,7 +111,9 @@ export default function ApportionmentReport() {
       }
 
       if (centreName !== "all" && userType !== "CENTRE") {
-        filteredRows = filteredRows.filter((r: any) => r.centre?.name === centreName);
+        filteredRows = filteredRows.filter(
+          (r: any) => r.centre?.name === centreName
+        );
       }
 
       const requestedStart = new Date(start).getTime();
@@ -92,7 +125,9 @@ export default function ApportionmentReport() {
         return rowEnd >= requestedStart && rowStart <= requestedEnd;
       });
 
-      const uniqueCentres = [...new Set(rows.map((r: any) => r.centre?.name).filter(Boolean))];
+      const uniqueCentres = [
+        ...new Set(rows.map((r: any) => r.centre?.name).filter(Boolean)),
+      ];
       setCentres(uniqueCentres as string[]);
 
       const flat: ServiceData[] = [];
@@ -123,7 +158,8 @@ export default function ApportionmentReport() {
     }
   };
 
-  const formatNumber = (val: number | undefined) => (val != null ? Number(val).toLocaleString() : "-");
+  const formatNumber = (val: number | undefined) =>
+    val != null ? Number(val).toLocaleString() : "-";
 
   const totals = data.reduce(
     (acc, row) => {
@@ -134,14 +170,31 @@ export default function ApportionmentReport() {
       acc.amountToBePaid += row.amountToBePaid;
       return acc;
     },
-    { amountRemitted: 0, executors: 0, supporters: 0, agencyFee: 0, amountToBePaid: 0 }
+    {
+      amountRemitted: 0,
+      executors: 0,
+      supporters: 0,
+      agencyFee: 0,
+      amountToBePaid: 0,
+    }
   );
 
-  const remaining = totals.amountRemitted - (totals.agencyFee + totals.amountToBePaid);
+  const remaining =
+    totals.amountRemitted - (totals.agencyFee + totals.amountToBePaid);
 
   const exportExcel = () => {
     const wsData = [
-      ["#", "Date", "Course Name", "Centre", "Amount Remitted", "Executors", "Supporters", "Agency Fee", "Amount to be Paid"],
+      [
+        "#",
+        "Date",
+        "Course Name",
+        "Centre",
+        "Amount Remitted",
+        "Executors",
+        "Supporters",
+        "Agency Fee",
+        "Amount to be Paid",
+      ],
       ...data.map((row, i) => [
         i + 1,
         row.date,
@@ -153,7 +206,17 @@ export default function ApportionmentReport() {
         row.agencyFee,
         row.amountToBePaid,
       ]),
-      ["TOTAL", "", "", "", totals.amountRemitted, totals.executors, totals.supporters, totals.agencyFee, totals.amountToBePaid],
+      [
+        "TOTAL",
+        "",
+        "",
+        "",
+        totals.amountRemitted,
+        totals.executors,
+        totals.supporters,
+        totals.agencyFee,
+        totals.amountToBePaid,
+      ],
       ["REMAINING BALANCE", "", "", "", remaining, "", "", "", ""],
     ];
     const ws = XLSX.utils.aoa_to_sheet(wsData);
@@ -166,23 +229,21 @@ export default function ApportionmentReport() {
 
   return (
     <div className="p-4 space-y-4">
-
-        <Breadcrumb>
+      <Breadcrumb>
         <BreadcrumbList>
           <BreadcrumbItem>
-            <BreadcrumbLink href="/user/chief_accountant/dashboard">Dashboard</BreadcrumbLink>
+            <BreadcrumbLink href="/user/chief_accountant/dashboard">
+              Dashboard
+            </BreadcrumbLink>
           </BreadcrumbItem>
           <BreadcrumbSeparator />
           <BreadcrumbItem>Apposhment</BreadcrumbItem>
         </BreadcrumbList>
       </Breadcrumb>
-    
+
       <Card>
         <CardHeader>
-         
           <CardTitle>{`${userCentre}`}</CardTitle>
-   
-          
         </CardHeader>
         <CardContent className="flex flex-wrap gap-4 items-end">
           <div>
@@ -221,7 +282,10 @@ export default function ApportionmentReport() {
               </Select>
             </div>
           )}
-          <Button className="bg-blue-950 text-white" onClick={() => fetchData(startDate, endDate, centre)}>
+          <Button
+            className="bg-blue-950 text-white"
+            onClick={() => fetchData(startDate, endDate, centre)}
+          >
             Filter
           </Button>
         </CardContent>
@@ -251,11 +315,21 @@ export default function ApportionmentReport() {
                   <tr key={i}>
                     <td className="border px-2 py-1">{i + 1}</td>
                     <td className="border px-2 py-1">{row.courseName}</td>
-                    <td className="border px-2 py-1">{formatNumber(row.amountRemitted)}</td>
-                    <td className="border px-2 py-1">{formatNumber(row.executors)}</td>
-                    <td className="border px-2 py-1">{formatNumber(row.supporters)}</td>
-                    <td className="border px-2 py-1">{formatNumber(row.agencyFee)}</td>
-                    <td className="border px-2 py-1">{formatNumber(row.amountToBePaid)}</td>
+                    <td className="border px-2 py-1">
+                      {formatNumber(row.amountRemitted)}
+                    </td>
+                    <td className="border px-2 py-1">
+                      {formatNumber(row.executors)}
+                    </td>
+                    <td className="border px-2 py-1">
+                      {formatNumber(row.supporters)}
+                    </td>
+                    <td className="border px-2 py-1">
+                      {formatNumber(row.agencyFee)}
+                    </td>
+                    <td className="border px-2 py-1">
+                      {formatNumber(row.amountToBePaid)}
+                    </td>
                   </tr>
                 ))
               ) : (
@@ -271,17 +345,29 @@ export default function ApportionmentReport() {
                     <td colSpan={2} className="text-center border px-2 py-1">
                       TOTAL
                     </td>
-                    <td className="border px-2 py-1">{formatNumber(totals.amountRemitted)}</td>
-                    <td className="border px-2 py-1">{formatNumber(totals.executors)}</td>
-                    <td className="border px-2 py-1">{formatNumber(totals.supporters)}</td>
-                    <td className="border px-2 py-1">{formatNumber(totals.agencyFee)}</td>
-                    <td className="border px-2 py-1">{formatNumber(totals.amountToBePaid)}</td>
+                    <td className="border px-2 py-1">
+                      {formatNumber(totals.amountRemitted)}
+                    </td>
+                    <td className="border px-2 py-1">
+                      {formatNumber(totals.executors)}
+                    </td>
+                    <td className="border px-2 py-1">
+                      {formatNumber(totals.supporters)}
+                    </td>
+                    <td className="border px-2 py-1">
+                      {formatNumber(totals.agencyFee)}
+                    </td>
+                    <td className="border px-2 py-1">
+                      {formatNumber(totals.amountToBePaid)}
+                    </td>
                   </tr>
                   <tr className="bg-gray-200 font-bold">
                     <td colSpan={2} className="text-center border px-2 py-1">
                       REMAINING BALANCE
                     </td>
-                    <td className="border px-2 py-1">{formatNumber(remaining)}</td>
+                    <td className="border px-2 py-1">
+                      {formatNumber(remaining)}
+                    </td>
                     <td colSpan={1}></td>
                   </tr>
                 </>
@@ -290,11 +376,14 @@ export default function ApportionmentReport() {
           </table>
         </CardContent>
 
-           <div className="pl-5">
-             <Button className="bg-green-600 text-white w-32 " onClick={exportExcel}>
+        <div className="pl-5">
+          <Button
+            className="bg-green-600 text-white w-32 "
+            onClick={exportExcel}
+          >
             Export Excel
           </Button>
-           </div>
+        </div>
       </Card>
 
       {error && <div className="text-red-600">{error}</div>}

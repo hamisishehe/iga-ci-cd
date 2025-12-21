@@ -39,7 +39,24 @@ export default function DepartmentPage() {
 
   const fetchDepartments = async () => {
     try {
-      const res = await fetch(`${apiUrl}/department/get`);
+
+       
+           const token = localStorage.getItem("authToken");
+    const apiKey = process.env.NEXT_PUBLIC_API_KEY;
+
+    if (!token || !apiKey) {
+      toast("Missing authentication credentials");
+      return;
+    }
+
+      const res = await fetch(`${apiUrl}/department/get`, {
+        method: "GET",
+         headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`, 
+        "X-API-KEY": apiKey,              
+      },
+      });
       if (res.ok) {
         setDepartments(await res.json());
       }
@@ -69,9 +86,22 @@ export default function DepartmentPage() {
     if (!result.isConfirmed) return;
 
     try {
+      
+           const token = localStorage.getItem("authToken");
+    const apiKey = process.env.NEXT_PUBLIC_API_KEY;
+
+    if (!token || !apiKey) {
+      toast("Missing authentication credentials");
+      return;
+    }
+
       const res = await fetch(`${apiUrl}/department/create`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+           headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`, 
+        "X-API-KEY": apiKey,              
+      },
         body: JSON.stringify({ name: result.value }),
       });
 
@@ -106,11 +136,25 @@ export default function DepartmentPage() {
     if (!result.isConfirmed) return;
 
     try {
+
+       
+           const token = localStorage.getItem("authToken");
+    const apiKey = process.env.NEXT_PUBLIC_API_KEY;
+
+    if (!token || !apiKey) {
+      toast("Missing authentication credentials");
+      return;
+    }
+
       const res = await fetch(
         `${apiUrl}/department/update/${department.id}`,
         {
           method: "PUT",
-          headers: { "Content-Type": "application/json" },
+             headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`, 
+        "X-API-KEY": apiKey,              
+      },
           body: JSON.stringify({ name: result.value }),
         }
       );

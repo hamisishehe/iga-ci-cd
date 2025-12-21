@@ -138,7 +138,23 @@ export default function AdminDashboardPage() {
 
   const fetchUsers = async () => {
     try {
-      const res = await fetch(`${apiUrl}/users/get`);
+
+    const token = localStorage.getItem("authToken");
+    const apiKey = process.env.NEXT_PUBLIC_API_KEY;
+
+    if (!token || !apiKey) {
+      toast("Missing authentication credentials");
+      return;
+    }
+
+      const res = await fetch(`${apiUrl}/users/get`, {
+        method: "GET",
+        headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`, 
+        "X-API-KEY": apiKey,              
+      },
+      });
       if (!res.ok) throw new Error();
       const data: User[] = await res.json();
       setUsers(filterUsersByScope(data));
@@ -149,7 +165,23 @@ export default function AdminDashboardPage() {
 
   const fetchCentres = async () => {
     try {
-      const res = await fetch(`${apiUrl}/centre/get`);
+
+    const token = localStorage.getItem("authToken");
+    const apiKey = process.env.NEXT_PUBLIC_API_KEY;
+
+    if (!token || !apiKey) {
+      toast("Missing authentication credentials");
+      return;
+    }
+
+      const res = await fetch(`${apiUrl}/centre/get`, {
+        method: "GET",
+        headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`, 
+        "X-API-KEY": apiKey,              
+      },
+      });
       if (!res.ok) throw new Error();
       const data: Centre[] = await res.json();
       setCentres(filterCentresByScope(data));
@@ -160,7 +192,31 @@ export default function AdminDashboardPage() {
 
   const fetchDepartments = async () => {
     try {
-      const res = await fetch(`${apiUrl}/department/get`);
+
+    const token = localStorage.getItem("authToken");
+    const apiKey = process.env.NEXT_PUBLIC_API_KEY;
+
+    if (!token || !apiKey) {
+      toast("Missing authentication credentials");
+      return;
+    }
+
+    const res = await fetch(`${apiUrl}/department/get`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`, 
+        "X-API-KEY": apiKey,              
+      },
+    });
+
+    console.log("Fetch Departments Request Headers:", {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${token}`,
+      "X-API-KEY": apiKey,
+    });
+    console.log("Fetch Departments Response Status:", res.status);
+
       if (!res.ok) throw new Error();
       const data: Department[] = await res.json();
       setDepartments(data);

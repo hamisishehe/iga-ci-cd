@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/breadcrumb";
 import { Button } from "@/components/ui/button";
 import { fi } from "zod/v4/locales";
+import { toast } from "sonner";
 
 ChartJS.register(
   CategoryScale,
@@ -167,6 +168,13 @@ export default function DashboardPage() {
 const fetchData = useCallback(async () => {
   
   try {
+      const token = localStorage.getItem("authToken");
+        const apiKey = process.env.NEXT_PUBLIC_API_KEY;
+    
+        if (!token || !apiKey) {
+          toast("Missing authentication credentials");
+          return;
+        }
     setLoading(true);
 
     const storedRole = localStorage.getItem("userRole") || "";
@@ -174,7 +182,14 @@ const fetchData = useCallback(async () => {
     setRole(storedRole);
     setUserCentre(storedCentre);
 
-    const res = await fetch(`${apiUrl}/collections/get`);
+    const res = await fetch(`${apiUrl}/collections/get`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`, 
+        "X-API-KEY": apiKey,              
+      },
+    });
     if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
     const data: ApiItem[] = await res.json();
 

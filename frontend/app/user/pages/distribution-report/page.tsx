@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/breadcrumb";
 import Swal from "sweetalert2";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { toast } from "sonner";
 
 export default function DistributionReportPage() {
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api";
@@ -38,6 +39,7 @@ export default function DistributionReportPage() {
   const isCentreUser = userType === "CENTRE";
   const isZoneUser = userType === "ZONE";
   const isHQUser = userType === "HQ";
+  
 
   const formatNumber = (val: any) =>
     val !== null && val !== undefined ? Number(val).toLocaleString() : "-";
@@ -82,9 +84,21 @@ export default function DistributionReportPage() {
   const fetchData = async (start: string, end: string) => {
     setLoading(true);
     try {
+      const token = localStorage.getItem("authToken");
+      const apiKey = process.env.NEXT_PUBLIC_API_KEY;
+
+      if (!token || !apiKey) {
+        toast("Missing authentication credentials");
+        return;
+      }
+
       const res = await fetch(`${apiUrl}/allocation/all-centres`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+          "X-API-KEY": apiKey,
+        },
         body: JSON.stringify({ startDate: start, endDate: end }),
       });
       const json = await res.json();
@@ -392,27 +406,55 @@ export default function DistributionReportPage() {
         services,
       };
 
+      const token = localStorage.getItem("authToken");
+      const apiKey = process.env.NEXT_PUBLIC_API_KEY;
+
+      if (!token || !apiKey) {
+        toast("Missing authentication credentials");
+        return;
+      }
+
       const res = await fetch(`${apiUrl}/apposhments/save`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+          "X-API-KEY": apiKey,
+        },
+
+
         body: JSON.stringify(payload),
       });
 
+      
+        console.log("====================================");
+        console.log(res.body);
+        console.log("====================================");
+
+
+
       let json;
       try {
-        json = await res.json();
+        json = await res.text();
       } catch (e) {
         json = null;
       }
 
-      console.log("Save Apportionment Response:", res.body);
+      console.log("Save Apportionment Response:", json);
 
-
-      if (res.status === 200 && json ==='Apposhment already exists!') {
+      if (res.status === 200 && json === "Apposhment with services saved successfully!") {
         Swal.fire({
           title: "Success!",
           text: "Apportionment saved successfully!",
           icon: "success",
+        });
+      } else {
+
+      if (res.status === 200 && json === "Apposhment already exists!") {
+       Swal.fire({
+          title: "Failed!",
+          text: "Apposhment already exists!",
+          icon: "error",
         });
       } else {
         Swal.fire({
@@ -421,7 +463,7 @@ export default function DistributionReportPage() {
           icon: "error",
         });
       }
-    } catch (err) {
+    }} catch (err) {
       console.error("Error saving apportionment:", err);
       Swal.fire({
         title: "Error!",
@@ -456,292 +498,312 @@ export default function DistributionReportPage() {
 
       {/* Filters */}
       <Card>
-
-         <CardHeader>
+        <CardHeader>
           <CardTitle>{isCentreUser && `${userCentre}`}</CardTitle>
         </CardHeader>
 
-
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-12 gap-3 mb-6 items-end mt-6">
-        <div className="md:col-span-2">
-          <label className="block text-sm text-slate-600 mb-1">From</label>
-          <Input
-            type="date"
-            value={startDate}
-            onChange={(e: any) => setStartDate(e.target.value)}
-          />
-        </div>
-        <div className="md:col-span-2">
-          <label className="block text-sm text-slate-600 mb-1">To</label>
-          <Input
-            type="date"
-            value={endDate}
-            onChange={(e: any) => setEndDate(e.target.value)}
-          />
-        </div>
-        <div className="md:col-span-2">
-          <label className="block text-sm text-slate-600 mb-1">Course</label>
-          <select
-            className="w-full border rounded px-2 py-2"
-            value={course}
-            onChange={(e) => setCourse(e.target.value)}
-          >
-            <option value="">All</option>
-            {uniqueCourses.map((c, i) => (
-              <option key={`course-${i}`} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="md:col-span-3">
-          <label className="block text-sm text-slate-600 mb-1">
-            Description
-          </label>
-          <select
-            className="w-full border rounded px-2 py-2"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-          >
-            <option value="">All</option>
-            {uniqueDescriptions.map((d, i) => (
-              <option key={`desc-${i}`} value={d}>
-                {d}
-              </option>
-            ))}
-          </select>
-        </div>
-        {(isZoneUser || isHQUser) && (
-          <div className="md:col-span-1">
-            <label className="block text-sm text-slate-600 mb-1">Center</label>
-            <select
-              className="w-full border rounded px-2 py-2 "
-              value={centre}
-              onChange={(e) => setCentre(e.target.value)}
-            >
-              <option value="">All</option>
-              {uniqueCentres.map((c, i) => (
-                <option key={`centre-${i}`} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-3 mb-6 items-end mt-6">
+            <div className="md:col-span-2">
+              <label className="block text-sm text-slate-600 mb-1">From</label>
+              <Input
+                type="date"
+                value={startDate}
+                onChange={(e: any) => setStartDate(e.target.value)}
+              />
+            </div>
+            <div className="md:col-span-2">
+              <label className="block text-sm text-slate-600 mb-1">To</label>
+              <Input
+                type="date"
+                value={endDate}
+                onChange={(e: any) => setEndDate(e.target.value)}
+              />
+            </div>
+            <div className="md:col-span-2">
+              <label className="block text-sm text-slate-600 mb-1">
+                Course
+              </label>
+              <select
+                className="w-full border rounded px-2 py-2"
+                value={course}
+                onChange={(e) => setCourse(e.target.value)}
+              >
+                <option value="">All</option>
+                {uniqueCourses.map((c, i) => (
+                  <option key={`course-${i}`} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="md:col-span-3">
+              <label className="block text-sm text-slate-600 mb-1">
+                Description
+              </label>
+              <select
+                className="w-full border rounded px-2 py-2"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+              >
+                <option value="">All</option>
+                {uniqueDescriptions.map((d, i) => (
+                  <option key={`desc-${i}`} value={d}>
+                    {d}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {(isZoneUser || isHQUser) && (
+              <div className="md:col-span-1">
+                <label className="block text-sm text-slate-600 mb-1">
+                  Center
+                </label>
+                <select
+                  className="w-full border rounded px-2 py-2 "
+                  value={centre}
+                  onChange={(e) => setCentre(e.target.value)}
+                >
+                  <option value="">All</option>
+                  {uniqueCentres.map((c, i) => (
+                    <option key={`centre-${i}`} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {isHQUser && (
+              <div className="md:col-span-1">
+                <label className="block text-sm text-slate-600 mb-1">
+                  Zone
+                </label>
+                <select
+                  className="w-full border rounded px-2 py-2"
+                  value={zone}
+                  onChange={(e) => setZone(e.target.value)}
+                >
+                  <option value="">All</option>
+                  {uniqueZones.map((z, i) => (
+                    <option key={`zone-${i}`} value={z}>
+                      {z}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            <div className="md:col-span-1  rounded-3xl">
+              <Button
+                className=" bg-blue-950 text-center px-9 text-white"
+                onClick={() => {
+                  fetchData(startDate, endDate);
+                  handleFilter();
+                }}
+              >
+                Filter
+              </Button>
+            </div>
           </div>
-        )}
-        {isHQUser && (
-          <div className="md:col-span-1">
-            <label className="block text-sm text-slate-600 mb-1">Zone</label>
-            <select
-              className="w-full border rounded px-2 py-2"
-              value={zone}
-              onChange={(e) => setZone(e.target.value)}
-            >
-              <option value="">All</option>
-              {uniqueZones.map((z, i) => (
-                <option key={`zone-${i}`} value={z}>
-                  {z}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
-        <div className="md:col-span-1  rounded-3xl">
-          <Button className=" bg-blue-950 text-center px-9 text-white"
-            onClick={() => {
-              fetchData(startDate, endDate);
-              handleFilter();
-            }}
-          >
-            Filter
-          </Button>
-        </div>
-      </div>
 
-      {/* Table */}
-      <div className="overflow-auto border rounded-md">
+          {/* Table */}
+          <div className="overflow-auto border rounded-md">
             <table className="min-w-full text-sm text-left border-collapse table-fixed ">
-          <thead className=" sticky top-0">
-            <tr className=" bg-blue-950 text-white">
-              <th className="px-1 py-1 border text-sm font-normal">#</th>
-              <th className="px-1 py-1 border  font-normal">Course</th>
-              <th className="px-1 py-1 border  font-normal">Description</th>
-              <th className="px-1 py-1 border text-right  font-normal">Collections</th>
-              <th className="px-1 py-1 border text-right  font-normal">Expenditure</th>
-              <th className="px-1 py-1 border text-right text-sm  font-normal">Profit Markup As Per GIGA</th>
-              <th className="px-1 py-1 border text-right  font-normal">
-                Contribution Central IGA
-              </th>
-              <th className="px-1 py-1 border text-right  font-normal">
-                Facilitation Central
-              </th>
-              <th className="px-1 py-1 border text-right  font-normal">
-                Facilitation Zonal
-              </th>
-              <th className="px-3 py-2 border text-right  font-normal">
-                Facilitation Centre
-              </th>
-              <th className="px-1 py-1 border text-right  font-normal" >
-                Support Production
-              </th>
-              <th className="px-1 py-1 border text-right  font-normal">
-                Contribution Centre IGA
-              </th>
-              <th className="border text-left text-sm  font-normal">
-                Depreciation/Incentive
-              </th>
-              <th className="px-1 py-1 border text-right  font-normal">
-                Remitted To Centre
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {currentRows.length > 0 ? (
-              currentRows.map((row, index) => (
-                <tr key={row.id ?? `row-${index}`} className="border-t">
-                  <td className="px-1 py-1">{indexOfFirstRow + index + 1}</td>
-                  <td className="px-1 py-1">
-                    {getCourseLabel(row.gfs_code_description)}
-                  </td>
-                  <td className="px-1 py-1">
-                    {getDescriptionLabel(row.gfs_code_description)}
-                  </td>
+              <thead className=" sticky top-0">
+                <tr className=" bg-blue-950 text-white">
+                  <th className="px-1 py-1 border text-sm font-normal">#</th>
+                  <th className="px-1 py-1 border  font-normal">Course</th>
+                  <th className="px-1 py-1 border  font-normal">Description</th>
+                  <th className="px-1 py-1 border text-right  font-normal">
+                    Collections
+                  </th>
+                  <th className="px-1 py-1 border text-right  font-normal">
+                    Expenditure
+                  </th>
+                  <th className="px-1 py-1 border text-right text-sm  font-normal">
+                    Profit Markup As Per GIGA
+                  </th>
+                  <th className="px-1 py-1 border text-right  font-normal">
+                    Contribution Central IGA
+                  </th>
+                  <th className="px-1 py-1 border text-right  font-normal">
+                    Facilitation Central
+                  </th>
+                  <th className="px-1 py-1 border text-right  font-normal">
+                    Facilitation Zonal
+                  </th>
+                  <th className="px-3 py-2 border text-right  font-normal">
+                    Facilitation Centre
+                  </th>
+                  <th className="px-1 py-1 border text-right  font-normal">
+                    Support Production
+                  </th>
+                  <th className="px-1 py-1 border text-right  font-normal">
+                    Contribution Centre IGA
+                  </th>
+                  <th className="border px-1 py-1 text-left text-sm  font-normal">
+                    Depreciation/ Incentive
+                  </th>
+                  <th className="px-1 py-1 border text-right  font-normal">
+                    Remitted To Centre
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {currentRows.length > 0 ? (
+                  currentRows.map((row, index) => (
+                    <tr key={row.id ?? `row-${index}`} className="border-t">
+                      <td className="px-1 py-1">
+                        {indexOfFirstRow + index + 1}
+                      </td>
+                      <td className="px-1 py-1">
+                        {getCourseLabel(row.gfs_code_description)}
+                      </td>
+                      <td className="px-1 py-1">
+                        {getDescriptionLabel(row.gfs_code_description)}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        {formatNumber(row.originalAmount)}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        {formatNumber(row.expenditureAmount)}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        {formatNumber(row.profitAmountPerCentreReport)}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        {formatNumber(row.contributionToCentralIGA)}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        {formatNumber(
+                          row.facilitationOfIGAForCentralActivities
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        {formatNumber(row.facilitationZonalActivities)}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        {formatNumber(row.facilitationOfIGAForCentreActivities)}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        {formatNumber(row.supportToProductionUnit)}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        {formatNumber(row.contributionToCentreIGAFund)}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        {formatNumber(row.depreciationIncentiveToFacilitators)}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        {formatNumber(row.remittedToCentre)}
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td
+                      colSpan={16}
+                      className="text-center py-6 text-slate-500"
+                    >
+                      No data available
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Pagination & Actions */}
+          <div className="flex  gap-5  mt-4 items-start text-sm">
+            <div>
+              Page {currentPage} of {totalPages}
+            </div>
+            <div className="flex gap-1">
+              <Button
+                className=" rounded-2xl py-1 h-7 bg-blue-950 text-sm text-white"
+                onClick={() => setCurrentPage(Math.max(currentPage - 1, 1))}
+              >
+                Prev
+              </Button>
+              <Button
+                className=" rounded-2xl py-1 h-7 bg-blue-950 text-sm text-white"
+                onClick={() =>
+                  setCurrentPage(Math.min(currentPage + 1, totalPages))
+                }
+              >
+                Next
+              </Button>
+            </div>
+          </div>
+
+          {/* Summary Section */}
+          <h3 className="text-lg font-semibold mt-8 mb-3">Summary</h3>
+          <div className="overflow-auto border rounded-md">
+            <table className="min-w-full text-sm text-left border-collapse table-fixed">
+              <tbody>
+                <tr className=" font-semibold">
+                  <td className="px-3 py-2">Expenditure as per GIGA</td>
                   <td className="px-3 py-2 text-right">
-                    {formatNumber(row.originalAmount)}
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    {formatNumber(row.expenditureAmount)}
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    {formatNumber(row.profitAmountPerCentreReport)}
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    {formatNumber(row.contributionToCentralIGA)}
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    {formatNumber(row.facilitationOfIGAForCentralActivities)}
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    {formatNumber(row.facilitationZonalActivities)}
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    {formatNumber(row.facilitationOfIGAForCentreActivities)}
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    {formatNumber(row.supportToProductionUnit)}
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    {formatNumber(row.contributionToCentreIGAFund)}
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    {formatNumber(row.depreciationIncentiveToFacilitators)}
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    {formatNumber(row.remittedToCentre)}
+                    {formatNumber(totalExpenditureAmount)}
                   </td>
                 </tr>
-              ))
-            ) : (
-              <tr>
-                <td colSpan={16} className="text-center py-6 text-slate-500">
-                  No data available
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+                {summaryPerCourse.map((s, i) => (
+                  <tr key={`summary-${i}`}>
+                    <td className="px-3 py-2">
+                      Amount to be Remitted to Centre - {s.course}
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      {formatNumber(s.total)}
+                    </td>
+                  </tr>
+                ))}
+                <tr className=" font-semibold">
+                  <td className="px-3 py-2">
+                    Total Funds to be Remitted to Centre as per Apportionment
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    {formatNumber(totalRemittedToCentre)}
+                  </td>
+                </tr>
+                <tr>
+                  <td className="px-3 py-2">
+                    Amount to be Remitted to Zone Offices
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    {formatNumber(totalFacilitationZonalActivities)}
+                  </td>
+                </tr>
+                <tr>
+                  <td className="px-3 py-2">
+                    Amount for Central IGA Committee & Secretariat
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    {formatNumber(totalFacilitationOfIGAForCentralActivities)}
+                  </td>
+                </tr>
+                <tr>
+                  <td className="px-3 py-2">
+                    Amount Remained at Central IGA Fund
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    {formatNumber(totalContributionToCentralIGA)}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
 
-      {/* Pagination & Actions */}
-      <div className="flex  gap-5  mt-4 items-start text-sm">
-        <div>
-          Page {currentPage} of {totalPages}
-        </div>
-        <div className="flex gap-1">
-          <Button className=" rounded-2xl py-1 h-7 bg-blue-950 text-sm text-white" onClick={() => setCurrentPage(Math.max(currentPage - 1, 1))}>
-            Prev
-          </Button>
-          <Button className=" rounded-2xl py-1 h-7 bg-blue-950 text-sm text-white"
-            onClick={() =>
-              setCurrentPage(Math.min(currentPage + 1, totalPages))
-            }
-          >
-            Next
-          </Button>
-          
-        </div>
-      </div>
-
-      {/* Summary Section */}
-      <h3 className="text-lg font-semibold mt-8 mb-3">Summary</h3>
-      <div className="overflow-auto border rounded-md">
-            <table className="min-w-full text-sm text-left border-collapse table-fixed">
-          <tbody>
-            <tr className=" font-semibold">
-              <td className="px-3 py-2">Expenditure as per GIGA</td>
-              <td className="px-3 py-2 text-right">
-                {formatNumber(totalExpenditureAmount)}
-              </td>
-            </tr>
-            {summaryPerCourse.map((s, i) => (
-              <tr key={`summary-${i}`}>
-                <td className="px-3 py-2">
-                  Amount to be Remitted to Centre - {s.course}
-                </td>
-                <td className="px-3 py-2 text-right">
-                  {formatNumber(s.total)}
-                </td>
-              </tr>
-            ))}
-            <tr className=" font-semibold">
-              <td className="px-3 py-2">
-                Total Funds to be Remitted to Centre as per Apportionment
-              </td>
-              <td className="px-3 py-2 text-right">
-                {formatNumber(totalRemittedToCentre)}
-              </td>
-            </tr>
-            <tr>
-              <td className="px-3 py-2">
-                Amount to be Remitted to Zone Offices
-              </td>
-              <td className="px-3 py-2 text-right">
-                {formatNumber(totalFacilitationZonalActivities)}
-              </td>
-            </tr>
-            <tr>
-              <td className="px-3 py-2">
-                Amount for Central IGA Committee & Secretariat
-              </td>
-              <td className="px-3 py-2 text-right">
-                {formatNumber(totalFacilitationOfIGAForCentralActivities)}
-              </td>
-            </tr>
-            <tr>
-              <td className="px-3 py-2">Amount Remained at Central IGA Fund</td>
-              <td className="px-3 py-2 text-right">
-                {formatNumber(totalContributionToCentralIGA)}
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-
-      {/* Pagination & Actions */}
-      <div className="flex justify-between items-center mt-4">
-   
-        <div className="flex gap-2">
-          <Button className="bg-green-500" onClick={exportExcel}>
-            Export Excel
-          </Button>
-          <Button onClick={saveApportionment} disabled={apportionmentSaved}>
-            {apportionmentSaved ? "Saved" : "Save Apportionment"}
-          </Button>
-        </div>
-      </div>
-      </CardContent>
-
-
+          {/* Pagination & Actions */}
+          <div className="flex justify-between items-center mt-4">
+            <div className="flex gap-2">
+              <Button className="bg-green-500" onClick={exportExcel}>
+                Export Excel
+              </Button>
+              <Button onClick={saveApportionment} disabled={apportionmentSaved}>
+                {apportionmentSaved ? "Saved" : "Save Apportionment"}
+              </Button>
+            </div>
+          </div>
+        </CardContent>
       </Card>
     </div>
   );

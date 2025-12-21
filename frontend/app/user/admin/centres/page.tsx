@@ -57,7 +57,24 @@ export default function CentresPage() {
 
   const loadCentres = async () => {
     try {
-      const res = await fetch(`${API_URL}/centre/get`);
+
+       const token = localStorage.getItem("authToken");
+        const apiKey = process.env.NEXT_PUBLIC_API_KEY;
+    
+        if (!token || !apiKey) {
+          toast("Missing authentication credentials");
+          return;
+        }
+
+        
+      const res = await fetch(`${API_URL}/centre/get`, {
+        method: "GET",
+           headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`, 
+        "X-API-KEY": apiKey,              
+      },
+      });
       if (!res.ok) throw new Error();
 
       const data = await res.json();
@@ -110,9 +127,21 @@ export default function CentresPage() {
     if (!result.isConfirmed || !result.value) return;
 
     try {
+        const token = localStorage.getItem("authToken");
+        const apiKey = process.env.NEXT_PUBLIC_API_KEY;
+    
+        if (!token || !apiKey) {
+          toast("Missing authentication credentials");
+          return;
+        }
+
       const res = await fetch(`${API_URL}/centre/update/${centre.id}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+           headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`, 
+        "X-API-KEY": apiKey,              
+      },
         body: JSON.stringify({
           name: result.value.name,
           rank: result.value.rank,
