@@ -79,8 +79,8 @@ export default function CollectionReport() {
   const userZone = localStorage.getItem("zone") || "";
 
   const isHQUser = userType === "HQ";
-  const isCentreUser = userType === "CENTRE" && userCentre;
-  const isZoneUser = userType === "ZONE" && userZone;
+  const isCentreUser = userType === "CENTRE" && Boolean(userCentre);
+const isZoneUser = userType === "ZONE" && Boolean(userZone);
 
   // === Set default date range to current month ===
   useEffect(() => {
