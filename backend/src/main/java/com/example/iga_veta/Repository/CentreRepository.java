@@ -12,6 +12,8 @@ public interface CentreRepository extends JpaRepository<Centre, Long> {
     Optional<Centre> getCentreByCode(String code);
     Optional<Centre> getCentreByName(String name);
 
+    Boolean existsByCode(String code);
+    Boolean existsByName(String name);
 
     @Query("SELECT c.centre FROM Customer c WHERE c.name = :name")
     Centre findCentreByCustomerName(@Param("name") String name);

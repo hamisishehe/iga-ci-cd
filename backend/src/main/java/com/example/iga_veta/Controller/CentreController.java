@@ -29,6 +29,28 @@ public class CentreController {
     private ApiUsageRepository apiUsageRepository;
 
 
+    @PostMapping("/create")
+    public ResponseEntity<String> createCentre(@RequestBody Map<String, Object> payload) {
+        trackUsage("/create", "POST");
+
+        System.out.println(payload);
+
+        String name = (String) payload.get("name");
+        String rankStr = (String) payload.get("rank");
+        Long zoneId = payload.get("zone_id") != null
+                ? Long.valueOf(payload.get("zone_id").toString())
+                : null;
+
+
+            Centre.Rank rank = Centre.Rank.valueOf(rankStr.toUpperCase());
+
+            String response = centreService.createCentre(name, String.valueOf(rank),zoneId);
+
+            System.out.println(response);
+
+            return ResponseEntity.ok(response);
+
+    }
 
     @GetMapping("/get")
     public List<Centre> getAll(){

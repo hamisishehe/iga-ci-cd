@@ -44,9 +44,9 @@ const NAV_ITEMS = [
 
 
 
-  { title: "Dashboard", url: "/user/pages/dashboard", icon: IconDashboard, roles: ["DG", "CHIEF_ACCOUNTANT","ACCOUNTANT"] },
-  { title: "Collection", url: "/user/pages/collection-report", icon: IconReceipt, roles: ["DG", "CHIEF_ACCOUNTANT","ACCOUNTANT"] },
-  { title: "Distribution", url: "/user/pages/distribution-report", icon: IconArrowDownDashed, roles: ["DG", "CHIEF_ACCOUNTANT", "ACCOUNTANT"] },
+  { title: "Dashboard", url: "/user/pages/dashboard", icon: IconDashboard, roles: ["DG", "CHIEF_ACCOUNTANT","ACCOUNTANT", "DF"] },
+  { title: "Collection", url: "/user/pages/collection-report", icon: IconReceipt, roles: ["DG", "CHIEF_ACCOUNTANT","ACCOUNTANT", "DF"] },
+  { title: "Distribution", url: "/user/pages/distribution-report", icon: IconArrowDownDashed, roles: ["DG", "CHIEF_ACCOUNTANT", "ACCOUNTANT", "DF"] },
   { title: "Apposhment", url: "/user/pages/apposhment", icon: IconArrowsShuffle, roles: ["CHIEF_ACCOUNTANT","ACCOUNTANT"] },
   { title: "Use of Proceeds", url: "/user/pages/expenditure", icon: IconCoin, roles: ["ACCOUNTANT"] },
 

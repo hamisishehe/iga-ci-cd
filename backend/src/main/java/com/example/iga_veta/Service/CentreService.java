@@ -20,6 +20,25 @@ public class CentreService {
     private ZoneRepository zoneRepository;
 
 
+    public String createCentre(String name, String rank, Long zoneId) {
+        // Check if centre with same name already exists
+        if (centreRepository.existsByName(name)) {
+            throw new RuntimeException("Centre with name '" + name + "' already exists");
+        }
+
+        Zone zone = zoneRepository.findById(zoneId)
+                .orElseThrow(() -> new RuntimeException("Zone not found with id: " + zoneId));
+
+
+        Centre centre1 = new Centre();
+        centre1.setName(name.trim());
+        centre1.setZones(zone);
+        centre1.setCode(generateCentreCode(name, zoneId));
+        centre1.setRank(Centre.Rank.valueOf(rank.trim()));
+
+        centreRepository.save(centre1);
+        return "Centre created successfully";
+    }
     public Centre saveCentre(String name, String code, String rank){
 
         Centre centre = new Centre();
@@ -74,4 +93,20 @@ public class CentreService {
         return "Centre updated successfully";
     }
 
+
+    private String generateCentreCode(String centreName, Long zoneId) {
+        String prefix = "CTR";
+        String namePart = centreName.replaceAll("[^A-Z0-9]", "").toUpperCase();
+        if (namePart.length() > 5) {
+            namePart = namePart.substring(0, 5);
+        }
+
+        // Get next number
+        Long count = centreRepository.count();
+        String numberPart = String.format("%03d", count + 1); // 001, 002, etc.
+
+        return prefix + "-" + numberPart;
+        // Example: CTR-001, CTR-002
+        // You can customize this: include zone code, etc.
+    }
 }

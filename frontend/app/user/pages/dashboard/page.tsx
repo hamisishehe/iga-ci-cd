@@ -346,7 +346,7 @@ filteredData = filterByDate(filteredData, filterType);
         <BreadcrumbList>
           <BreadcrumbItem>
             <BreadcrumbLink href="/user/pages/dashboard">
-              {role === "DG" ? "Director General" : "Accountant"}
+             {role === "DG" ? "Director General" : role === "DF" ? "Director Finance" : "Accountant"}
             </BreadcrumbLink>
           </BreadcrumbItem>
           <BreadcrumbSeparator />

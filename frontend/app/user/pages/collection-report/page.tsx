@@ -20,11 +20,7 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
 import { FileSpreadsheet } from "lucide-react";
-import pdfMake from "pdfmake/build/pdfmake";
-import pdfFonts from "pdfmake/build/vfs_fonts";
 import { toast } from "sonner";
-
-pdfMake.vfs = pdfFonts.vfs;
 
 interface ApiCollectionItem {
   id: number;
@@ -70,206 +66,173 @@ export default function CollectionReport() {
   const [service, setService] = useState("ALL");
   const [center, setCenter] = useState("ALL");
   const [zone, setZone] = useState("ALL");
+
   const [data, setData] = useState<CollectionRecord[]>([]);
   const [filteredData, setFilteredData] = useState<CollectionRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
   const rowsPerPage = 10;
 
-  // -----------------------------
-  // Get user info directly
-  // -----------------------------
-  const authToken = localStorage.getItem("authToken") || "";
-  const userRole = localStorage.getItem("userRole") || "";
+  // === User Role & Permissions ===
+  const userType = (localStorage.getItem("userType") || "").toUpperCase(); // HQ, CENTRE, ZONE
   const userCentre = localStorage.getItem("centre") || "";
   const userZone = localStorage.getItem("zone") || "";
-  const userType = (localStorage.getItem("userType") || "").toUpperCase();
-  let isCentreUser = null;
 
-  if (userRole !== "DG") {
-    isCentreUser = userCentre;
-  }
-
-  const isZoneUser = userZone;
   const isHQUser = userType === "HQ";
+  const isCentreUser = userType === "CENTRE" && userCentre;
+  const isZoneUser = userType === "ZONE" && userZone;
 
-  // -----------------------------
-  // Set default dates to current month
-  // -----------------------------
+  // === Set default date range to current month ===
   useEffect(() => {
     const now = new Date();
     const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
     const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
 
-    const formatLocalDate = (d: Date) => {
-      const yyyy = d.getFullYear();
-      const mm = String(d.getMonth() + 1).padStart(2, "0");
-      const dd = String(d.getDate()).padStart(2, "0");
-      return `${yyyy}-${mm}-${dd}`;
-    };
+    const formatDate = (d: Date) =>
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
+        d.getDate()
+      ).padStart(2, "0")}`;
 
-    setFromDate(formatLocalDate(firstDay));
-    setToDate(formatLocalDate(lastDay));
+    setFromDate(formatDate(firstDay));
+    setToDate(formatDate(lastDay));
   }, []);
 
-  // -----------------------------
-  // Fetch & filter data
-  // -----------------------------
+  // === Fetch data once on mount ===
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
-
-      if (isCentreUser) {
-        setCenter(userCentre);
-      }
-
       try {
         const token = localStorage.getItem("authToken");
         const apiKey = process.env.NEXT_PUBLIC_API_KEY;
 
         if (!token || !apiKey) {
-          toast("Missing authentication credentials");
+          toast.error("Missing authentication credentials");
+          setLoading(false);
           return;
         }
 
-    
         const res = await fetch(`${apiUrl}/collections/get`, {
           method: "GET",
           headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${token}`,
+            Authorization: `Bearer ${token}`,
             "X-API-KEY": apiKey,
           },
         });
 
-      
-        if (!res.ok) throw new Error("Network error");
+        if (!res.ok) throw new Error("Failed to fetch collections");
 
         const json: ApiCollectionItem[] = await res.json();
 
-        const mappedData: CollectionRecord[] = json.map((item) => ({
+        const mapped: CollectionRecord[] = json.map((item) => ({
           id: item.id,
-          name: item.customer?.name || "",
-          center: item.customer?.centre?.name || "",
-          zone: item.customer?.centre?.zones?.name || "",
-          serviceCode: item.gfs_code?.code || "",
+          name: item.customer?.name || "N/A",
+          center: item.customer?.centre?.name || "N/A",
+          zone: item.customer?.centre?.zones?.name || "N/A",
+          serviceCode: item.gfs_code?.code || "N/A",
           service:
             item.gfs_code?.description === "Miscellaneous receipts"
               ? "Separate production Unit"
-              : item.gfs_code?.description || "",
+              : item.gfs_code?.description || "N/A",
           amount: Number(item.amount) || 0,
           date: item.date ? item.date.split("T")[0] : "",
         }));
 
-        // Filter immediately based on user role
-        let userFilteredData = mappedData;
+        // Pre-filter by user role (HQ sees all, others restricted)
+        let filteredByRole = mapped;
 
-        if (userCentre) {
-          userFilteredData = userFilteredData.filter(
-            (d) => d.center === userCentre
-          );
+        if (isCentreUser) {
+          filteredByRole = mapped.filter((d) => d.center === userCentre);
+          setCenter(userCentre); // Lock dropdown
+        } else if (isZoneUser) {
+          filteredByRole = mapped.filter((d) => d.zone === userZone);
+          setZone(userZone); // Lock dropdown
         }
-        if (userZone && !userCentre) {
-          userFilteredData = userFilteredData.filter(
-            (d) => d.zone === userZone
-          );
-        }
+        // HQ sees everything → no pre-filter
 
-        setData(userFilteredData); // <-- Use the filtered data here!
+        setData(filteredByRole);
       } catch (err) {
-        console.error("Error fetching:", err);
+        console.error(err);
+        toast.error("Failed to load collections");
         setData([]);
       } finally {
         setLoading(false);
       }
     };
+
     fetchData();
-  }, [apiUrl, authToken, isCentreUser, isZoneUser, userCentre, userZone]);
+  }, []);
 
-  // -----------------------------
-  // Date helpers
-  // -----------------------------
-  const toStartOfDay = (d: string) => new Date(d + "T00:00:00");
-  const toEndOfDay = (d: string) => new Date(d + "T23:59:59");
+  // === Reactive Filtering (dates, service, center, zone) ===
+  useEffect(() => {
+    if (data.length === 0) {
+      setFilteredData([]);
+      return;
+    }
 
-  // -----------------------------
-  // Filter data
-  // -----------------------------
-  const handleFilter = () => {
-    const from = fromDate ? toStartOfDay(fromDate) : null;
-    const to = toDate ? toEndOfDay(toDate) : null;
+    const from = fromDate ? new Date(fromDate + "T00:00:00") : null;
+    const to = toDate ? new Date(toDate + "T23:59:59") : null;
 
     const filtered = data.filter((item) => {
-      if (!item.date) return false;
       const itemDate = new Date(item.date);
-      const inRange = (!from || itemDate >= from) && (!to || itemDate <= to);
-      const matchService = service === "ALL" ? true : item.service === service;
-      const matchCenter = userCentre
-        ? item.center === userCentre
-        : center === "ALL"
-        ? true
-        : item.center === center;
 
-      const matchZone = isHQUser
-        ? zone === "ALL"
-          ? true
-          : item.zone === zone
-        : true;
+      const inDateRange =
+        (!from || itemDate >= from) && (!to || itemDate <= to);
 
-      return inRange && matchService && matchCenter && matchZone;
+      const matchService = service === "ALL" || item.service === service;
+
+      const matchCenter =
+        isCentreUser || // Centre user already filtered
+        center === "ALL" ||
+        item.center === center;
+
+      const matchZone =
+        !isHQUser || // Only HQ can filter by zone
+        zone === "ALL" ||
+        item.zone === zone;
+
+      return inDateRange && matchService && matchCenter && matchZone;
     });
 
     setFilteredData(filtered);
     setCurrentPage(1);
-  };
+  }, [data, fromDate, toDate, service, center, zone, isCentreUser, isHQUser]);
 
-  useEffect(() => {
-    handleFilter();
-  }, [data.length, fromDate, toDate, service, center, zone]);
+  // === Unique options for dropdowns ===
+  const uniqueServices = Array.from(new Set(data.map((d) => d.service))).filter(
+    Boolean
+  );
 
-  useEffect(() => {
-    handleFilter();
-  }, [data.length, fromDate, toDate, service, center, zone]);
+  const uniqueCenters = isCentreUser
+    ? [userCentre]
+    : Array.from(new Set(data.map((d) => d.center))).filter(Boolean);
 
-  // -----------------------------
-  // Pagination & summary
-  // -----------------------------
+  const uniqueZones = isZoneUser
+    ? [userZone]
+    : Array.from(new Set(data.map((d) => d.zone))).filter(Boolean);
+
+  // === Pagination & Totals ===
   const indexOfLastRow = currentPage * rowsPerPage;
   const indexOfFirstRow = indexOfLastRow - rowsPerPage;
   const currentRows = filteredData.slice(indexOfFirstRow, indexOfLastRow);
   const totalPages = Math.max(1, Math.ceil(filteredData.length / rowsPerPage));
-  const totalAmount = filteredData.reduce((s, i) => s + i.amount, 0);
+
+  const totalAmount = filteredData.reduce((sum, item) => sum + item.amount, 0);
 
   const summaryByService: ServiceSummary[] = Object.values(
-    filteredData.reduce<Record<string, ServiceSummary>>((acc, curr) => {
-      if (!acc[curr.serviceCode])
-        acc[curr.serviceCode] = {
-          serviceCode: curr.serviceCode,
-          service: curr.service,
-          total: 0,
-        };
-      acc[curr.serviceCode].total += curr.amount;
+    filteredData.reduce<Record<string, ServiceSummary>>((acc, item) => {
+      const key = item.serviceCode;
+      if (!acc[key]) {
+        acc[key] = { serviceCode: key, service: item.service, total: 0 };
+      }
+      acc[key].total += item.amount;
       return acc;
     }, {})
   ).sort((a, b) => b.total - a.total);
 
-  // -----------------------------
-  // Export functions
-  // -----------------------------
-  const exportPDF = () => {};
-
+  // === Export Excel ===
   const exportExcel = () => {
     const wsData = [
-      [
-        "#",
-        "Customer",
-        "Center",
-        "Zone",
-        "Service Code",
-        "Service",
-        "Amount",
-        "Date",
-      ],
+      ["#", "Customer", "Center", "Zone", "Service Code", "Service", "Amount (TZS)", "Date Paid"],
       ...filteredData.map((r, i) => [
         i + 1,
         r.name,
@@ -285,7 +248,7 @@ export default function CollectionReport() {
 
     const ws = XLSX.utils.aoa_to_sheet(wsData);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Collection Report");
+    XLSX.utils.book_append_sheet(wb, ws, "Collections");
     XLSX.writeFile(wb, "collection_report.xlsx");
   };
 
@@ -297,22 +260,12 @@ export default function CollectionReport() {
     );
   }
 
-  const uniqueCenters = isCentreUser
-    ? [userCentre]
-    : Array.from(new Set(data.map((d) => d.center))).filter(Boolean);
-  const uniqueZones = isZoneUser
-    ? [userZone]
-    : Array.from(new Set(data.map((d) => d.zone))).filter(Boolean);
-
-  // -----------------------------
-  // Render
-  // -----------------------------
   return (
     <div className="p-6 space-y-6">
       <Breadcrumb className="px-5">
         <BreadcrumbList>
           <BreadcrumbItem>
-            <BreadcrumbLink href="/user/pages/dashboard" className=" font-bold">
+            <BreadcrumbLink href="/user/pages/dashboard" className="font-bold">
               Dashboard
             </BreadcrumbLink>
           </BreadcrumbItem>
@@ -321,10 +274,13 @@ export default function CollectionReport() {
         </BreadcrumbList>
       </Breadcrumb>
 
-      <Card className=" border-none outline-none">
+      <Card className="border-none">
         <CardHeader>
-          <CardTitle>{isCentreUser && `${userCentre}`}</CardTitle>
+          <CardTitle>
+            Collection Report {isCentreUser && `- ${userCentre}`}
+          </CardTitle>
         </CardHeader>
+
         <CardContent>
           {/* Filters */}
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-6 gap-4 mb-6">
@@ -348,27 +304,26 @@ export default function CollectionReport() {
 
             <div>
               <label className="text-sm font-medium">Service</label>
-              <Select onValueChange={setService} value={service}>
+              <Select value={service} onValueChange={setService}>
                 <SelectTrigger>
                   <SelectValue placeholder="All" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="ALL">All</SelectItem>
-                  {Array.from(new Set(data.map((d) => d.service)))
-                    .filter(Boolean)
-                    .map((srv, i) => (
-                      <SelectItem key={i} value={srv}>
-                        {srv}
-                      </SelectItem>
-                    ))}
+                  {uniqueServices.map((s, i) => (
+                    <SelectItem key={i} value={s}>
+                      {s}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
 
-            {userRole == "DG" ? (
+            {/* Centre Filter - Visible for HQ and Zone users */}
+            {(!isCentreUser || isHQUser) && (
               <div>
-                <label className="text-sm font-medium">Center</label>
-                <Select onValueChange={setCenter} value={center}>
+                <label className="text-sm font-medium">Centre</label>
+                <Select value={center} onValueChange={setCenter} disabled={isCentreUser}>
                   <SelectTrigger>
                     <SelectValue placeholder="All" />
                   </SelectTrigger>
@@ -382,12 +337,13 @@ export default function CollectionReport() {
                   </SelectContent>
                 </Select>
               </div>
-            ) : null}
+            )}
 
-            {userRole == "DG" && (
+            {/* Zone Filter - Only visible for HQ users */}
+            {isHQUser && (
               <div>
                 <label className="text-sm font-medium">Zone</label>
-                <Select onValueChange={setZone} value={zone}>
+                <Select value={zone} onValueChange={setZone}>
                   <SelectTrigger>
                     <SelectValue placeholder="All" />
                   </SelectTrigger>
@@ -406,39 +362,34 @@ export default function CollectionReport() {
 
           {/* Table */}
           <div className="overflow-auto border rounded-md">
-            <table className="min-w-full text-sm text-left border-collapse table-fixed">
-              <thead className=" text-white bg-blue-950">
+            <table className="min-w-full text-sm text-left border-collapse">
+              <thead className="bg-blue-950 text-white">
                 <tr>
-                  {[
-                    "#",
-                    "Customer",
-                    "Service Code",
-                    "Service",
-                    "Amount (TZS)",
-                    "Date Paid",
-                  ].map((h) => (
-                    <th key={h} className="p-3 border">
-                      {h}
-                    </th>
-                  ))}
+                  <th className="p-3 border">#</th>
+                  <th className="p-3 border">Customer</th>
+                  <th className="p-3 border">Service Code</th>
+                  <th className="p-3 border">Service</th>
+                  <th className="p-3 border text-right">Amount (TZS)</th>
+                  <th className="p-3 border">Date Paid</th>
                 </tr>
               </thead>
               <tbody>
-                {currentRows.map((row, i) => (
-                  <tr key={`${row.id}-${i}`} className="hover:bg-sky-50">
-                    <td className="p-1 border">{indexOfFirstRow + i + 1}</td>
-                    <td className="p-1 border">{row.name}</td>
-                    <td className="p-1 border">{row.serviceCode}</td>
-                    <td className="p-1 border text-start">{row.service}</td>
-                    <td className="p-1 border text-left">
-                      {row.amount.toLocaleString()}
-                    </td>
-                    <td className="p-1 border">{row.date}</td>
-                  </tr>
-                ))}
-                {filteredData.length === 0 && (
+                {currentRows.length > 0 ? (
+                  currentRows.map((row, i) => (
+                    <tr key={row.id} className="hover:bg-sky-50">
+                      <td className="p-3 border">{indexOfFirstRow + i + 1}</td>
+                      <td className="p-3 border">{row.name}</td>
+                      <td className="p-3 border">{row.serviceCode}</td>
+                      <td className="p-3 border">{row.service}</td>
+                      <td className="p-3 border text-right">
+                        {row.amount.toLocaleString()}
+                      </td>
+                      <td className="p-3 border">{row.date}</td>
+                    </tr>
+                  ))
+                ) : (
                   <tr>
-                    <td className="p-4 border text-center" colSpan={8}>
+                    <td colSpan={6} className="p-8 text-center text-gray-500">
                       No records found.
                     </td>
                   </tr>
@@ -448,7 +399,7 @@ export default function CollectionReport() {
           </div>
 
           {/* Pagination */}
-          <div className="flex justify-between items-center mt-4">
+          <div className="flex justify-between items-center mt-6">
             <Button
               variant="outline"
               disabled={currentPage === 1}
@@ -456,11 +407,9 @@ export default function CollectionReport() {
             >
               Previous
             </Button>
-
-            <div className="text-sm text-gray-600">
+            <span className="text-sm text-gray-600">
               Page {currentPage} of {totalPages}
-            </div>
-
+            </span>
             <Button
               variant="outline"
               disabled={currentPage === totalPages}
@@ -470,12 +419,10 @@ export default function CollectionReport() {
             </Button>
           </div>
 
-          {/* Summary */}
-
           {/* Summary by Service */}
-          <h3 className="mt-6 mb-2 font-bold">Summary Per Service</h3>
-          <div className="overflow-auto border rounded-md ">
-            <table className="min-w-full text-sm  ">
+          <h3 className="mt-8 mb-3 text-lg font-bold">Summary Per Service</h3>
+          <div className="overflow-auto border rounded-md">
+            <table className="min-w-full text-sm">
               <thead className="bg-blue-950 text-white">
                 <tr>
                   <th className="p-3 border">Service Code</th>
@@ -484,53 +431,34 @@ export default function CollectionReport() {
                 </tr>
               </thead>
               <tbody>
-                {summaryByService.map((srv) => (
-                  <tr key={srv.serviceCode} className="hover:bg-sky-50">
-                    <td className="p-2 border">{srv.serviceCode}</td>
-                    <td className="p-2 border">{srv.service}</td>
-                    <td className="p-2 border text-right font-semibold">
-                      {srv.total.toLocaleString()}
+                {summaryByService.map((s) => (
+                  <tr key={s.serviceCode} className="hover:bg-sky-50">
+                    <td className="p-3 border">{s.serviceCode}</td>
+                    <td className="p-3 border">{s.service}</td>
+                    <td className="p-3 border text-right font-medium">
+                      {s.total.toLocaleString()}
                     </td>
                   </tr>
                 ))}
-                {summaryByService.length === 0 && (
-                  <tr>
-                    <td className="p-4 border text-center" colSpan={3}>
-                      No summary data.
-                    </td>
-                  </tr>
-                )}
               </tbody>
-
-              <tfoot className=" font-bold">
+              <tfoot className="bg-gray-100 font-bold">
                 <tr>
-                  <td className="p-3 border" colSpan={2}>
+                  <td colSpan={2} className="p-4 border text-right">
                     Total Income:
                   </td>
-                  <td className="p-3 border text-right">
-                    <div className="mt-6 text-lg font-semibold">
-                      {totalAmount.toLocaleString()} TZS
-                    </div>
+                  <td className="p-4 border text-right text-lg">
+                    {totalAmount.toLocaleString()} TZS
                   </td>
                 </tr>
               </tfoot>
             </table>
           </div>
 
-          {/* Export */}
-          <div className="flex gap-3 mt-6">
-            <Button
-              onClick={exportExcel}
-              className="bg-green-600 hover:bg-green-700"
-            >
-              <FileSpreadsheet className="mr-2 h-4 w-4" /> Excel
-            </Button>
-
-            <Button
-              onClick={exportPDF}
-              className="bg-slate-700 hover:bg-slate-800 text-white"
-            >
-              Export PDF
+          {/* Export Buttons */}
+          <div className="flex gap-4 mt-8">
+            <Button onClick={exportExcel} className="bg-green-600 hover:bg-green-700">
+              <FileSpreadsheet className="mr-2 h-4 w-4" />
+              Export Excel
             </Button>
           </div>
         </CardContent>

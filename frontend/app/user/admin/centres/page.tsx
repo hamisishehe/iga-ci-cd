@@ -1,10 +1,8 @@
 "use client";
-
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Swal from "sweetalert2";
 import { toast } from "sonner";
-
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -16,7 +14,6 @@ import {
 } from "@/components/ui/breadcrumb";
 
 /* ===================== TYPES ===================== */
-
 interface Zone {
   id: number;
   name: string;
@@ -28,72 +25,173 @@ interface Centre {
   name: string;
   rank: string;
   code: string;
-  zones: Zone;
+  zones: Zone | null; // Can be null for new centres
 }
 
 /* ===================== CONSTANTS ===================== */
-
 const ROWS_PER_PAGE = 5;
 
 /* ===================== COMPONENT ===================== */
-
 export default function CentresPage() {
   const router = useRouter();
-
   const API_URL =
     process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api";
 
   /* ===================== STATE ===================== */
-
   const [centres, setCentres] = useState<Centre[]>([]);
+  const [zones, setZones] = useState<Zone[]>([]); // New: list of zones
   const [search, setSearch] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
+  const [loading, setLoading] = useState(false);
 
-  /* ===================== FETCH CENTRES ===================== */
-
+  /* ===================== FETCH DATA ===================== */
   useEffect(() => {
     loadCentres();
+    loadZones();
   }, []);
 
   const loadCentres = async () => {
     try {
+      setLoading(true);
+      const token = localStorage.getItem("authToken");
+      const apiKey = process.env.NEXT_PUBLIC_API_KEY;
 
-       const token = localStorage.getItem("authToken");
-        const apiKey = process.env.NEXT_PUBLIC_API_KEY;
-    
-        if (!token || !apiKey) {
-          toast("Missing authentication credentials");
-          return;
-        }
+      if (!token || !apiKey) {
+        toast.error("Missing authentication credentials");
+        return;
+      }
 
-        
       const res = await fetch(`${API_URL}/centre/get`, {
         method: "GET",
-           headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${token}`, 
-        "X-API-KEY": apiKey,              
-      },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+          "X-API-KEY": apiKey,
+        },
       });
-      if (!res.ok) throw new Error();
 
+      if (!res.ok) throw new Error();
       const data = await res.json();
       setCentres(data);
     } catch {
       toast.error("Failed to load centres");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadZones = async () => {
+    try {
+      const token = localStorage.getItem("authToken");
+      const apiKey = process.env.NEXT_PUBLIC_API_KEY;
+
+      if (!token || !apiKey) return;
+
+      const res = await fetch(`${API_URL}/zone/get`, { // Adjust endpoint if different
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+          "X-API-KEY": apiKey,
+        },
+      });
+
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      setZones(data);
+    } catch {
+      toast.error("Failed to load zones");
+    }
+  };
+
+  /* ===================== ADD CENTRE ===================== */
+  const handleAddCentres = async () => {
+    if (zones.length === 0) {
+      toast.error("No zones available. Please add zones first.");
+      return;
+    }
+
+    const zoneOptions = zones
+      .map(
+        (z) => `<option value="${z.id}">${z.name} (${z.code})</option>`
+      )
+      .join("");
+
+    const result = await Swal.fire({
+      title: "Add New Centre",
+      html: `
+        <input id="name" class="swal2-input" placeholder="Centre Name" />
+        <input id="rank" class="swal2-input" placeholder="Rank (e.g., A, B)" />
+        <select id="zone" class="swal2-select">
+          <option value="" disabled selected>Select Zone</option>
+          ${zoneOptions}
+        </select>
+      `,
+      showCancelButton: true,
+      confirmButtonText: "Save",
+      focusConfirm: false,
+      preConfirm: () => {
+        const name = (document.getElementById("name") as HTMLInputElement).value.trim();
+        const rank = (document.getElementById("rank") as HTMLInputElement).value.trim();
+        const zoneId = (document.getElementById("zone") as HTMLSelectElement).value;
+
+        if (!name || !rank || !zoneId) {
+          Swal.showValidationMessage("All fields are required");
+          return false;
+        }
+        return { name, rank, zoneId: Number(zoneId) };
+      },
+    });
+
+    if (!result.isConfirmed || !result.value) return;
+
+    try {
+      const token = localStorage.getItem("authToken");
+      const apiKey = process.env.NEXT_PUBLIC_API_KEY;
+
+      if (!token || !apiKey) {
+        toast.error("Missing authentication credentials");
+        return;
+      }
+
+      const res = await fetch(`${API_URL}/centre/create`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+          "X-API-KEY": apiKey,
+        },
+        body: JSON.stringify({
+          name: result.value.name,
+          rank: result.value.rank,
+          zone_id: result.value.zoneId,
+        }),
+      });
+
+      if (res.ok) {
+        toast.success("Centre added successfully");
+        loadCentres();
+      } else {
+        const error = await res.json().catch(() => ({}));
+        toast.error(error.message || "Failed to add centre");
+      }
+    } catch {
+      toast.error("Error adding centre");
     }
   };
 
   /* ===================== UPDATE CENTRE ===================== */
-
   const handleEditCentre = async (centre: Centre) => {
-    const zoneOptions = centres
+    if (zones.length === 0) {
+      toast.error("No zones loaded");
+      return;
+    }
+
+    const zoneOptions = zones
       .map(
-        (c) =>
-          `<option value="${c.zones.id}" ${
-            c.zones.id === centre.zones.id ? "selected" : ""
-          }>
-            ${c.zones.name}
+        (z) =>
+          `<option value="${z.id}" ${z.id === centre.zones?.id ? "selected" : ""}>
+            ${z.name} (${z.code})
           </option>`
       )
       .join("");
@@ -101,8 +199,8 @@ export default function CentresPage() {
     const result = await Swal.fire({
       title: "Update Centre",
       html: `
-        <input id="name" class="swal2-input" value="${centre.name}" placeholder="Centre Name" />
-        <input id="rank" class="swal2-input" value="${centre.rank}" placeholder="Rank" />
+        <input id="name" class="swal2-input" value="${centre.name}" />
+        <input id="rank" class="swal2-input" value="${centre.rank}" />
         <select id="zone" class="swal2-select">
           ${zoneOptions}
         </select>
@@ -111,15 +209,14 @@ export default function CentresPage() {
       confirmButtonText: "Update",
       focusConfirm: false,
       preConfirm: () => {
-        const name = (document.getElementById("name") as HTMLInputElement).value;
-        const rank = (document.getElementById("rank") as HTMLInputElement).value;
+        const name = (document.getElementById("name") as HTMLInputElement).value.trim();
+        const rank = (document.getElementById("rank") as HTMLInputElement).value.trim();
         const zoneId = (document.getElementById("zone") as HTMLSelectElement).value;
 
         if (!name || !rank || !zoneId) {
           Swal.showValidationMessage("All fields are required");
-          return;
+          return false;
         }
-
         return { name, rank, zoneId: Number(zoneId) };
       },
     });
@@ -127,21 +224,21 @@ export default function CentresPage() {
     if (!result.isConfirmed || !result.value) return;
 
     try {
-        const token = localStorage.getItem("authToken");
-        const apiKey = process.env.NEXT_PUBLIC_API_KEY;
-    
-        if (!token || !apiKey) {
-          toast("Missing authentication credentials");
-          return;
-        }
+      const token = localStorage.getItem("authToken");
+      const apiKey = process.env.NEXT_PUBLIC_API_KEY;
+
+      if (!token || !apiKey) {
+        toast.error("Missing authentication credentials");
+        return;
+      }
 
       const res = await fetch(`${API_URL}/centre/update/${centre.id}`, {
         method: "PUT",
-           headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${token}`, 
-        "X-API-KEY": apiKey,              
-      },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+          "X-API-KEY": apiKey,
+        },
         body: JSON.stringify({
           name: result.value.name,
           rank: result.value.rank,
@@ -149,34 +246,32 @@ export default function CentresPage() {
         }),
       });
 
-      if (!res.ok) throw new Error();
-
-      toast.success("Centre updated successfully");
-      loadCentres();
+      if (res.ok) {
+        toast.success("Centre updated successfully");
+        loadCentres();
+      } else {
+        toast.error("Failed to update centre");
+      }
     } catch {
-      toast.error("Failed to update centre");
+      toast.error("Error updating centre");
     }
   };
 
   /* ===================== FILTER + PAGINATION ===================== */
-
   const filteredCentres = centres.filter((c) =>
     c.name.toLowerCase().includes(search.toLowerCase())
   );
 
   const totalPages = Math.ceil(filteredCentres.length / ROWS_PER_PAGE);
   const startIndex = (currentPage - 1) * ROWS_PER_PAGE;
-
   const paginatedCentres = filteredCentres.slice(
     startIndex,
     startIndex + ROWS_PER_PAGE
   );
 
   /* ===================== UI ===================== */
-
   return (
     <div className="space-y-6 p-6">
-      {/* Breadcrumb */}
       <Breadcrumb>
         <BreadcrumbList>
           <BreadcrumbItem>
@@ -189,9 +284,11 @@ export default function CentresPage() {
         </BreadcrumbList>
       </Breadcrumb>
 
-      <h2 className="text-xl font-semibold">Centres Management</h2>
+      <div className="flex justify-between items-center">
+        <h2 className="text-xl font-semibold">Centre Management</h2>
+        <Button onClick={handleAddCentres}>Add Centre</Button>
+      </div>
 
-      {/* Search */}
       <Input
         placeholder="Search centre..."
         value={search}
@@ -202,7 +299,6 @@ export default function CentresPage() {
         className="max-w-sm"
       />
 
-      {/* Table */}
       <div className="overflow-x-auto border rounded-xl">
         <table className="min-w-full">
           <thead className="bg-gray-100">
@@ -214,15 +310,20 @@ export default function CentresPage() {
               <th className="p-3 text-left">Action</th>
             </tr>
           </thead>
-
           <tbody>
-            {paginatedCentres.length ? (
+            {loading ? (
+              <tr>
+                <td colSpan={5} className="py-6 text-center">
+                  Loading...
+                </td>
+              </tr>
+            ) : paginatedCentres.length ? (
               paginatedCentres.map((c, i) => (
                 <tr key={c.id} className="border-t hover:bg-gray-50">
                   <td className="p-3">{startIndex + i + 1}</td>
                   <td className="p-3">{c.name}</td>
                   <td className="p-3">{c.rank}</td>
-                  <td className="p-3">{c.zones?.name}</td>
+                  <td className="p-3">{c.zones?.name || "-"}</td>
                   <td className="p-3">
                     <Button
                       size="sm"
@@ -252,7 +353,6 @@ export default function CentresPage() {
           {Math.min(startIndex + ROWS_PER_PAGE, filteredCentres.length)} of{" "}
           {filteredCentres.length}
         </span>
-
         <div className="flex gap-2">
           <Button
             size="sm"
@@ -265,7 +365,7 @@ export default function CentresPage() {
           <Button
             size="sm"
             variant="outline"
-            disabled={currentPage === totalPages}
+            disabled={currentPage === totalPages || totalPages === 0}
             onClick={() => setCurrentPage((p) => p + 1)}
           >
             Next

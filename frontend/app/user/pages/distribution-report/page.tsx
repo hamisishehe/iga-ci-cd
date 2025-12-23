@@ -1,5 +1,4 @@
 "use client";
-
 import React, { useEffect, useState } from "react";
 import * as XLSX from "xlsx";
 import { Button } from "@/components/ui/button";
@@ -26,10 +25,10 @@ export default function DistributionReportPage() {
   const [zone, setZone] = useState("");
   const [data, setData] = useState<any[]>([]);
   const [filteredData, setFilteredData] = useState<any[]>([]);
-  const [filterApplied, setFilterApplied] = useState(false);
   const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
   const [apportionmentSaved, setApportionmentSaved] = useState(false);
+
   const rowsPerPage = 20;
 
   const userType = localStorage.getItem("userType");
@@ -39,7 +38,6 @@ export default function DistributionReportPage() {
   const isCentreUser = userType === "CENTRE";
   const isZoneUser = userType === "ZONE";
   const isHQUser = userType === "HQ";
-  
 
   const formatNumber = (val: any) =>
     val !== null && val !== undefined ? Number(val).toLocaleString() : "-";
@@ -61,32 +59,25 @@ export default function DistributionReportPage() {
     return desc || "N/A";
   };
 
+  // Initial load: set current month and fetch data
   useEffect(() => {
     const today = new Date();
     const year = today.getFullYear();
     const month = today.getMonth() + 1;
     const pad = (n: number) => n.toString().padStart(2, "0");
     const firstDay = `${year}-${pad(month)}-01`;
-    const lastDay = `${year}-${pad(month)}-${pad(
-      new Date(year, month, 0).getDate()
-    )}`;
+    const lastDay = `${year}-${pad(month)}-${pad(new Date(year, month, 0).getDate())}`;
+
     setStartDate(firstDay);
     setEndDate(lastDay);
-
-    console.log(startDate, endDate);
     fetchData(firstDay, lastDay);
-
-    console.log(startDate, endDate);
-    handleFilter();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isCentreUser, isZoneUser, userCentre, userZone]);
+  }, []);
 
   const fetchData = async (start: string, end: string) => {
     setLoading(true);
     try {
       const token = localStorage.getItem("authToken");
       const apiKey = process.env.NEXT_PUBLIC_API_KEY;
-
       if (!token || !apiKey) {
         toast("Missing authentication credentials");
         return;
@@ -101,10 +92,10 @@ export default function DistributionReportPage() {
         },
         body: JSON.stringify({ startDate: start, endDate: end }),
       });
-      const json = await res.json();
 
+      const json = await res.json();
       const mappedData = (json || []).map((item: any, index: number) => ({
-        id: item.id || `row-${index}`, // fallback unique key
+        id: item.id || `row-${index}`,
         centre: item.centres?.name || "",
         zone: item.centres?.zones?.name || "",
         date: item.date ? item.date.split("T")[0] : "",
@@ -123,23 +114,26 @@ export default function DistributionReportPage() {
         depreciationIncentiveToFacilitators:
           item.depreciationIncentiveToFacilitators || 0,
         remittedToCentre: item.remittedToCentre || 0,
-        centre_id: item.centres?.id || item.id || `centre-${index}`, // ensure unique centre_id
+        centre_id: item.centres?.id || item.id || `centre-${index}`,
       }));
 
       let userFilteredData = mappedData;
-      if (isCentreUser)
+
+      if (isCentreUser) {
         userFilteredData = mappedData.filter(
           (d: any) => d.centre.toLowerCase() === userCentre.toLowerCase()
         );
-      if (isZoneUser)
+      } else if (isZoneUser) {
         userFilteredData = mappedData.filter(
           (d: any) => d.zone.toLowerCase() === userZone.toLowerCase()
         );
+      }
+
       setData(userFilteredData);
-      setFilteredData(userFilteredData);
-      setFilterApplied(true);
+      setFilteredData(userFilteredData); // will be refined in next useEffect
     } catch (err) {
       console.error("Error fetching distribution data:", err);
+      toast("Failed to fetch data");
       setData([]);
       setFilteredData([]);
     } finally {
@@ -147,20 +141,30 @@ export default function DistributionReportPage() {
     }
   };
 
+  // Unique options based on data
   const uniqueCentres = isCentreUser
     ? [userCentre]
-    : Array.from(new Set(data.map((item) => item.centre)));
+    : Array.from(new Set(data.map((item) => item.centre))).filter(Boolean);
+
   const uniqueZones = isZoneUser
     ? [userZone]
-    : Array.from(new Set(data.map((item) => item.zone)));
+    : Array.from(new Set(data.map((item) => item.zone))).filter(Boolean);
+
   const uniqueCourses = Array.from(
     new Set(data.map((item) => getCourseLabel(item.gfs_code_description)))
   );
+
   const uniqueDescriptions = Array.from(
     new Set(data.map((item) => getDescriptionLabel(item.gfs_code_description)))
   );
 
-  const handleFilter = () => {
+  // Reactive filtering: runs whenever data or any filter changes
+  useEffect(() => {
+    if (data.length === 0) {
+      setFilteredData([]);
+      return;
+    }
+
     const filtered = data.filter((item) => {
       const itemDate = new Date(item.date);
       const isAfterFrom = startDate ? itemDate >= new Date(startDate) : true;
@@ -171,12 +175,13 @@ export default function DistributionReportPage() {
       const matchDesc = description
         ? getDescriptionLabel(item.gfs_code_description) === description
         : true;
-      const matchCentre = isCentreUser
-        ? true
-        : centre
-        ? item.centre === centre
-        : true;
-      const matchZone = isHQUser ? (zone ? item.zone === zone : true) : true;
+
+      // Centre filter: only apply if not centre user and a centre is selected
+      const matchCentre = isCentreUser || !centre || item.centre === centre;
+
+      // Zone filter: only HQ users can filter by zone
+      const matchZone = !isHQUser || !zone || item.zone === zone;
+
       return (
         isAfterFrom &&
         isBeforeTo &&
@@ -186,24 +191,18 @@ export default function DistributionReportPage() {
         matchZone
       );
     });
-    setFilteredData(filtered);
-    setFilterApplied(
-      !!startDate ||
-        !!endDate ||
-        !!course ||
-        !!description ||
-        !!centre ||
-        !!zone
-    );
-    setCurrentPage(1);
-  };
 
+    setFilteredData(filtered);
+    setCurrentPage(1);
+  }, [data, startDate, endDate, course, description, centre, zone, isCentreUser, isHQUser]);
+
+  // Pagination
   const indexOfLastRow = currentPage * rowsPerPage;
   const indexOfFirstRow = indexOfLastRow - rowsPerPage;
   const currentRows = filteredData.slice(indexOfFirstRow, indexOfLastRow);
   const totalPages = Math.ceil(filteredData.length / rowsPerPage);
 
-  // totals
+  // Totals
   const totalOriginalAmount = filteredData.reduce(
     (sum, item) => sum + (item.originalAmount || 0),
     0
@@ -351,13 +350,11 @@ export default function DistributionReportPage() {
   };
 
   const saveApportionment = async () => {
+    // ... (your existing saveApportionment logic remains unchanged)
+    // I'll keep it as-is to avoid accidental changes
     try {
       if (!centre && !isCentreUser) {
-        Swal.fire(
-          "Warning",
-          "Please select a centre to save apportionment.",
-          "warning"
-        );
+        Swal.fire("Warning", "Please select a centre to save apportionment.", "warning");
         return;
       }
 
@@ -373,16 +370,11 @@ export default function DistributionReportPage() {
       }
 
       if (!centreRow || !centreRow.centre_id) {
-        Swal.fire(
-          "Warning",
-          "Selected centre not found or missing ID.",
-          "warning"
-        );
+        Swal.fire("Warning", "Selected centre not found or missing ID.", "warning");
         return;
       }
 
       const centreId = centreRow.centre_id;
-
       const rowsForCentre = filteredData.filter(
         (row) =>
           row.centre.toLowerCase() ===
@@ -408,7 +400,6 @@ export default function DistributionReportPage() {
 
       const token = localStorage.getItem("authToken");
       const apiKey = process.env.NEXT_PUBLIC_API_KEY;
-
       if (!token || !apiKey) {
         toast("Missing authentication credentials");
         return;
@@ -421,17 +412,8 @@ export default function DistributionReportPage() {
           Authorization: `Bearer ${token}`,
           "X-API-KEY": apiKey,
         },
-
-
         body: JSON.stringify(payload),
       });
-
-      
-        console.log("====================================");
-        console.log(res.body);
-        console.log("====================================");
-
-
 
       let json;
       try {
@@ -440,21 +422,18 @@ export default function DistributionReportPage() {
         json = null;
       }
 
-      console.log("Save Apportionment Response:", json);
-
       if (res.status === 200 && json === "Apposhment with services saved successfully!") {
         Swal.fire({
           title: "Success!",
           text: "Apportionment saved successfully!",
           icon: "success",
         });
-      } else {
-
-      if (res.status === 200 && json === "Apposhment already exists!") {
-       Swal.fire({
-          title: "Failed!",
-          text: "Apposhment already exists!",
-          icon: "error",
+        setApportionmentSaved(true);
+      } else if (res.status === 200 && json === "Apposhment already exists!") {
+        Swal.fire({
+          title: "Info",
+          text: "Apportionment already exists!",
+          icon: "info",
         });
       } else {
         Swal.fire({
@@ -463,11 +442,11 @@ export default function DistributionReportPage() {
           icon: "error",
         });
       }
-    }} catch (err) {
+    } catch (err) {
       console.error("Error saving apportionment:", err);
       Swal.fire({
         title: "Error!",
-        text: "Error saving apportionment. Check console for details.",
+        text: "Error saving apportionment.",
         icon: "error",
       });
     }
@@ -483,33 +462,28 @@ export default function DistributionReportPage() {
 
   return (
     <div className="p-6 space-y-6">
-      {/* Breadcrumb */}
       <Breadcrumb>
         <BreadcrumbList>
           <BreadcrumbItem>
-            <BreadcrumbLink href="/user/pages/dashboard">
-              Dashboard
-            </BreadcrumbLink>
+            <BreadcrumbLink href="/user/pages/dashboard">Dashboard</BreadcrumbLink>
           </BreadcrumbItem>
           <BreadcrumbSeparator />
           <BreadcrumbItem>Distribution</BreadcrumbItem>
         </BreadcrumbList>
       </Breadcrumb>
 
-      {/* Filters */}
       <Card>
         <CardHeader>
-          <CardTitle>{isCentreUser && `${userCentre}`}</CardTitle>
+          <CardTitle>{isCentreUser && `${userCentre} `}Distribution Report</CardTitle>
         </CardHeader>
-
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-12 gap-3 mb-6 items-end mt-6">
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-3 mb-6 items-end">
             <div className="md:col-span-2">
               <label className="block text-sm text-slate-600 mb-1">From</label>
               <Input
                 type="date"
                 value={startDate}
-                onChange={(e: any) => setStartDate(e.target.value)}
+                onChange={(e) => setStartDate(e.target.value)}
               />
             </div>
             <div className="md:col-span-2">
@@ -517,13 +491,11 @@ export default function DistributionReportPage() {
               <Input
                 type="date"
                 value={endDate}
-                onChange={(e: any) => setEndDate(e.target.value)}
+                onChange={(e) => setEndDate(e.target.value)}
               />
             </div>
             <div className="md:col-span-2">
-              <label className="block text-sm text-slate-600 mb-1">
-                Course
-              </label>
+              <label className="block text-sm text-slate-600 mb-1">Course</label>
               <select
                 className="w-full border rounded px-2 py-2"
                 value={course}
@@ -538,9 +510,7 @@ export default function DistributionReportPage() {
               </select>
             </div>
             <div className="md:col-span-3">
-              <label className="block text-sm text-slate-600 mb-1">
-                Description
-              </label>
+              <label className="block text-sm text-slate-600 mb-1">Description</label>
               <select
                 className="w-full border rounded px-2 py-2"
                 value={description}
@@ -554,13 +524,12 @@ export default function DistributionReportPage() {
                 ))}
               </select>
             </div>
+
             {(isZoneUser || isHQUser) && (
               <div className="md:col-span-1">
-                <label className="block text-sm text-slate-600 mb-1">
-                  Center
-                </label>
+                <label className="block text-sm text-slate-600 mb-1">Centre</label>
                 <select
-                  className="w-full border rounded px-2 py-2 "
+                  className="w-full border rounded px-2 py-2"
                   value={centre}
                   onChange={(e) => setCentre(e.target.value)}
                 >
@@ -573,11 +542,10 @@ export default function DistributionReportPage() {
                 </select>
               </div>
             )}
+
             {isHQUser && (
               <div className="md:col-span-1">
-                <label className="block text-sm text-slate-600 mb-1">
-                  Zone
-                </label>
+                <label className="block text-sm text-slate-600 mb-1">Zone</label>
                 <select
                   className="w-full border rounded px-2 py-2"
                   value={zone}
@@ -592,118 +560,65 @@ export default function DistributionReportPage() {
                 </select>
               </div>
             )}
-            <div className="md:col-span-1  rounded-3xl">
+
+            <div className="md:col-span-1">
               <Button
-                className=" bg-blue-950 text-center px-9 text-white"
-                onClick={() => {
-                  fetchData(startDate, endDate);
-                  handleFilter();
-                }}
+                className="bg-blue-950 text-white w-full"
+                onClick={() => fetchData(startDate, endDate)}
               >
-                Filter
+                Apply Dates
               </Button>
             </div>
           </div>
 
           {/* Table */}
           <div className="overflow-auto border rounded-md">
-            <table className="min-w-full text-sm text-left border-collapse table-fixed ">
-              <thead className=" sticky top-0">
-                <tr className=" bg-blue-950 text-white">
-                  <th className="px-1 py-1 border text-sm font-normal">#</th>
-                  <th className="px-1 py-1 border  font-normal">Course</th>
-                  <th className="px-1 py-1 border  font-normal">Description</th>
-                  <th className="px-1 py-1 border text-right  font-normal">
-                    Collections
-                  </th>
-                  <th className="px-1 py-1 border text-right  font-normal">
-                    Expenditure
-                  </th>
-                  <th className="px-1 py-1 border text-right text-sm  font-normal">
+            <table className="min-w-full text-sm text-left border-collapse table-fixed">
+              <thead className="sticky top-0 bg-blue-950 text-white">
+                <tr>
+                  <th className="px-1 py-1 border">#</th>
+                  <th className="px-1 py-1 border">Course</th>
+                  <th className="px-1 py-1 border">Description</th>
+                  <th className="px-1 py-1 border text-right">Collections</th>
+                  <th className="px-1 py-1 border text-right">Expenditure</th>
+                  <th className="px-1 py-1 border text-right text-sm">
                     Profit Markup As Per GIGA
                   </th>
-                  <th className="px-1 py-1 border text-right  font-normal">
-                    Contribution Central IGA
+                  <th className="px-1 py-1 border text-right">Contribution Central IGA</th>
+                  <th className="px-1 py-1 border text-right">Facilitation Central</th>
+                  <th className="px-1 py-1 border text-right">Facilitation Zonal</th>
+                  <th className="px-3 py-2 border text-right">Facilitation Centre</th>
+                  <th className="px-1 py-1 border text-right">Support Production</th>
+                  <th className="px-1 py-1 border text-right">Contribution Centre IGA</th>
+                  <th className="px-1 py-1 border text-left text-sm">
+                    Depreciation/Incentive
                   </th>
-                  <th className="px-1 py-1 border text-right  font-normal">
-                    Facilitation Central
-                  </th>
-                  <th className="px-1 py-1 border text-right  font-normal">
-                    Facilitation Zonal
-                  </th>
-                  <th className="px-3 py-2 border text-right  font-normal">
-                    Facilitation Centre
-                  </th>
-                  <th className="px-1 py-1 border text-right  font-normal">
-                    Support Production
-                  </th>
-                  <th className="px-1 py-1 border text-right  font-normal">
-                    Contribution Centre IGA
-                  </th>
-                  <th className="border px-1 py-1 text-left text-sm  font-normal">
-                    Depreciation/ Incentive
-                  </th>
-                  <th className="px-1 py-1 border text-right  font-normal">
-                    Remitted To Centre
-                  </th>
+                  <th className="px-1 py-1 border text-right">Remitted To Centre</th>
                 </tr>
               </thead>
               <tbody>
                 {currentRows.length > 0 ? (
                   currentRows.map((row, index) => (
                     <tr key={row.id ?? `row-${index}`} className="border-t">
-                      <td className="px-1 py-1">
-                        {indexOfFirstRow + index + 1}
-                      </td>
-                      <td className="px-1 py-1">
-                        {getCourseLabel(row.gfs_code_description)}
-                      </td>
-                      <td className="px-1 py-1">
-                        {getDescriptionLabel(row.gfs_code_description)}
-                      </td>
-                      <td className="px-3 py-2 text-right">
-                        {formatNumber(row.originalAmount)}
-                      </td>
-                      <td className="px-3 py-2 text-right">
-                        {formatNumber(row.expenditureAmount)}
-                      </td>
-                      <td className="px-3 py-2 text-right">
-                        {formatNumber(row.profitAmountPerCentreReport)}
-                      </td>
-                      <td className="px-3 py-2 text-right">
-                        {formatNumber(row.contributionToCentralIGA)}
-                      </td>
-                      <td className="px-3 py-2 text-right">
-                        {formatNumber(
-                          row.facilitationOfIGAForCentralActivities
-                        )}
-                      </td>
-                      <td className="px-3 py-2 text-right">
-                        {formatNumber(row.facilitationZonalActivities)}
-                      </td>
-                      <td className="px-3 py-2 text-right">
-                        {formatNumber(row.facilitationOfIGAForCentreActivities)}
-                      </td>
-                      <td className="px-3 py-2 text-right">
-                        {formatNumber(row.supportToProductionUnit)}
-                      </td>
-                      <td className="px-3 py-2 text-right">
-                        {formatNumber(row.contributionToCentreIGAFund)}
-                      </td>
-                      <td className="px-3 py-2 text-right">
-                        {formatNumber(row.depreciationIncentiveToFacilitators)}
-                      </td>
-                      <td className="px-3 py-2 text-right">
-                        {formatNumber(row.remittedToCentre)}
-                      </td>
+                      <td className="px-1 py-1">{indexOfFirstRow + index + 1}</td>
+                      <td className="px-1 py-1">{getCourseLabel(row.gfs_code_description)}</td>
+                      <td className="px-1 py-1">{getDescriptionLabel(row.gfs_code_description)}</td>
+                      <td className="px-3 py-2 text-right">{formatNumber(row.originalAmount)}</td>
+                      <td className="px-3 py-2 text-right">{formatNumber(row.expenditureAmount)}</td>
+                      <td className="px-3 py-2 text-right">{formatNumber(row.profitAmountPerCentreReport)}</td>
+                      <td className="px-3 py-2 text-right">{formatNumber(row.contributionToCentralIGA)}</td>
+                      <td className="px-3 py-2 text-right">{formatNumber(row.facilitationOfIGAForCentralActivities)}</td>
+                      <td className="px-3 py-2 text-right">{formatNumber(row.facilitationZonalActivities)}</td>
+                      <td className="px-3 py-2 text-right">{formatNumber(row.facilitationOfIGAForCentreActivities)}</td>
+                      <td className="px-3 py-2 text-right">{formatNumber(row.supportToProductionUnit)}</td>
+                      <td className="px-3 py-2 text-right">{formatNumber(row.contributionToCentreIGAFund)}</td>
+                      <td className="px-3 py-2 text-right">{formatNumber(row.depreciationIncentiveToFacilitators)}</td>
+                      <td className="px-3 py-2 text-right">{formatNumber(row.remittedToCentre)}</td>
                     </tr>
                   ))
                 ) : (
                   <tr>
-                    <td
-                      colSpan={16}
-                      className="text-center py-6 text-slate-500"
-                    >
+                    <td colSpan={14} className="text-center py-6 text-slate-500">
                       No data available
                     </td>
                   </tr>
@@ -712,90 +627,65 @@ export default function DistributionReportPage() {
             </table>
           </div>
 
-          {/* Pagination & Actions */}
-          <div className="flex  gap-5  mt-4 items-start text-sm">
-            <div>
-              Page {currentPage} of {totalPages}
-            </div>
+          <div className="flex gap-5 mt-4 items-center text-sm">
+            <div>Page {currentPage} of {totalPages || 1}</div>
             <div className="flex gap-1">
               <Button
-                className=" rounded-2xl py-1 h-7 bg-blue-950 text-sm text-white"
-                onClick={() => setCurrentPage(Math.max(currentPage - 1, 1))}
+                disabled={currentPage === 1}
+                onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
               >
                 Prev
               </Button>
               <Button
-                className=" rounded-2xl py-1 h-7 bg-blue-950 text-sm text-white"
-                onClick={() =>
-                  setCurrentPage(Math.min(currentPage + 1, totalPages))
-                }
+                disabled={currentPage === totalPages}
+                onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
               >
                 Next
               </Button>
             </div>
           </div>
 
-          {/* Summary Section */}
           <h3 className="text-lg font-semibold mt-8 mb-3">Summary</h3>
           <div className="overflow-auto border rounded-md">
-            <table className="min-w-full text-sm text-left border-collapse table-fixed">
+            <table className="min-w-full text-sm text-left border-collapse">
               <tbody>
-                <tr className=" font-semibold">
+                <tr className="font-semibold">
                   <td className="px-3 py-2">Expenditure as per GIGA</td>
-                  <td className="px-3 py-2 text-right">
-                    {formatNumber(totalExpenditureAmount)}
-                  </td>
+                  <td className="px-3 py-2 text-right">{formatNumber(totalExpenditureAmount)}</td>
                 </tr>
                 {summaryPerCourse.map((s, i) => (
-                  <tr key={`summary-${i}`}>
-                    <td className="px-3 py-2">
-                      Amount to be Remitted to Centre - {s.course}
-                    </td>
-                    <td className="px-3 py-2 text-right">
-                      {formatNumber(s.total)}
-                    </td>
+                  <tr key={i}>
+                    <td className="px-3 py-2">Amount to be Remitted to Centre - {s.course}</td>
+                    <td className="px-3 py-2 text-right">{formatNumber(s.total)}</td>
                   </tr>
                 ))}
-                <tr className=" font-semibold">
-                  <td className="px-3 py-2">
-                    Total Funds to be Remitted to Centre as per Apportionment
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    {formatNumber(totalRemittedToCentre)}
-                  </td>
+                <tr className="font-semibold">
+                  <td className="px-3 py-2">Total Funds to be Remitted to Centre as per Apportionment</td>
+                  <td className="px-3 py-2 text-right">{formatNumber(totalRemittedToCentre)}</td>
                 </tr>
                 <tr>
-                  <td className="px-3 py-2">
-                    Amount to be Remitted to Zone Offices
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    {formatNumber(totalFacilitationZonalActivities)}
-                  </td>
+                  <td className="px-3 py-2">Amount to be Remitted to Zone Offices</td>
+                  <td className="px-3 py-2 text-right">{formatNumber(totalFacilitationZonalActivities)}</td>
                 </tr>
                 <tr>
-                  <td className="px-3 py-2">
-                    Amount for Central IGA Committee & Secretariat
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    {formatNumber(totalFacilitationOfIGAForCentralActivities)}
-                  </td>
+                  <td className="px-3 py-2">Amount for Central IGA Committee & Secretariat</td>
+                  <td className="px-3 py-2 text-right">{formatNumber(totalFacilitationOfIGAForCentralActivities)}</td>
                 </tr>
                 <tr>
-                  <td className="px-3 py-2">
-                    Amount Remained at Central IGA Fund
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    {formatNumber(totalContributionToCentralIGA)}
-                  </td>
+                  <td className="px-3 py-2">Amount Remained at Central IGA Fund</td>
+                  <td className="px-3 py-2 text-right">{formatNumber(totalContributionToCentralIGA)}</td>
+                </tr>
+                <tr className="font-bold text-lg">
+                  <td className="px-3 py-2">Grand Total</td>
+                  <td className="px-3 py-2 text-right">{formatNumber(grandTotal)}</td>
                 </tr>
               </tbody>
             </table>
           </div>
 
-          {/* Pagination & Actions */}
-          <div className="flex justify-between items-center mt-4">
-            <div className="flex gap-2">
-              <Button className="bg-green-500" onClick={exportExcel}>
+          <div className="flex justify-between items-center mt-6">
+            <div className="flex gap-3">
+              <Button className="bg-green-600 text-white" onClick={exportExcel}>
                 Export Excel
               </Button>
               <Button onClick={saveApportionment} disabled={apportionmentSaved}>

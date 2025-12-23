@@ -18,7 +18,7 @@ public class Centre {
     @Column(length = 100, nullable = false)
     private String name;
 
-    @Column(length = 20, nullable = false, unique = true)
+    @Column(length = 20, nullable = true, unique = true )
     private String code;
 
     @Enumerated(EnumType.STRING)
