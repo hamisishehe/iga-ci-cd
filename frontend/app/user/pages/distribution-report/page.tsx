@@ -688,9 +688,14 @@ export default function DistributionReportPage() {
               <Button className="bg-green-600 text-white" onClick={exportExcel}>
                 Export Excel
               </Button>
-              <Button onClick={saveApportionment} disabled={apportionmentSaved}>
+             
+             
+             
+             {isCentreUser ? <Button onClick={saveApportionment} disabled={apportionmentSaved}>
                 {apportionmentSaved ? "Saved" : "Save Apportionment"}
-              </Button>
+              </Button> : null}
+              
+
             </div>
           </div>
         </CardContent>

@@ -9,6 +9,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
+import { motion, AnimatePresence } from "framer-motion";
 
 export default function LoginPage() {
   const { login } = useAuth();
@@ -19,197 +20,180 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [failMessage, setFailMessage] = useState("");
 
+  const slides = ["/bg2.jpg", "/bg3.png", "/slide.png"];
+  const [currentSlide, setCurrentSlide] = useState(0);
+
+  useEffect(() => {
+    const interval = setInterval(
+      () => setCurrentSlide((prev) => (prev + 1) % slides.length),
+      8000
+    );
+    return () => clearInterval(interval);
+  }, []);
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
 
-    const apiUrl =
-      process.env.NEXT_AUTH_URL || "http://10.10.11.12:8080/auth";
-
-    const sanitizedEmail = email.trim();
-    const sanitizedPassword = password.trim();
-    const escapeInput = (str: string) => str.replace(/[<>'"]/g, "");
-    const safeEmail = escapeInput(sanitizedEmail);
-    const safePassword = escapeInput(sanitizedPassword);
-
-    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-    if (!safeEmail || !safePassword) {
+    if (!email || !password) {
       toast.error("Please fill in all fields");
       setIsLoading(false);
       return;
     }
 
-    if (!emailPattern.test(safeEmail)) {
-      toast.error("Please enter a valid email address");
-      setIsLoading(false);
-      return;
-    }
-
     try {
-      const apiKey = process.env.NEXT_PUBLIC_API_KEY;
-
-      if (!apiKey) {
-        throw new Error("API key is missing in environment variables");
-      }
+      const apiUrl =
+        process.env.NEXT_AUTH_URL || "http://localhost:8080/auth";
 
       const response = await fetch(`${apiUrl}/login`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-API-KEY": apiKey,
+          "X-API-KEY": process.env.NEXT_PUBLIC_API_KEY!,
         },
-        body: JSON.stringify({
-          email: safeEmail,
-          password: safePassword,
-        }),
+        body: JSON.stringify({ email, password }),
       });
 
-      if (response.ok) {
-        const data = await response.json();
-
-        login(
-          data.token,
-          data.role,
-          data.email,
-          data.username,
-          data.centre,
-          data.userType,
-          data.zone,
-          data.userId
-        );
-
-        if (data.role === "ADMIN") {
-          router.push("/user/admin/dashboard");
-        } else {
-          router.push("/user/pages/dashboard");
-        }
-      } else {
-        const errorData = await response.json();
-        setFailMessage(errorData.message || "Invalid email or password");
+      if (!response.ok) {
+        const err = await response.json();
+        setFailMessage(err.message || "Invalid credentials");
+        return;
       }
-    } catch (err) {
-      console.error(err);
+
+      const data = await response.json();
+
+      login(
+        data.token,
+        data.role,
+        data.email,
+        data.username,
+        data.centre,
+        data.userType,
+        data.zone,
+        data.userId
+      );
+
+      router.push(
+        data.role === "ADMIN"
+          ? "/user/admin/dashboard"
+          : "/user/pages/dashboard"
+      );
+    } catch {
       setFailMessage("Login failed");
     } finally {
       setIsLoading(false);
     }
   };
 
-  const slides = ["/bg2.jpg", "/bg3.png", "/slide.png"];
-
-  const [currentSlide, setCurrentSlide] = useState(0);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setCurrentSlide((prev) => (prev + 1) % slides.length);
-    }, 10000); // 4 seconds
-
-    return () => clearInterval(interval);
-  }, []);
-
   return (
-    <div className="min-h-screen w-full flex items-center justify-center bg-cover bg-center bg-no-repeat">
-      <div className=" shadow-amber-200 shadow-2xs w-full max-w-5xl overflow-hidden rounded-2xl border border-gray-200 bg-white/90 backdrop-blur-md  flex flex-col md:flex-row">
-        {/* LEFT SIDE – SLIDESHOW */}
-        <div className="hidden relative w-full md:w-1/2 h-80 md:h-auto bg-blue-950 overflow-hidden p-6 md:block">
-          {slides.map((src, index) => (
-            <div
-              key={src}
-              className={`absolute inset-0 transition-opacity duration-1000 ${
-                index === currentSlide ? "opacity-100" : "opacity-0"
-              }`}
-            >
-              <Image
-                src={src}
-                alt="VETA slide"
-                fill
-                priority={index === 0}
-                className="object-cover "
-              />
-            </div>
-          ))}
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-900 via-blue-800 to-blue-950 px-4">
+      <motion.div
+        initial={{ opacity: 0, y: 40 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.6, ease: "easeOut" }}
+        className="w-full max-w-5xl overflow-hidden rounded-3xl bg-white/10 backdrop-blur-xl border border-white/20 shadow-2xl flex flex-col md:flex-row"
+      >
+        {/* LEFT – SLIDESHOW */}
+        <div className="relative hidden md:block md:w-1/2 bg-blue-950">
+          <AnimatePresence>
+            {slides.map(
+              (src, index) =>
+                index === currentSlide && (
+                  <motion.div
+                    key={src}
+                    initial={{ opacity: 0, scale: 1.05 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 1 }}
+                    className="absolute inset-0"
+                  >
+                    <Image
+                      src={src}
+                      alt="Slide"
+                      fill
+                      className="object-cover"
+                      priority
+                    />
+                  </motion.div>
+                )
+            )}
+          </AnimatePresence>
 
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2 z-10">
+          {/* Indicators */}
+          <div className="absolute bottom-5 left-1/2 -translate-x-1/2 flex gap-2 z-10">
             {slides.map((_, i) => (
               <span
                 key={i}
-                className={`w-2 h-2 rounded-full ${
-                  i === currentSlide ? "bg-white" : "bg-white/50"
+                className={`w-2.5 h-2.5 rounded-full transition ${
+                  i === currentSlide ? "bg-white" : "bg-white/40"
                 }`}
               />
             ))}
           </div>
         </div>
 
-        {/* RIGHT SIDE – LOGIN FORM */}
-        <div className="w-full md:w-1/2 bg-blue-100 p-10 flex flex-col justify-center">
-          {/* LOGO */}
-          <div className="flex justify-center mb-4">
-            <Image
-              src="/veta.png"
-              alt="VETA Logo"
-              width={90}
-              height={90}
-              className="rounded-full"
-            />
-          </div>
+        {/* RIGHT – FORM */}
+        <div className="w-full md:w-1/2 p-10 text-white">
+          {/* Logo */}
+          <motion.div
+            initial={{ scale: 0.8, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ delay: 0.2 }}
+            className="flex justify-center mb-4"
+          >
+            <Image src="/veta.png" alt="VETA" width={90} height={90} className="rounded-full" />
+          </motion.div>
 
-          {/* HEADINGS */}
-          <h3 className="text-center text-sm text-gray-700">
-            The United Republic of Tanzania
+          <h3 className="text-center text-xl text-blue-100 font-semibold">
+            Vocational Education and Training Authority
           </h3>
-          <h1 className="text-center text-xl font-bold mb-6">
+          <h1 className="text-center text-md font-semibold mb-6">
             VETA IGA System (VETIS)
           </h1>
 
-          {/* ERROR MESSAGE */}
           {failMessage && (
             <Alert variant="destructive" className="mb-4">
-              <AlertTitle>Login Failed</AlertTitle>
+              <AlertTitle>Error - </AlertTitle>
               <AlertDescription>{failMessage}</AlertDescription>
             </Alert>
           )}
 
-          {/* LOGIN FORM */}
           <form onSubmit={handleLogin} className="space-y-5">
             <div>
-              <Label>Email *</Label>
+              <Label className=" py-2.5">Email</Label>
               <Input
-                type="text"
-                placeholder="Enter email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="h-12"
+                placeholder="Enter email"
+                className="h-12 bg-white/20 border-white/30 placeholder:text-blue-100 focus:ring-2 focus:ring-blue-400"
               />
             </div>
 
             <div>
-              <Label>Password *</Label>
+              <Label className=" py-2.5">Password</Label>
               <Input
                 type="password"
-                placeholder="Enter password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="h-12"
+                placeholder="Enter password"
+                className="h-12 bg-white/20 border-white/30 placeholder:text-blue-100 focus:ring-2 focus:ring-blue-400"
               />
             </div>
 
             <Button
               type="submit"
-              className="w-full h-12 bg-blue-950 text-white hover:bg-blue-800"
+              disabled={isLoading}
+              className="w-full h-12 bg-blue-600 hover:bg-blue-500 transition-all shadow-lg shadow-blue-500/30"
             >
-              {isLoading ? "Loading..." : "LOGIN"}
+              {isLoading ? "Signing in..." : "LOGIN"}
             </Button>
           </form>
 
-          {/* FOOTER */}
-          <p className="mt-8 text-center text-xs text-gray-600">
-            © 2025 VETA. All Rights Reserved
-            <span className="italic"> Version 1.0.0</span>
+          <p className="mt-8 text-center text-xs text-blue-200">
+            © 2025 VETA • Version 1.0.0
           </p>
         </div>
-      </div>
+      </motion.div>
     </div>
   );
 }

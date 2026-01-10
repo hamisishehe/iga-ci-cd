@@ -231,26 +231,112 @@ const isZoneUser = userType === "ZONE" && Boolean(userZone);
 
   // === Export Excel ===
   const exportExcel = () => {
-    const wsData = [
-      ["#", "Customer", "Center", "Zone", "Service Code", "Service", "Amount (TZS)", "Date Paid"],
-      ...filteredData.map((r, i) => [
-        i + 1,
-        r.name,
-        r.center,
-        r.zone,
-        r.serviceCode,
-        r.service,
-        r.amount,
-        r.date,
-      ]),
-      ["", "", "", "", "", "TOTAL", totalAmount, ""],
-    ];
+  const header = [
+    "#",
+    "Customer",
+    "Center",
+    "Zone",
+    "Service Code",
+    "Service",
+    "Amount (TZS)",
+    "Date Paid",
+  ];
 
-    const ws = XLSX.utils.aoa_to_sheet(wsData);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Collections");
-    XLSX.writeFile(wb, "collection_report.xlsx");
-  };
+  const body = filteredData.map((r, i) => [
+    i + 1,
+    r.name,
+    r.center,
+    r.zone,
+    r.serviceCode,
+    r.service,
+    r.amount,
+    r.date,
+  ]);
+
+  const totalRow = ["", "", "", "", "", "TOTAL", totalAmount, ""];
+
+  const wsData = [header, ...body, totalRow];
+
+  const ws = XLSX.utils.aoa_to_sheet(wsData);
+
+  /* ---------------- HEADER STYLE ---------------- */
+  header.forEach((_, colIndex) => {
+    const cell = ws[XLSX.utils.encode_cell({ r: 0, c: colIndex })];
+    if (cell) {
+      cell.s = {
+        font: { bold: true, color: { rgb: "FFFFFF" } },
+        fill: { fgColor: { rgb: "2563EB" } }, // Blue
+        alignment: { vertical: "center", horizontal: "center" },
+        border: {
+          top: { style: "thin" },
+          bottom: { style: "thin" },
+          left: { style: "thin" },
+          right: { style: "thin" },
+        },
+      };
+    }
+  });
+
+  /* ---------------- BODY STYLE ---------------- */
+  body.forEach((_, rowIndex) => {
+    const excelRow = rowIndex + 1;
+
+    // Amount column formatting
+    const amountCell = ws[XLSX.utils.encode_cell({ r: excelRow, c: 6 })];
+    if (amountCell) {
+      amountCell.t = "n";
+      amountCell.z = '#,##0" TZS"';
+      amountCell.s = {
+        alignment: { horizontal: "right" },
+      };
+    }
+
+    // Date column
+    const dateCell = ws[XLSX.utils.encode_cell({ r: excelRow, c: 7 })];
+    if (dateCell) {
+      dateCell.z = "dd mmm yyyy";
+    }
+  });
+
+  /* ---------------- TOTAL ROW STYLE ---------------- */
+  const totalRowIndex = wsData.length - 1;
+
+  for (let c = 0; c < header.length; c++) {
+    const cell = ws[XLSX.utils.encode_cell({ r: totalRowIndex, c })];
+    if (cell) {
+      cell.s = {
+        font: { bold: true },
+        fill: { fgColor: { rgb: "DBEAFE" } }, // Light blue
+        border: {
+          top: { style: "medium" },
+          bottom: { style: "medium" },
+        },
+        alignment: {
+          horizontal: c === 6 ? "right" : "center",
+        },
+      };
+    }
+  }
+
+  /* ---------------- COLUMN WIDTHS ---------------- */
+  ws["!cols"] = [
+    { wch: 5 },
+    { wch: 22 },
+    { wch: 18 },
+    { wch: 14 },
+    { wch: 16 },
+    { wch: 24 },
+    { wch: 16 },
+    { wch: 16 },
+  ];
+
+  /* ---------------- WORKBOOK ---------------- */
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Collections");
+
+  XLSX.writeFile(wb, "collection_report.xlsx");
+};
+
 
   if (loading) {
     return (

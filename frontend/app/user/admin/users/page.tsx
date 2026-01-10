@@ -199,6 +199,16 @@ export default function UsersPage() {
   /* ================= ACTIONS ================= */
 
   const handleResetPassword = async (userId: number) => {
+
+      const token = localStorage.getItem("authToken");
+    const apiKey = process.env.NEXT_PUBLIC_API_KEY;
+
+    if (!token || !apiKey) {
+      toast("Missing authentication credentials");
+      return;
+    }
+
+
     const result = await Swal.fire({
       title: "Reset Password?",
       icon: "warning",
@@ -210,11 +220,20 @@ export default function UsersPage() {
       try {
         const res = await fetch(
           `${apiUrl}/users/reset-password/${userId}`,
-          { method: "PUT" }
+          {
+            method: "PUT",
+            headers: {
+              "Authorization": `Bearer ${token}`,
+              "X-API-KEY": apiKey,
+            }
+          }
         );
-        res.ok
-          ? Swal.fire("Done", "Password reset", "success")
-          : Swal.fire("Error", "Failed", "error");
+
+        if (res.ok) {
+          Swal.fire("Done", "Password reset", "success");
+        } else {
+          Swal.fire("Error", "Failed", "error");
+        }
       } catch {
         toast("Something went wrong");
       }

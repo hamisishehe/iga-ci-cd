@@ -25,10 +25,8 @@ interface AuditLog {
   objectType: string;
   objectId: number | null;
   ipAddress: string;
-  users: {
-    id: number;
-    username: string;
-  };
+  username: string;
+  userAgent: string;
   createdAt: string;
 }
 
@@ -58,25 +56,65 @@ export default function LogsPage() {
   }, []);
 
   /* ================= FETCH ================= */
-  const fetchActivityLogs = async () => {
-    try {
-      const res = await fetch(`${apiUrl}/audit_logs/all`);
-      if (!res.ok) throw new Error();
-      setActivityLogs(await res.json());
-    } catch {
-      toast("Error loading activity logs");
-    }
-  };
+ const fetchActivityLogs = async () => {
+  try {
+    const token = localStorage.getItem("authToken");
+    const apiKey = process.env.NEXT_PUBLIC_API_KEY;
 
-  const fetchLoginAttempts = async () => {
-    try {
-      const res = await fetch(`${apiUrl}/audit_logs/login_attempts`);
-      if (!res.ok) throw new Error();
-      setLoginAttempts(await res.json());
-    } catch {
-      toast("Error loading login attempts");
+    if (!token || !apiKey) {
+      toast("Missing authentication credentials");
+      return;
     }
-  };
+
+    const res = await fetch(`${apiUrl}/audit_logs/getall`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+        "X-API-KEY": apiKey,
+      },
+    });
+
+    if (!res.ok) throw new Error();
+
+    const data = await res.json(); // ✅ parse once
+    console.log(data);             // ✅ Array(37)
+    setActivityLogs(data);          // ✅ works
+
+  } catch (error) {
+    toast("Error loading activity logs");
+  }
+};
+
+const fetchLoginAttempts = async () => {
+  try {
+    const token = localStorage.getItem("authToken");
+    const apiKey = process.env.NEXT_PUBLIC_API_KEY;
+
+    if (!token || !apiKey) {
+      toast("Missing authentication credentials");
+      return;
+    }
+
+    const res = await fetch(`${apiUrl}/login_attempts/get_all`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+        "X-API-KEY": apiKey,
+      },
+    });
+
+    if (!res.ok) throw new Error();
+
+    const data = await res.json(); // ✅ parse once
+    console.log(data);             // ✅ Array(...)
+    setLoginAttempts(data);        // ✅ works
+
+  } catch (error) {
+    toast("Error loading login attempts");
+  }
+};
 
   /* ================= LOGIN FILTER + PAGINATION ================= */
   const filteredLoginAttempts = loginAttempts.filter((log) =>
@@ -96,7 +134,7 @@ export default function LogsPage() {
 
   /* ================= ACTIVITY FILTER + PAGINATION ================= */
   const filteredActivityLogs = activityLogs.filter((log) =>
-    `${log.action} ${log.objectType} ${log.users?.username}`
+    `${log.action} ${log.objectType} ${log.username} ${log.ipAddress}`
       .toLowerCase()
       .includes(search.toLowerCase())
   );
@@ -231,6 +269,7 @@ export default function LogsPage() {
                       <th className="p-3 text-left">User</th>
                       <th className="p-3 text-left">Action</th>
                       <th className="p-3 text-left">Object</th>
+                      <th className="p-3 text-left">User Agent</th>
                       <th className="p-3 text-left">IP</th>
                       <th className="p-3 text-left">Time</th>
                     </tr>
@@ -243,7 +282,7 @@ export default function LogsPage() {
                             {startActivityIndex + i + 1}
                           </td>
                           <td className="p-3 font-medium">
-                            {log.users?.username}
+                            {log.username} 
                           </td>
                           <td className="p-3">
                             <Badge variant="outline">{log.action}</Badge>
@@ -251,6 +290,9 @@ export default function LogsPage() {
                           <td className="p-3">
                             {log.objectType}
                             {log.objectId && ` #${log.objectId}`}
+                          </td>
+                           <td className="p-3 text-muted-foreground">
+                            {log.userAgent}
                           </td>
                           <td className="p-3 text-muted-foreground">
                             {log.ipAddress}

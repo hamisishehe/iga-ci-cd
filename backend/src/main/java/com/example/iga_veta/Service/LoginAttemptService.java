@@ -9,6 +9,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
+
 @Service
 public class LoginAttemptService {
 
@@ -25,6 +27,9 @@ public class LoginAttemptService {
         this.request = request;
     }
 
+    public List<LoginAttempt> getAll(){
+        return loginAttemptRepository.findAll();
+    }
 
     public void logAttempt(String username, LoginAttempt.Status status) {
         LoginAttempt attempt = new LoginAttempt();
