@@ -56,7 +56,7 @@ public class Allocation {
 
     @ManyToOne
     @JoinColumn(name = "centre_id", nullable = false)
-    private Centre centres;
+    private Centre centre;
 
 
     @Column(nullable = false)

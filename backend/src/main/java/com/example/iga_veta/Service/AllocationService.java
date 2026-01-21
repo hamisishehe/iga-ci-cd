@@ -49,7 +49,7 @@ public class AllocationService {
 
         // Group by centre
         Map<Centre, List<Collections>> collectionsByCentre = filteredCollections.stream()
-                .collect(Collectors.groupingBy(Collections::getCentres));
+                .collect(Collectors.groupingBy(Collections::getCentre));
 
         List<Centre> allCentres = centreRepository.findAll();
 
@@ -74,7 +74,7 @@ public class AllocationService {
 
         // Group collections by GFS code
         Map<GfsCode, List<Collections>> grouped = collections.stream()
-                .collect(Collectors.groupingBy(Collections::getGfs_code));
+                .collect(Collectors.groupingBy(Collections::getGfsCode));
 
         for (Map.Entry<GfsCode, List<Collections>> entry : grouped.entrySet()) {
             GfsCode gfs = entry.getKey();
@@ -137,7 +137,7 @@ public class AllocationService {
 
     private Allocation createEmptyAllocation(Centre centre) {
         Allocation allocation = new Allocation();
-        allocation.setCentres(centre);
+        allocation.setCentre(centre);
         allocation.setOriginalAmount(BigDecimal.ZERO);
         allocation.setExpenditureAmount(BigDecimal.ZERO);
         allocation.setProfitAmountPerCentreReport(BigDecimal.ZERO);
@@ -228,7 +228,7 @@ public class AllocationService {
             allocation.setRemittedToCentre(calc(profitMarkupPerCentre, 0.62));
         }
 
-        allocation.setCentres(collections.get(0).getCentres());
+        allocation.setCentre(collections.get(0).getCentre());
         allocation.setGfs_code(overrideCode);
         allocation.setGfs_code_description(safeStr(allocationDescLabel));
 

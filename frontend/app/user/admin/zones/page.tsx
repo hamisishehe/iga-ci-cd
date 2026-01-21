@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectTrigger, SelectContent, SelectValue, SelectItem } from "@/components/ui/select";
 import { toast } from "sonner";
 import { Breadcrumb, BreadcrumbList, BreadcrumbItem, BreadcrumbLink, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
+import { Card, CardContent } from "@/components/ui/card";
 
 interface Zone {
   id: number;
@@ -75,75 +76,138 @@ export default function CentresPage() {
   const prevPage = () => currentPage > 1 && setCurrentPage((p) => p - 1);
 
   return (
+  <div className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-slate-50">
     <div className="space-y-6 p-6">
-
-       <Breadcrumb className="mb-6">
+      {/* Breadcrumb */}
+      <Breadcrumb className="mb-2">
         <BreadcrumbList>
           <BreadcrumbItem>
-            <BreadcrumbLink href="/user/admin/dashboard">Dashboard</BreadcrumbLink>
+            <BreadcrumbLink
+              href="/user/admin/dashboard"
+              className="font-semibold text-slate-800"
+            >
+              Dashboard
+            </BreadcrumbLink>
           </BreadcrumbItem>
           <BreadcrumbSeparator />
-          <BreadcrumbItem>zones</BreadcrumbItem>
+          <BreadcrumbItem className="text-slate-600">Zones</BreadcrumbItem>
         </BreadcrumbList>
       </Breadcrumb>
-      
-      <div className="flex justify-between items-center">
-        <h2 className="text-xl font-semibold">Zones Management</h2>
-    
+
+      {/* Header */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h2 className="text-2xl font-semibold tracking-tight text-slate-900">
+            Zones Management
+          </h2>
+          <p className="text-sm text-slate-600">
+            Search and view system zones.
+          </p>
+        </div>
       </div>
 
-      {/* Filters */}
-      <div className="flex gap-2 mb-4">
-        <Input
-          placeholder="Search users..."
-          value={search}
-          onChange={(e) => {
-            setSearch(e.target.value);
-            setCurrentPage(1);
-          }}
-          className="max-w-sm"
-        />
-     
-      </div>
+      {/* Search */}
+      <Card className="relative overflow-hidden rounded-2xl border-slate-200/60 bg-white shadow-sm">
+        <div className="absolute inset-0 bg-gradient-to-br from-sky-500/8 via-transparent to-indigo-500/8" />
+        <CardContent className="relative p-5">
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
+            <div className="md:col-span-10 space-y-1.5">
+              <label className="text-xs font-medium text-slate-700">Search zones</label>
+              <Input
+                placeholder="Search by zone name..."
+                value={search}
+                onChange={(e) => {
+                  setSearch(e.target.value);
+                  setCurrentPage(1);
+                }}
+                className="h-10 rounded-xl border-slate-200 bg-white"
+              />
+            </div>
+
+            <div className="md:col-span-2">
+              <div className="h-10 rounded-xl border border-slate-200 bg-white px-3 flex items-center justify-center text-xs text-slate-600">
+                {paginatedUsers.length}/{filteredZones.length}
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Table */}
-      <div className="overflow-x-auto border rounded-xl">
-        <table className="min-w-full border-collapse">
-          <thead className="bg-gray-100 text-gray-700">
-            <tr>
-              <th className="p-3 text-left">#</th>
-              <th className="p-3 text-left">Name</th>
-            </tr>
-          </thead>
-          <tbody>
-            {paginatedUsers.length ? (
-              paginatedUsers.map((u, i) => (
-                <tr key={u.id} className="border-t hover:bg-gray-50">
-                  <td className="p-3">{startIndex + i + 1}</td>
-                  <td className="p-3">{u.name} </td>
+      <Card className="rounded-2xl border-slate-200/60 bg-white shadow-sm">
+        <CardContent className="p-0">
+          <div className="overflow-x-auto rounded-2xl">
+            <table className="min-w-full text-sm">
+              <thead className="sticky top-0 z-10 bg-slate-900 text-white">
+                <tr>
+                  <th className="p-3 text-left font-medium">#</th>
+                  <th className="p-3 text-left font-medium">Name</th>
                 </tr>
-              ))
-            ) : (
-              <tr>
-                <td colSpan={7} className="text-center py-6 text-gray-500 italic">
-                  No Zone found
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+              </thead>
+
+              <tbody>
+                {paginatedUsers.length ? (
+                  paginatedUsers.map((u, i) => (
+                    <tr
+                      key={u.id}
+                      className="border-t border-slate-200/70 hover:bg-slate-50"
+                    >
+                      <td className="p-3 text-slate-700">{startIndex + i + 1}</td>
+                      <td className="p-3">
+                        <div className="font-medium text-slate-900">{u.name}</div>
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={2} className="py-10 text-center text-slate-500">
+                      No Zone found
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Pagination */}
-      <div className="flex justify-between items-center mt-4">
-        <div className="text-sm text-gray-600">
-          Showing {startIndex + 1}–{Math.min(startIndex + rowsPerPage, filteredZones.length)} of {filteredZones.length} users
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mt-2">
+        <div className="text-sm text-slate-600">
+          Showing{" "}
+          <span className="font-semibold text-slate-900">
+            {filteredZones.length ? startIndex + 1 : 0}
+          </span>
+          –{" "}
+          <span className="font-semibold text-slate-900">
+            {Math.min(startIndex + rowsPerPage, filteredZones.length)}
+          </span>{" "}
+          of <span className="font-semibold text-slate-900">{filteredZones.length}</span> zones
         </div>
+
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" disabled={currentPage === 1} onClick={prevPage}>Prev</Button>
-          <Button variant="outline" size="sm" disabled={currentPage === totalPages} onClick={nextPage}>Next</Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-10 rounded-xl border-slate-200 bg-white"
+            disabled={currentPage === 1}
+            onClick={prevPage}
+          >
+            Prev
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-10 rounded-xl border-slate-200 bg-white"
+            disabled={currentPage === totalPages}
+            onClick={nextPage}
+          >
+            Next
+          </Button>
         </div>
       </div>
     </div>
-  );
+  </div>
+);
+
 }

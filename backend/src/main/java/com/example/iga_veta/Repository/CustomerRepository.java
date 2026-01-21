@@ -11,4 +11,6 @@ public interface CustomerRepository extends JpaRepository<Customer,Long> {
 
     Optional<Customer> findByNameAndCentre(String name, Centre centre);
 
+    Optional<Customer> findByNameIgnoreCaseAndCentre_Id(String name, Long centreId);
+
 }

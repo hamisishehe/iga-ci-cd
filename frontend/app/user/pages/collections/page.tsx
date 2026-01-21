@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import * as XLSX from "xlsx";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -35,7 +35,7 @@ interface ApiCollectionItem {
       };
     };
   };
-  gfs_code?: {
+  gfsCode?: {
     code?: string;
     description?: string;
   };
@@ -128,11 +128,11 @@ const isZoneUser = userType === "ZONE" && Boolean(userZone);
           name: item.customer?.name || "N/A",
           center: item.customer?.centre?.name || "N/A",
           zone: item.customer?.centre?.zones?.name || "N/A",
-          serviceCode: item.gfs_code?.code || "N/A",
+          serviceCode: item.gfsCode?.code || "N/A",
           service:
-            item.gfs_code?.description === "Miscellaneous receipts"
+            item.gfsCode?.description === "Miscellaneous receipts"
               ? "Separate production Unit"
-              : item.gfs_code?.description || "N/A",
+              : item.gfsCode?.description || "N/A",
           amount: Number(item.amount) || 0,
           date: item.date ? item.date.split("T")[0] : "",
         }));
@@ -346,136 +346,169 @@ const isZoneUser = userType === "ZONE" && Boolean(userZone);
     );
   }
 
-  return (
+ return (
+  <div className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-slate-50">
     <div className="p-6 space-y-6">
-      <Breadcrumb className="px-5">
-        <BreadcrumbList>
-          <BreadcrumbItem>
-            <BreadcrumbLink href="/user/pages/dashboard" className="font-bold">
-              Dashboard
-            </BreadcrumbLink>
-          </BreadcrumbItem>
-          <BreadcrumbSeparator />
-          <BreadcrumbItem>Collections</BreadcrumbItem>
-        </BreadcrumbList>
-      </Breadcrumb>
+      {/* Breadcrumb */}
+      <div className="flex items-center justify-between">
+        <Breadcrumb className="px-1 sm:px-2">
+          <BreadcrumbList>
+            <BreadcrumbItem>
+              <BreadcrumbLink href="/user/pages/dashboard" className="font-semibold text-slate-800">
+                Dashboard
+              </BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem className="text-slate-600">Collections</BreadcrumbItem>
+          </BreadcrumbList>
+        </Breadcrumb>
 
-      <Card className="border-none">
-        <CardHeader>
-          <CardTitle>
-            Collection Report {isCentreUser && `- ${userCentre}`}
-          </CardTitle>
+        {/* Optional small badge */}
+        {isCentreUser && (
+          <div className="hidden sm:inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-700 shadow-sm">
+            <span className="h-2 w-2 rounded-full bg-emerald-500" />
+            {userCentre}
+          </div>
+        )}
+      </div>
+
+      {/* Page Card */}
+      <Card className="relative overflow-hidden rounded-2xl border-slate-200/60 bg-white shadow-sm">
+        <div className="absolute inset-0 bg-gradient-to-br from-sky-500/8 via-transparent to-indigo-500/8" />
+
+        <CardHeader className="relative flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <CardDescription className="text-slate-600">
+              Filter by date, service, centre and zone to generate the report.
+            </CardDescription>
+          </div>
         </CardHeader>
 
-        <CardContent>
+        <CardContent className="relative">
           {/* Filters */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-6 gap-4 mb-6">
-            <div>
-              <label className="text-sm font-medium">From</label>
-              <Input
-                type="date"
-                value={fromDate}
-                onChange={(e) => setFromDate(e.target.value)}
-              />
-            </div>
+          <div className="rounded-2xl border border-slate-200/70 bg-gradient-to-b from-slate-50 to-white p-4 sm:p-5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-6 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-slate-700">From</label>
+                <Input
+                  type="date"
+                  value={fromDate}
+                  onChange={(e) => setFromDate(e.target.value)}
+                  className="h-10 rounded-xl border-slate-200 bg-white"
+                />
+              </div>
 
-            <div>
-              <label className="text-sm font-medium">To</label>
-              <Input
-                type="date"
-                value={toDate}
-                onChange={(e) => setToDate(e.target.value)}
-              />
-            </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-slate-700">To</label>
+                <Input
+                  type="date"
+                  value={toDate}
+                  onChange={(e) => setToDate(e.target.value)}
+                  className="h-10 rounded-xl border-slate-200 bg-white"
+                />
+              </div>
 
-            <div>
-              <label className="text-sm font-medium">Service</label>
-              <Select value={service} onValueChange={setService}>
-                <SelectTrigger>
-                  <SelectValue placeholder="All" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ALL">All</SelectItem>
-                  {uniqueServices.map((s, i) => (
-                    <SelectItem key={i} value={s}>
-                      {s}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Centre Filter - Visible for HQ and Zone users */}
-            {(!isCentreUser || isHQUser) && (
-              <div>
-                <label className="text-sm font-medium">Centre</label>
-                <Select value={center} onValueChange={setCenter} disabled={isCentreUser}>
-                  <SelectTrigger>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-slate-700">Service</label>
+                <Select value={service} onValueChange={setService}>
+                  <SelectTrigger className="h-10 rounded-xl border-slate-200 bg-white">
                     <SelectValue placeholder="All" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="ALL">All</SelectItem>
-                    {uniqueCenters.map((c, i) => (
-                      <SelectItem key={i} value={c}>
-                        {c}
+                    {uniqueServices.map((s, i) => (
+                      <SelectItem key={i} value={s}>
+                        {s}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
-            )}
 
-            {/* Zone Filter - Only visible for HQ users */}
-            {isHQUser && (
-              <div>
-                <label className="text-sm font-medium">Zone</label>
-                <Select value={zone} onValueChange={setZone}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="All" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="ALL">All</SelectItem>
-                    {uniqueZones.map((z, i) => (
-                      <SelectItem key={i} value={z}>
-                        {z}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              {/* Centre Filter - Visible for HQ and Zone users */}
+              {(!isCentreUser || isHQUser) && (
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-slate-700">Centre</label>
+                  <Select value={center} onValueChange={setCenter} disabled={isCentreUser}>
+                    <SelectTrigger className="h-10 rounded-xl border-slate-200 bg-white">
+                      <SelectValue placeholder="All" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ALL">All</SelectItem>
+                      {uniqueCenters.map((c, i) => (
+                        <SelectItem key={i} value={c}>
+                          {c}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
+              {/* Zone Filter - Only visible for HQ users */}
+              {isHQUser && (
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-slate-700">Zone</label>
+                  <Select value={zone} onValueChange={setZone}>
+                    <SelectTrigger className="h-10 rounded-xl border-slate-200 bg-white">
+                      <SelectValue placeholder="All" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ALL">All</SelectItem>
+                      {uniqueZones.map((z, i) => (
+                        <SelectItem key={i} value={z}>
+                          {z}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
+              {/* Quick action area (optional) */}
+              <div className="md:col-span-1 flex items-end">
+                <div className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
+                  Tip: Use “All” to include everything.
+                </div>
               </div>
-            )}
+            </div>
           </div>
 
           {/* Table */}
-          <div className="overflow-auto border rounded-md">
-            <table className="min-w-full text-sm text-left border-collapse">
-              <thead className="bg-blue-950 text-white">
+          <div className="mt-6 overflow-auto rounded-2xl border border-slate-200/70 bg-white">
+            <table className="min-w-full text-sm text-left">
+              <thead className="sticky top-0 z-10 bg-slate-900 text-white">
                 <tr>
-                  <th className="p-3 border">#</th>
-                  <th className="p-3 border">Customer</th>
-                  <th className="p-3 border">Service Code</th>
-                  <th className="p-3 border">Service</th>
-                  <th className="p-3 border text-right">Amount (TZS)</th>
-                  <th className="p-3 border">Date Paid</th>
+                  <th className="p-3 font-medium">#</th>
+                  <th className="p-3 font-medium">Customer</th>
+                  <th className="p-3 font-medium">Service Code</th>
+                  <th className="p-3 font-medium">Service</th>
+                  <th className="p-3 font-medium text-right">Amount (TZS)</th>
+                  <th className="p-3 font-medium">Date Paid</th>
                 </tr>
               </thead>
               <tbody>
                 {currentRows.length > 0 ? (
                   currentRows.map((row, i) => (
-                    <tr key={row.id} className="hover:bg-sky-50">
-                      <td className="p-3 border">{indexOfFirstRow + i + 1}</td>
-                      <td className="p-3 border">{row.name}</td>
-                      <td className="p-3 border">{row.serviceCode}</td>
-                      <td className="p-3 border">{row.service}</td>
-                      <td className="p-3 border text-right">
+                    <tr
+                      key={row.id}
+                      className="border-t border-slate-200/70 hover:bg-slate-50"
+                    >
+                      <td className="p-3 text-slate-700">
+                        {indexOfFirstRow + i + 1}
+                      </td>
+                      <td className="p-3 text-slate-900">{row.name}</td>
+                      <td className="p-3 text-slate-700">{row.serviceCode}</td>
+                      <td className="p-3 text-slate-700">{row.service}</td>
+                      <td className="p-3 text-right font-semibold text-slate-900">
                         {row.amount.toLocaleString()}
                       </td>
-                      <td className="p-3 border">{row.date}</td>
+                      <td className="p-3 text-slate-700">{row.date}</td>
                     </tr>
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={6} className="p-8 text-center text-gray-500">
+                    <td colSpan={6} className="p-10 text-center text-slate-500">
                       No records found.
                     </td>
                   </tr>
@@ -485,55 +518,74 @@ const isZoneUser = userType === "ZONE" && Boolean(userZone);
           </div>
 
           {/* Pagination */}
-          <div className="flex justify-between items-center mt-6">
+          <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <Button
               variant="outline"
               disabled={currentPage === 1}
               onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
+              className="h-10 rounded-xl border-slate-200 bg-white"
             >
               Previous
             </Button>
-            <span className="text-sm text-gray-600">
-              Page {currentPage} of {totalPages}
+
+            <span className="text-sm text-slate-600">
+              Page <span className="font-semibold text-slate-900">{currentPage}</span> of{" "}
+              <span className="font-semibold text-slate-900">{totalPages}</span>
             </span>
+
             <Button
               variant="outline"
               disabled={currentPage === totalPages}
               onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
+              className="h-10 rounded-xl border-slate-200 bg-white"
             >
               Next
             </Button>
           </div>
 
           {/* Summary by Service */}
-          <h3 className="mt-8 mb-3 text-lg font-bold">Summary Per Service</h3>
-          <div className="overflow-auto border rounded-md">
+          <div className="mt-10 flex items-end justify-between gap-4">
+            <div>
+              <h3 className="text-lg font-semibold text-slate-900">Summary Per Service</h3>
+              <p className="text-sm text-slate-600">Totals grouped by service code.</p>
+            </div>
+
+            <div className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-700 shadow-sm">
+              Total: <span className="font-semibold">{totalAmount.toLocaleString()} TZS</span>
+            </div>
+          </div>
+
+          <div className="mt-4 overflow-auto rounded-2xl border border-slate-200/70 bg-white">
             <table className="min-w-full text-sm">
-              <thead className="bg-blue-950 text-white">
+              <thead className="sticky top-0 z-10 bg-slate-900 text-white">
                 <tr>
-                  <th className="p-3 border">Service Code</th>
-                  <th className="p-3 border">Service Name</th>
-                  <th className="p-3 border text-right">Total Amount (TZS)</th>
+                  <th className="p-3 font-medium">Service Code</th>
+                  <th className="p-3 font-medium">Service Name</th>
+                  <th className="p-3 font-medium text-right">Total Amount (TZS)</th>
                 </tr>
               </thead>
               <tbody>
                 {summaryByService.map((s) => (
-                  <tr key={s.serviceCode} className="hover:bg-sky-50">
-                    <td className="p-3 border">{s.serviceCode}</td>
-                    <td className="p-3 border">{s.service}</td>
-                    <td className="p-3 border text-right font-medium">
+                  <tr
+                    key={s.serviceCode}
+                    className="border-t border-slate-200/70 hover:bg-slate-50"
+                  >
+                    <td className="p-3 text-slate-700">{s.serviceCode}</td>
+                    <td className="p-3 text-slate-900">{s.service}</td>
+                    <td className="p-3 text-right font-semibold text-slate-900">
                       {s.total.toLocaleString()}
                     </td>
                   </tr>
                 ))}
               </tbody>
-              <tfoot className="bg-gray-100 font-bold">
+              <tfoot className="bg-slate-50">
                 <tr>
-                  <td colSpan={2} className="p-4 border text-right">
+                  <td colSpan={2} className="p-4 text-right font-semibold text-slate-700">
                     Total Income:
                   </td>
-                  <td className="p-4 border text-right text-lg">
-                    {totalAmount.toLocaleString()} TZS
+                  <td className="p-4 text-right text-base font-semibold text-slate-900">
+                    {totalAmount.toLocaleString()}{" "}
+                    <span className="text-sm font-medium text-slate-500">TZS</span>
                   </td>
                 </tr>
               </tfoot>
@@ -541,8 +593,11 @@ const isZoneUser = userType === "ZONE" && Boolean(userZone);
           </div>
 
           {/* Export Buttons */}
-          <div className="flex gap-4 mt-8">
-            <Button onClick={exportExcel} className="bg-green-600 hover:bg-green-700">
+          <div className="mt-8 flex flex-wrap gap-3">
+            <Button
+              onClick={exportExcel}
+              className="h-10 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm"
+            >
               <FileSpreadsheet className="mr-2 h-4 w-4" />
               Export Excel
             </Button>
@@ -550,5 +605,7 @@ const isZoneUser = userType === "ZONE" && Boolean(userZone);
         </CardContent>
       </Card>
     </div>
-  );
+  </div>
+);
+
 }

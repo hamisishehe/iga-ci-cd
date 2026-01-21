@@ -18,19 +18,25 @@ import {
   BreadcrumbList,
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
 
 type Role =
-  | "ADMIN"
-  | "MANAGER"
-  | "CASHIER"
-  | "STAFF"
-  | "DG"
-  | "DF"
-  | "RFM"
-  | "CHIEF_ACCOUNTANT"
-  | "ACCOUNTANT";
+ |"ADMIN"
+  |"BURSAR"
+  |"ACCOUNT_OFFICER"
+  |"ASSISTANT_ACCOUNT"
+  |"PRINCIPAL"
+  |"REGIONAL_DIRECTOR"
+  |"REGIONAL_FINANCE_MANAGER"
+  |"DIRECTOR_GENERAL"
+  |"DIRECTOR_OF_FINANCE" 
+  |"FINANCE_MANAGER"
+  |"CHIEF_ACCOUNTANT" 
+  |"DEVELOPER"
+  |"TESTER";
+
+
 
 type UserType = "CENTRE" | "ZONE" | "HQ";
 type Status = "ACTIVE" | "INACTIVE" | "PENDING";
@@ -63,17 +69,21 @@ interface UserResponse {
   departments?: { id: number; name: string };
 }
 
-const FINANCE_ROLES: Role[] = ["ACCOUNTANT", "CHIEF_ACCOUNTANT"];
+const FINANCE_ROLES: Role[] = ["ACCOUNT_OFFICER", "CHIEF_ACCOUNTANT"];
 const ALL_ROLES: Role[] = [
-  "ADMIN",
-  "MANAGER",
-  "CASHIER",
-  "STAFF",
-  "DG",
-  "DF",
-  "RFM",
-  "CHIEF_ACCOUNTANT",
-  "ACCOUNTANT",
+   "ADMIN",
+  "BURSAR", 
+  "ACCOUNT_OFFICER", 
+  "ASSISTANT_ACCOUNT",
+  "PRINCIPAL",
+  "REGIONAL_DIRECTOR",
+  "REGIONAL_FINANCE_MANAGER",
+  "DIRECTOR_GENERAL",
+  "DIRECTOR_OF_FINANCE", 
+  "FINANCE_MANAGER", 
+  "CHIEF_ACCOUNTANT", 
+  "DEVELOPER", 
+  "TESTER"
 ];
 
 // get current logged-in userType from localStorage
@@ -96,7 +106,7 @@ export default function EditUserPage() {
     userName: "",
     email: "",
     phoneNumber: "",
-    role: "ACCOUNTANT",
+    role: "ACCOUNT_OFFICER",
     userType: userTypeScope, // default based on logged-in user
     status: "ACTIVE",
     centreId: 0,
@@ -257,178 +267,263 @@ export default function EditUserPage() {
   if (loading) return <div className="p-6 text-center">Loading user data...</div>;
 
   return (
-    <div className="w-full mx-auto p-8 space-y-6">
-      <Breadcrumb className="mb-6">
+  <div className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-slate-50">
+    <div className="w-full mx-auto p-6 sm:p-8 space-y-6">
+      {/* Breadcrumb */}
+      <Breadcrumb className="mb-2">
         <BreadcrumbList>
           <BreadcrumbItem>
-            <BreadcrumbLink href="/user/admin/dashboard">Dashboard</BreadcrumbLink>
+            <BreadcrumbLink
+              href="/user/admin/dashboard"
+              className="font-semibold text-slate-800"
+            >
+              Dashboard
+            </BreadcrumbLink>
           </BreadcrumbItem>
           <BreadcrumbSeparator />
           <BreadcrumbItem>
-            <BreadcrumbLink href="/user/admin/users">Users</BreadcrumbLink>
+            <BreadcrumbLink
+              href="/user/admin/users"
+              className="font-semibold text-slate-800"
+            >
+              Users
+            </BreadcrumbLink>
           </BreadcrumbItem>
           <BreadcrumbSeparator />
-          <BreadcrumbItem>Edit User</BreadcrumbItem>
+          <BreadcrumbItem className="text-slate-600">Edit User</BreadcrumbItem>
         </BreadcrumbList>
       </Breadcrumb>
 
-      <Card className="border rounded-2xl shadow-md">
-        <CardHeader>
-          <CardTitle className="text-2xl font-semibold">Edit User</CardTitle>
+      {/* Page Title */}
+      <div className="flex flex-col gap-1">
+        <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
+          Edit User
+        </h1>
+        <p className="text-sm text-slate-600">
+          Update user profile, assignments and account status.
+        </p>
+      </div>
+
+      {/* Form Card */}
+      <Card className="relative overflow-hidden rounded-2xl border-slate-200/60 bg-white shadow-sm">
+        <div className="absolute inset-0 bg-gradient-to-br from-sky-500/8 via-transparent to-indigo-500/8" />
+
+        <CardHeader className="relative">
+          <CardTitle className="text-lg text-slate-900">User Information</CardTitle>
+          <CardDescription className="text-slate-600">
+            Make changes then click update to save.
+          </CardDescription>
         </CardHeader>
 
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-5">
+        <CardContent className="relative">
+          <form onSubmit={handleSubmit} className="space-y-6">
             {/* Names */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <Input
-                placeholder="First Name"
-                value={form.firstName}
-                onChange={(e) => setForm({ ...form, firstName: e.target.value })}
-              />
-              <Input
-                placeholder="Middle Name"
-                value={form.middleName}
-                onChange={(e) => setForm({ ...form, middleName: e.target.value })}
-              />
-              <Input
-                placeholder="Last Name"
-                value={form.lastName}
-                onChange={(e) => setForm({ ...form, lastName: e.target.value })}
-              />
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-slate-700">First Name</label>
+                <Input
+                  placeholder="First Name"
+                  value={form.firstName}
+                  onChange={(e) => setForm({ ...form, firstName: e.target.value })}
+                  className="h-10 rounded-xl border-slate-200 bg-white"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-slate-700">Middle Name</label>
+                <Input
+                  placeholder="Middle Name"
+                  value={form.middleName}
+                  onChange={(e) => setForm({ ...form, middleName: e.target.value })}
+                  className="h-10 rounded-xl border-slate-200 bg-white"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-slate-700">Last Name</label>
+                <Input
+                  placeholder="Last Name"
+                  value={form.lastName}
+                  onChange={(e) => setForm({ ...form, lastName: e.target.value })}
+                  className="h-10 rounded-xl border-slate-200 bg-white"
+                />
+              </div>
             </div>
 
             {/* Username + Email */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Input
-                placeholder="Username"
-                value={form.userName}
-                onChange={(e) => setForm({ ...form, userName: e.target.value })}
-              />
-              <Input
-                placeholder="Email"
-                type="email"
-                value={form.email}
-                onChange={(e) => setForm({ ...form, email: e.target.value })}
-              />
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-slate-700">Username</label>
+                <Input
+                  placeholder="Username"
+                  value={form.userName}
+                  onChange={(e) => setForm({ ...form, userName: e.target.value })}
+                  className="h-10 rounded-xl border-slate-200 bg-white"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-slate-700">Email</label>
+                <Input
+                  placeholder="Email"
+                  type="email"
+                  value={form.email}
+                  onChange={(e) => setForm({ ...form, email: e.target.value })}
+                  className="h-10 rounded-xl border-slate-200 bg-white"
+                />
+              </div>
             </div>
 
             {/* Phone */}
-            <Input
-              placeholder="Phone Number"
-              value={form.phoneNumber}
-              onChange={(e) => setForm({ ...form, phoneNumber: e.target.value })}
-            />
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-slate-700">Phone Number</label>
+              <Input
+                placeholder="Phone Number"
+                value={form.phoneNumber}
+                onChange={(e) => setForm({ ...form, phoneNumber: e.target.value })}
+                className="h-10 rounded-xl border-slate-200 bg-white"
+              />
+            </div>
 
             {/* Centre + Department */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Select
-                value={String(form.centreId)}
-                onValueChange={(v) => setForm({ ...form, centreId: Number(v) })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select Centre" />
-                </SelectTrigger>
-                <SelectContent>
-                  {centres.map((c) => (
-                    <SelectItem key={c.id} value={String(c.id)}>
-                      {c.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-slate-700">Centre</label>
+                <Select
+                  value={String(form.centreId)}
+                  onValueChange={(v) => setForm({ ...form, centreId: Number(v) })}
+                >
+                  <SelectTrigger className="h-10 rounded-xl border-slate-200 bg-white">
+                    <SelectValue placeholder="Select Centre" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {centres.map((c) => (
+                      <SelectItem key={c.id} value={String(c.id)}>
+                        {c.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
 
-              <Select
-                value={form.departmentId ? String(form.departmentId) : ""}
-                onValueChange={(v) => {
-                  setForm({ ...form, departmentId: Number(v) });
-                  setError("");
-                }}
-              >
-                <SelectTrigger className={error ? "border-red-500 focus:ring-red-500" : ""}>
-                  <SelectValue placeholder="Select Department" />
-                </SelectTrigger>
-                <SelectContent>
-                  {departments.map((d) => (
-                    <SelectItem key={d.id} value={String(d.id)}>
-                      {d.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {error && <p className="text-sm text-red-500 mt-1">{error}</p>}
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-slate-700">Department</label>
+                <Select
+                  value={form.departmentId ? String(form.departmentId) : ""}
+                  onValueChange={(v) => {
+                    setForm({ ...form, departmentId: Number(v) });
+                    setError("");
+                  }}
+                >
+                  <SelectTrigger
+                    className={`h-10 rounded-xl border-slate-200 bg-white ${
+                      error ? "border-red-500 focus:ring-red-500" : ""
+                    }`}
+                  >
+                    <SelectValue placeholder="Select Department" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {departments.map((d) => (
+                      <SelectItem key={d.id} value={String(d.id)}>
+                        {d.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {error && <p className="text-sm text-red-600">{error}</p>}
+              </div>
             </div>
 
             {/* Role / Type / Status */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <Select
-                value={form.role}
-                onValueChange={(v: Role) => setForm({ ...form, role: v })}
-                disabled={userTypeScope !== "HQ"}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select Role" />
-                </SelectTrigger>
-                <SelectContent>
-                  {allowedRoles.map((r) => (
-                    <SelectItem key={r} value={r}>
-                      {r}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-
-              {userTypeScope === "HQ" ? (
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-slate-700">Role</label>
                 <Select
-                  value={form.userType}
-                  onValueChange={(v: UserType) => setForm({ ...form, userType: v })}
+                  value={form.role}
+                  onValueChange={(v: Role) => setForm({ ...form, role: v })}
+                  disabled={userTypeScope !== "HQ"}
                 >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select User Type" />
+                  <SelectTrigger className="h-10 rounded-xl border-slate-200 bg-white">
+                    <SelectValue placeholder="Select Role" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="CENTRE">CENTRE</SelectItem>
-                    <SelectItem value="ZONE">ZONE</SelectItem>
-                    <SelectItem value="HQ">HQ</SelectItem>
+                    {allowedRoles.map((r) => (
+                      <SelectItem key={r} value={r}>
+                        {r}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
-              ) : (
-                <Input
-                  value={form.userType}
-                  disabled
-                  className="bg-gray-100 cursor-not-allowed"
-                />
-              )}
+                {userTypeScope !== "HQ" && (
+                  <p className="text-xs text-slate-500">Role changes restricted to HQ.</p>
+                )}
+              </div>
 
-              <Select
-                value={form.status}
-                onValueChange={(v: Status) => setForm({ ...form, status: v })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select Status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ACTIVE">ACTIVE</SelectItem>
-                  <SelectItem value="INACTIVE">INACTIVE</SelectItem>
-                  <SelectItem value="PENDING">PENDING</SelectItem>
-                </SelectContent>
-              </Select>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-slate-700">User Type</label>
+                {userTypeScope === "HQ" ? (
+                  <Select
+                    value={form.userType}
+                    onValueChange={(v: UserType) => setForm({ ...form, userType: v })}
+                  >
+                    <SelectTrigger className="h-10 rounded-xl border-slate-200 bg-white">
+                      <SelectValue placeholder="Select User Type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="CENTRE">CENTRE</SelectItem>
+                      <SelectItem value="ZONE">ZONE</SelectItem>
+                      <SelectItem value="HQ">HQ</SelectItem>
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <Input
+                    value={form.userType}
+                    disabled
+                    className="h-10 rounded-xl border-slate-200 bg-slate-100 cursor-not-allowed"
+                  />
+                )}
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-slate-700">Status</label>
+                <Select
+                  value={form.status}
+                  onValueChange={(v: Status) => setForm({ ...form, status: v })}
+                >
+                  <SelectTrigger className="h-10 rounded-xl border-slate-200 bg-white">
+                    <SelectValue placeholder="Select Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ACTIVE">ACTIVE</SelectItem>
+                    <SelectItem value="INACTIVE">INACTIVE</SelectItem>
+                    <SelectItem value="PENDING">PENDING</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
 
             {/* Buttons */}
-            <div className="flex justify-end gap-3 pt-4 border-t mt-6">
+            <div className="flex flex-col-reverse sm:flex-row justify-end gap-3 pt-5 border-t border-slate-200/70">
               <Button
                 type="button"
                 variant="outline"
+                className="h-10 rounded-xl border-slate-200 bg-white"
                 onClick={() => router.push("/user/admin/users")}
               >
                 Cancel
               </Button>
-              <Button type="submit">Update</Button>
+              <Button
+                type="submit"
+                className="h-10 rounded-xl bg-slate-900 text-white hover:bg-slate-800 shadow-sm"
+              >
+                Update
+              </Button>
             </div>
           </form>
         </CardContent>
       </Card>
     </div>
-  );
+  </div>
+);
+
 }

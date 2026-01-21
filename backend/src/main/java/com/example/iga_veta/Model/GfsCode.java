@@ -33,12 +33,12 @@ public class GfsCode {
     @Column(nullable = false, length = 100)
     private String markupPercent;
 
-    @OneToMany(mappedBy = "gfs_code")
+    @OneToMany(mappedBy = "gfsCode")
     @JsonIgnore
     private List<Collections> collectionsList;
 
 
-    @OneToMany(mappedBy = "gfs_code")
+    @OneToMany(mappedBy = "gfsCode")
     @JsonIgnore
     private List<DistributionFormula> distributionFormulaList;
 

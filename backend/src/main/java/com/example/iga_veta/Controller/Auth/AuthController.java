@@ -20,6 +20,9 @@ public class AuthController {
     public Map<String, String> loginUser(@RequestBody Map<String, String> loginDetails,
                                          HttpServletRequest request) {
 
+        System.out.println("====================================================");
+        System.out.println(loginDetails);
+        System.out.println("====================================================");
 
         String email = loginDetails.get("email");
         String password = loginDetails.get("password");

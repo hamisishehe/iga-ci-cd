@@ -53,12 +53,12 @@ public class SecurityConfig {
         return http.build();
     }
 
-    // ✅ CORS CONFIGURATION
+
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
 
-        config.setAllowedOrigins(List.of("http://localhost:3000","http://10.10.11.12:3000", "http://154.118.228.190:3000","http://vets.veta.go.tz:3000","https://vets.veta.go.tz:3000"));
+        config.setAllowedOrigins(List.of("http://vets.veta.go.tz","http://localhost","http://localhost:3000","http://10.10.11.12:3000", "http://154.118.228.190:3000","http://vets.veta.go.tz:3000","https://vets.veta.go.tz:3000"));
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of(
                 "Authorization",

@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import * as XLSX from "xlsx";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card";
@@ -34,47 +35,76 @@ interface ServiceData {
 }
 
 export default function ApportionmentReport() {
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api";
+  const searchParams = useSearchParams();
+
+  const qpStart = searchParams.get("startDate") || "";
+  const qpEnd = searchParams.get("endDate") || "";
+  const qpCentre = searchParams.get("centre") || "";
+
   const [mounted, setMounted] = useState(false);
   const [data, setData] = useState<ServiceData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
-  const [centre, setCentre] = useState("all"); // default value for placeholder
+  const [centre, setCentre] = useState("all");
   const [centres, setCentres] = useState<string[]>([]);
 
+ 
   const [userType, setUserType] = useState("");
   const [userCentre, setUserCentre] = useState("");
   const [userZone, setUserZone] = useState("");
 
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api";
+  const isCentreUser = userType === "CENTRE" && Boolean(userCentre);
+  const isZoneUser = userType === "ZONE" && Boolean(userZone);
+  const isHQUser = userType === "HQ";
 
   useEffect(() => {
     setMounted(true);
-    const userType = localStorage.getItem("userType");
-    const userCentre: string = localStorage.getItem("centre") || "";
-    const userZone: string = localStorage.getItem("zone") || "";
 
-    const userPayload = JSON.parse(localStorage.getItem("userInfo") || "{}");
-    setUserType(userType || "");
-    setUserCentre(userCentre || "");
-    setUserZone(userZone || "");
+    const ut = (localStorage.getItem("userType") || "").toUpperCase();
+    const uc = localStorage.getItem("centre") || "";
+    const uz = localStorage.getItem("zone") || "";
 
-    if (userType === "CENTRE") setCentre(userCentre || "all");
+    setUserType(ut);
+    setUserCentre(uc);
+    setUserZone(uz);
 
+    // default month
     const today = new Date();
     const year = today.getFullYear();
     const month = today.getMonth() + 1;
     const pad = (n: number) => n.toString().padStart(2, "0");
     const firstDay = `${year}-${pad(month)}-01`;
-    const lastDay = `${year}-${pad(month)}-${pad(
-      new Date(year, month, 0).getDate()
-    )}`;
+    const lastDay = `${year}-${pad(month)}-${pad(new Date(year, month, 0).getDate())}`;
+
     setStartDate(firstDay);
     setEndDate(lastDay);
 
-    fetchData(firstDay, lastDay, userCentre || "all");
+    // default centre selection by role
+    if (ut === "CENTRE" && uc) setCentre(uc);
+
+    // initial fetch (will re-run after params effect too)
+    fetchData(firstDay, lastDay, ut === "CENTRE" ? uc || "all" : "all");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // apply query params
+  useEffect(() => {
+    if (!mounted) return;
+
+    if (qpStart) setStartDate(qpStart);
+    if (qpEnd) setEndDate(qpEnd);
+
+    // Centre param only allowed if not centre user
+    if (qpCentre) {
+      if (!isCentreUser) setCentre(qpCentre);
+      if (isCentreUser) setCentre(userCentre);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mounted, qpStart, qpEnd, qpCentre, isCentreUser, userCentre]);
 
   const fetchData = async (start: string, end: string, centreName: string) => {
     setLoading(true);
@@ -91,34 +121,39 @@ export default function ApportionmentReport() {
       const res = await fetch(`${apiUrl}/apposhments/all`, {
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`,
+          Authorization: `Bearer ${token}`,
           "X-API-KEY": apiKey,
         },
       });
 
-  
       const rows = await res.json();
-
       let filteredRows = [...rows];
 
-      if (userType === "CENTRE" && userCentre) {
+      // ✅ role-based visibility
+      if (isCentreUser && userCentre) {
         filteredRows = filteredRows.filter(
-          (r: any) => r.centre?.name?.toLowerCase() === userCentre.toLowerCase()
+          (r: any) => (r.centre?.name || "").toLowerCase() === userCentre.toLowerCase()
         );
-      } else if (userType === "ZONE" && userZone) {
-        filteredRows = filteredRows.filter(
-          (r: any) => r.centre?.zone?.toLowerCase() === userZone.toLowerCase()
-        );
+        centreName = userCentre; // lock
+      } else if (isZoneUser && userZone) {
+        // handle both possible shapes: centre.zones.name OR centre.zone
+        filteredRows = filteredRows.filter((r: any) => {
+          const z1 = r.centre?.zones?.name;
+          const z2 = r.centre?.zone;
+          const z = (z1 || z2 || "").toString().toLowerCase();
+          return z === userZone.toLowerCase();
+        });
       }
 
-      if (centreName !== "all" && userType !== "CENTRE") {
-        filteredRows = filteredRows.filter(
-          (r: any) => r.centre?.name === centreName
-        );
+      // centre dropdown filter (HQ / ZONE allowed)
+      if (centreName !== "all" && !isCentreUser) {
+        filteredRows = filteredRows.filter((r: any) => r.centre?.name === centreName);
       }
 
+      // date overlap filter
       const requestedStart = new Date(start).getTime();
       const requestedEnd = new Date(end).getTime();
+
       const finalRows = filteredRows.filter((row: any) => {
         if (!row.startDate || !row.endDate) return false;
         const rowStart = new Date(row.startDate).getTime();
@@ -126,11 +161,29 @@ export default function ApportionmentReport() {
         return rowEnd >= requestedStart && rowStart <= requestedEnd;
       });
 
-      const uniqueCentres = [
-        ...new Set(rows.map((r: any) => r.centre?.name).filter(Boolean)),
-      ];
-      setCentres(uniqueCentres as string[]);
+      // build centres list:
+      // - HQ: all centres
+      // - ZONE: centres in zone
+      // - CENTRE: only their centre
+      let centreList = [...new Set(rows.map((r: any) => r.centre?.name).filter(Boolean))] as string[];
 
+      if (isZoneUser && userZone) {
+        centreList = centreList.filter((cName) => {
+          const row = rows.find((r: any) => r.centre?.name === cName);
+          const z1 = row?.centre?.zones?.name;
+          const z2 = row?.centre?.zone;
+          const z = (z1 || z2 || "").toString().toLowerCase();
+          return z === userZone.toLowerCase();
+        });
+      }
+
+      if (isCentreUser && userCentre) {
+        centreList = [userCentre];
+      }
+
+      setCentres(centreList);
+
+      // flatten
       const flat: ServiceData[] = [];
       finalRows.forEach((apportionment: any) => {
         (apportionment.services || []).forEach((service: any) => {
@@ -162,40 +215,27 @@ export default function ApportionmentReport() {
   const formatNumber = (val: number | undefined) =>
     val != null ? Number(val).toLocaleString() : "-";
 
-  const totals = data.reduce(
-    (acc, row) => {
-      acc.amountRemitted += row.amountRemitted;
-      acc.executors += row.executors;
-      acc.supporters += row.supporters;
-      acc.agencyFee += row.agencyFee;
-      acc.amountToBePaid += row.amountToBePaid;
-      return acc;
-    },
-    {
-      amountRemitted: 0,
-      executors: 0,
-      supporters: 0,
-      agencyFee: 0,
-      amountToBePaid: 0,
-    }
+  const totals = useMemo(
+    () =>
+      data.reduce(
+        (acc, row) => {
+          acc.amountRemitted += row.amountRemitted;
+          acc.executors += row.executors;
+          acc.supporters += row.supporters;
+          acc.agencyFee += row.agencyFee;
+          acc.amountToBePaid += row.amountToBePaid;
+          return acc;
+        },
+        { amountRemitted: 0, executors: 0, supporters: 0, agencyFee: 0, amountToBePaid: 0 }
+      ),
+    [data]
   );
 
-  const remaining =
-    totals.amountRemitted - (totals.agencyFee + totals.amountToBePaid);
+  const remaining = totals.amountRemitted - (totals.agencyFee + totals.amountToBePaid);
 
   const exportExcel = () => {
     const wsData = [
-      [
-        "#",
-        "Date",
-        "Course Name",
-        "Centre",
-        "Amount Remitted",
-        "Executors",
-        "Supporters",
-        "Agency Fee",
-        "Amount to be Paid",
-      ],
+      ["#", "Date", "Course Name", "Centre", "Amount Remitted", "Executors", "Supporters", "Agency Fee", "Amount to be Paid"],
       ...data.map((row, i) => [
         i + 1,
         row.date,
@@ -207,19 +247,10 @@ export default function ApportionmentReport() {
         row.agencyFee,
         row.amountToBePaid,
       ]),
-      [
-        "TOTAL",
-        "",
-        "",
-        "",
-        totals.amountRemitted,
-        totals.executors,
-        totals.supporters,
-        totals.agencyFee,
-        totals.amountToBePaid,
-      ],
+      ["TOTAL", "", "", "", totals.amountRemitted, totals.executors, totals.supporters, totals.agencyFee, totals.amountToBePaid],
       ["REMAINING BALANCE", "", "", "", remaining, "", "", "", ""],
     ];
+
     const ws = XLSX.utils.aoa_to_sheet(wsData);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Apportionment Report");
@@ -231,13 +262,12 @@ export default function ApportionmentReport() {
   return (
   <div className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-slate-50">
     <div className="p-4 space-y-6">
-      {/* Breadcrumb */}
       <div className="flex items-center justify-between">
         <Breadcrumb>
           <BreadcrumbList>
             <BreadcrumbItem>
               <BreadcrumbLink
-                href="/user/chief_accountant/dashboard"
+                href="/user/pages/dashboard"
                 className="font-semibold text-slate-800"
               >
                 Dashboard
@@ -248,10 +278,12 @@ export default function ApportionmentReport() {
           </BreadcrumbList>
         </Breadcrumb>
 
-        <div className="hidden sm:inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-700 shadow-sm">
-          <span className="h-2 w-2 rounded-full bg-emerald-500" />
-          {userCentre}
-        </div>
+        {(isCentreUser || isZoneUser || isHQUser) && (
+          <div className="hidden sm:inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-700 shadow-sm">
+            <span className="h-2 w-2 rounded-full bg-emerald-500" />
+            {isCentreUser ? userCentre : isZoneUser ? userZone : "HQ"}
+          </div>
+        )}
       </div>
 
       {/* Filters */}
@@ -260,7 +292,7 @@ export default function ApportionmentReport() {
         <CardHeader className="relative">
           <CardTitle className="text-lg text-slate-900">Filters</CardTitle>
           <CardDescription className="text-slate-600">
-            Select a date range (and centre if available) to load apportionment data.
+            Choose date range (and centre if available), then print or export the report.
           </CardDescription>
         </CardHeader>
 
@@ -286,7 +318,8 @@ export default function ApportionmentReport() {
               />
             </div>
 
-            {userType !== "CENTRE" && (
+            {/* Centre filter only for HQ/ZONE */}
+            {!isCentreUser && (
               <div className="space-y-1.5">
                 <label className="block text-xs font-medium text-slate-700">Centre</label>
                 <Select value={centre} onValueChange={(val) => setCentre(val)}>
@@ -305,135 +338,75 @@ export default function ApportionmentReport() {
               </div>
             )}
 
+            {/* Actions: only Print + Export (no table preview) */}
             <div className="lg:col-span-1">
               <Button
                 className="h-10 w-full rounded-xl bg-slate-900 text-white hover:bg-slate-800 shadow-sm"
-                onClick={() => fetchData(startDate, endDate, centre)}
+                onClick={() => fetchData(startDate, endDate, isCentreUser ? userCentre : centre)}
               >
-                Filter
+                Load
               </Button>
             </div>
 
-            <div className="hidden lg:block lg:col-span-2">
-              <div className="h-10 rounded-xl border border-slate-200 bg-white px-3 flex items-center text-xs text-slate-600">
-                Tip: Use “All Centres” to compare across locations.
+            <div className="lg:col-span-2 flex flex-col sm:flex-row gap-2">
+              <Button
+                className="h-10 w-full rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm disabled:opacity-60"
+                onClick={() => {
+                  // make sure data is loaded, then print
+                  if (!data?.length) return;
+                  window.print();
+                }}
+                disabled={!data?.length}
+              >
+                Print
+              </Button>
+
+              <Button
+                className="h-10 w-full rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm disabled:opacity-60"
+                onClick={exportExcel}
+                disabled={!data?.length}
+              >
+                Export Excel
+              </Button>
+            </div>
+
+            <div className="sm:col-span-2 lg:col-span-6">
+              <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
+                Tip: Click <span className="font-semibold text-slate-800">Load</span> first. When data is ready, the
+                <span className="font-semibold text-slate-800"> Print</span> and{" "}
+                <span className="font-semibold text-slate-800">Export</span> buttons will be enabled.
               </div>
             </div>
           </div>
-        </CardContent>
-      </Card>
 
-      {/* Table */}
-      <Card className="rounded-2xl border-slate-200/60 bg-white shadow-sm">
-        <CardHeader className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <CardTitle className="text-lg text-slate-900">Apportionment Data</CardTitle>
-            <CardDescription className="text-slate-600">
-              Breakdown per course including fees and payable amounts.
-            </CardDescription>
-          </div>
-
-          <Button
-            className="h-10 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm"
-            onClick={exportExcel}
-          >
-            Export Excel
-          </Button>
-        </CardHeader>
-
-        <CardContent className="overflow-x-auto">
-          <div className="overflow-auto rounded-2xl border border-slate-200/70 bg-white">
-            <table className="min-w-full text-sm">
-              <thead className="sticky top-0 z-10 bg-slate-900 text-white">
-                <tr>
-                  <th className="px-4 py-3 text-left font-medium">#</th>
-                  <th className="px-4 py-3 text-left font-medium">Course Name</th>
-                  <th className="px-4 py-3 text-left font-medium">Amount Remitted</th>
-                  <th className="px-4 py-3 text-left font-medium">Executors</th>
-                  <th className="px-4 py-3 text-left font-medium">Supporters</th>
-                  <th className="px-4 py-3 text-left font-medium">Agency Fee</th>
-                  <th className="px-4 py-3 text-left font-medium">Amount to be Paid</th>
-                </tr>
-              </thead>
-
-              <tbody>
-                {data.length > 0 ? (
-                  data.map((row, i) => (
-                    <tr
-                      key={i}
-                      className="border-t border-slate-200/70 hover:bg-slate-50"
-                    >
-                      <td className="px-4 py-3 text-slate-700">{i + 1}</td>
-                      <td className="px-4 py-3 text-slate-900">{row.courseName}</td>
-                      <td className="px-4 py-3 font-semibold text-slate-900">
-                        {formatNumber(row.amountRemitted)}
-                      </td>
-                      <td className="px-4 py-3 text-slate-800">{formatNumber(row.executors)}</td>
-                      <td className="px-4 py-3 text-slate-800">{formatNumber(row.supporters)}</td>
-                      <td className="px-4 py-3 text-slate-800">{formatNumber(row.agencyFee)}</td>
-                      <td className="px-4 py-3 font-semibold text-slate-900">
-                        {formatNumber(row.amountToBePaid)}
-                      </td>
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td className="px-4 py-10 text-center text-slate-500" colSpan={7}>
-                      No apportionment data available
-                    </td>
-                  </tr>
-                )}
-
-                {/* Totals */}
-                {data.length > 0 && (
-                  <>
-                    <tr className="border-t border-slate-200/70 bg-slate-50 font-semibold">
-                      <td colSpan={2} className="px-4 py-3 text-slate-700">
-                        TOTAL
-                      </td>
-                      <td className="px-4 py-3 text-slate-900">
-                        {formatNumber(totals.amountRemitted)}
-                      </td>
-                      <td className="px-4 py-3 text-slate-900">
-                        {formatNumber(totals.executors)}
-                      </td>
-                      <td className="px-4 py-3 text-slate-900">
-                        {formatNumber(totals.supporters)}
-                      </td>
-                      <td className="px-4 py-3 text-slate-900">
-                        {formatNumber(totals.agencyFee)}
-                      </td>
-                      <td className="px-4 py-3 text-slate-900">
-                        {formatNumber(totals.amountToBePaid)}
-                      </td>
-                    </tr>
-
-                    <tr className="border-t border-slate-200/70 bg-slate-50 font-semibold">
-                      <td colSpan={2} className="px-4 py-3 text-slate-700">
-                        REMAINING BALANCE
-                      </td>
-                      <td className="px-4 py-3 text-slate-900">{formatNumber(remaining)}</td>
-                      <td colSpan={4} />
-                    </tr>
-                  </>
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Inline states */}
+          {/* inline status only (no table) */}
           {error && (
             <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
               {error}
             </div>
           )}
+
           {loading && (
             <div className="mt-4 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600">
               Loading...
             </div>
           )}
+
+          {!loading && !error && (
+            <div className="mt-4 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+              {data?.length ? (
+                <span>
+                  Loaded <span className="font-semibold">{data.length}</span> rows. Ready to print/export.
+                </span>
+              ) : (
+                <span>No data loaded yet. Use filters then click <b>Load</b>.</span>
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
+
+      {/* NOTE: Table removed intentionally */}
     </div>
   </div>
 );

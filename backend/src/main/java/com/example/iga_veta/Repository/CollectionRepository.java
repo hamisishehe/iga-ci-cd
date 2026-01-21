@@ -14,12 +14,11 @@ import java.util.Optional;
 
 public interface CollectionRepository extends JpaRepository<Collections,Long> {
 
-    List<Collections> findAllByCentres_Name(String centresName);
 
-    @Query("SELECT c FROM Collections c WHERE c.gfs_code.code = :code")
+    @Query("SELECT c FROM Collections c WHERE c.gfsCode.code = :code")
     List<Collections> findCollectionsByGfsCode(@Param("code") String code);
 
-    @Query("SELECT SUM(c.amount) FROM Collections c WHERE c.gfs_code.code = :code")
+    @Query("SELECT SUM(c.amount) FROM Collections c WHERE c.gfsCode.code = :code")
     BigDecimal getTotalAmountByGfsCode(@Param("code") String code);
 
     @Query("SELECT MAX(c.createdAt) FROM Collections c")
@@ -30,21 +29,35 @@ public interface CollectionRepository extends JpaRepository<Collections,Long> {
     @Query("SELECT CASE WHEN COUNT(c) > 0 THEN TRUE ELSE FALSE END " +
             "FROM Collections c " +
             "WHERE c.customer = :customer " +
-            "AND c.gfs_code = :gfsCode " +
-            "AND c.control_number = :controlNumber")
+            "AND c.gfsCode = :gfsCode " +
+            "AND c.controlNumber = :controlNumber")
     boolean existsByCustomerAndGfsCodeAndControlNumber(@Param("customer") Customer customer,
                                                        @Param("gfsCode") GfsCode gfsCode,
                                                        @Param("controlNumber") String controlNumber);
-    @Query("SELECT c FROM Collections c WHERE c.centres.name = :centreName")
+    @Query("SELECT c FROM Collections c WHERE c.centre.name = :centreName")
     List<Collections> findByCentreName(@Param("centreName") String centreName);
 
-    @Query("SELECT SUM(c.amount) FROM Collections c WHERE c.centres.name = :centreName AND c.gfs_code.code = :gfsCode")
+    @Query("SELECT SUM(c.amount) FROM Collections c WHERE c.centre.name = :centreName AND c.gfsCode.code = :gfsCode")
     BigDecimal getTotalAmountByCentreAndGfsCode(@Param("centreName") String centreName,
                                                 @Param("gfsCode") String gfsCode);
 
 
     @Query("SELECT c FROM Collections c WHERE c.date BETWEEN :startDate AND :endDate")
     List<Collections> findByDateBetween(LocalDateTime startDate, LocalDateTime endDate);
+
+
+
+    boolean existsByControlNumberAndGfsCode_CodeAndCentre_IdAndDateAndAmount(
+            String controlNumber,
+            String gfsCode,
+            Long centreId,
+            LocalDateTime date,
+            BigDecimal amount
+    );
+
+
+
+
 
 
 

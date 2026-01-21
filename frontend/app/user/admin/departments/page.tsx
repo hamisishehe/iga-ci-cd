@@ -12,6 +12,7 @@ import {
   BreadcrumbLink,
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
+import { Card, CardContent } from "@/components/ui/card";
 
 /* ===================== INTERFACE ===================== */
 
@@ -188,86 +189,149 @@ export default function DepartmentPage() {
   /* ===================== UI ===================== */
 
   return (
+  <div className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-slate-50">
     <div className="space-y-6 p-6">
+      {/* Breadcrumb */}
       <Breadcrumb>
         <BreadcrumbList>
           <BreadcrumbItem>
-            <BreadcrumbLink href="/user/admin/dashboard">
+            <BreadcrumbLink
+              href="/user/admin/dashboard"
+              className="font-semibold text-slate-800"
+            >
               Dashboard
             </BreadcrumbLink>
           </BreadcrumbItem>
           <BreadcrumbSeparator />
-          <BreadcrumbItem>Departments</BreadcrumbItem>
+          <BreadcrumbItem className="text-slate-600">Departments</BreadcrumbItem>
         </BreadcrumbList>
       </Breadcrumb>
 
-      <div className="flex justify-between items-center">
-        <h2 className="text-xl font-semibold">Department Management</h2>
-        <Button onClick={handleAddDepartment}>Add Department</Button>
+      {/* Header */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h2 className="text-2xl font-semibold tracking-tight text-slate-900">
+            Department Management
+          </h2>
+          <p className="text-sm text-slate-600">
+            Create and manage departments used across the system.
+          </p>
+        </div>
+
+        <Button
+          onClick={handleAddDepartment}
+          className="h-10 rounded-xl bg-slate-900 text-white hover:bg-slate-800 shadow-sm"
+        >
+          Add Department
+        </Button>
       </div>
 
-      <Input
-        placeholder="Search department..."
-        value={search}
-        onChange={(e) => {
-          setSearch(e.target.value);
-          setCurrentPage(1);
-        }}
-        className="max-w-sm"
-      />
+      {/* Search */}
+      <Card className="relative overflow-hidden rounded-2xl border-slate-200/60 bg-white shadow-sm">
+        <div className="absolute inset-0 bg-gradient-to-br from-sky-500/8 via-transparent to-indigo-500/8" />
+        <CardContent className="relative p-5">
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
+            <div className="md:col-span-10 space-y-1.5">
+              <label className="text-xs font-medium text-slate-700">
+                Search department
+              </label>
+              <Input
+                placeholder="Search by department name..."
+                value={search}
+                onChange={(e) => {
+                  setSearch(e.target.value);
+                  setCurrentPage(1);
+                }}
+                className="h-10 rounded-xl border-slate-200 bg-white"
+              />
+            </div>
+
+            <div className="md:col-span-2">
+              <div className="h-10 rounded-xl border border-slate-200 bg-white px-3 flex items-center justify-center text-xs text-slate-600">
+                {paginated.length}/{filtered.length}
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Table */}
-      <div className="overflow-x-auto border rounded-xl">
-        <table className="min-w-full">
-          <thead className="bg-gray-100">
-            <tr>
-              <th className="p-3 text-left">#</th>
-              <th className="p-3 text-left">Name</th>
-              <th className="p-3 text-left">Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            {paginated.length ? (
-              paginated.map((d, i) => (
-                <tr key={d.id} className="border-t hover:bg-gray-50">
-                  <td className="p-3">{startIndex + i + 1}</td>
-                  <td className="p-3">{d.name}</td>
-                  <td className="p-3">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => handleEditDepartment(d)}
-                    >
-                      Edit
-                    </Button>
-                  </td>
+      <Card className="rounded-2xl border-slate-200/60 bg-white shadow-sm">
+        <CardContent className="p-0">
+          <div className="overflow-x-auto rounded-2xl">
+            <table className="min-w-full text-sm">
+              <thead className="sticky top-0 z-10 bg-slate-900 text-white">
+                <tr>
+                  <th className="p-3 text-left font-medium">#</th>
+                  <th className="p-3 text-left font-medium">Name</th>
+                  <th className="p-3 text-left font-medium">Action</th>
                 </tr>
-              ))
-            ) : (
-              <tr>
-                <td colSpan={3} className="py-6 text-center text-gray-500">
-                  No Department found
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+              </thead>
+
+              <tbody>
+                {paginated.length ? (
+                  paginated.map((d, i) => (
+                    <tr
+                      key={d.id}
+                      className="border-t border-slate-200/70 hover:bg-slate-50"
+                    >
+                      <td className="p-3 text-slate-700">{startIndex + i + 1}</td>
+                      <td className="p-3">
+                        <div className="font-medium text-slate-900">{d.name}</div>
+                      </td>
+                      <td className="p-3">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-9 rounded-xl border-slate-200 bg-white"
+                          onClick={() => handleEditDepartment(d)}
+                        >
+                          Edit
+                        </Button>
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={3} className="py-10 text-center text-slate-500">
+                      No Department found
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Pagination */}
-      <div className="flex justify-between items-center">
-        <span className="text-sm text-gray-600">
-          Showing {startIndex + 1}–
-          {Math.min(startIndex + rowsPerPage, filtered.length)} of{" "}
-          {filtered.length}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <span className="text-sm text-slate-600">
+          Showing{" "}
+          <span className="font-semibold text-slate-900">
+            {filtered.length ? startIndex + 1 : 0}
+          </span>
+          –{" "}
+          <span className="font-semibold text-slate-900">
+            {Math.min(startIndex + rowsPerPage, filtered.length)}
+          </span>{" "}
+          of <span className="font-semibold text-slate-900">{filtered.length}</span>
         </span>
+
         <div className="flex gap-2">
-          <Button size="sm" variant="outline" disabled={currentPage === 1} onClick={prevPage}>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-10 rounded-xl border-slate-200 bg-white"
+            disabled={currentPage === 1}
+            onClick={prevPage}
+          >
             Prev
           </Button>
           <Button
             size="sm"
             variant="outline"
+            className="h-10 rounded-xl border-slate-200 bg-white"
             disabled={currentPage === totalPages}
             onClick={nextPage}
           >
@@ -276,5 +340,7 @@ export default function DepartmentPage() {
         </div>
       </div>
     </div>
-  );
+  </div>
+);
+
 }

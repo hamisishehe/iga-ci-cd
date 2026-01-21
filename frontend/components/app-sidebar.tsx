@@ -44,11 +44,78 @@ const NAV_ITEMS = [
 
 
 
-  { title: "Dashboard", url: "/user/pages/dashboard", icon: IconDashboard, roles: ["DG", "CHIEF_ACCOUNTANT","ACCOUNTANT", "DF"] },
-  { title: "Collection", url: "/user/pages/collection-report", icon: IconReceipt, roles: ["DG", "CHIEF_ACCOUNTANT","ACCOUNTANT", "DF"] },
-  { title: "Distribution", url: "/user/pages/distribution-report", icon: IconArrowDownDashed, roles: ["DG", "CHIEF_ACCOUNTANT", "ACCOUNTANT", "DF"] },
-  { title: "Apposhment", url: "/user/pages/apposhment", icon: IconArrowsShuffle, roles: ["CHIEF_ACCOUNTANT","ACCOUNTANT"] },
-  { title: "Use of Proceeds", url: "/user/pages/expenditure", icon: IconCoin, roles: ["ACCOUNTANT"] },
+  { title: "Dashboard", url: "/user/pages/dashboard", icon: IconDashboard, roles: [
+  "BURSAR", 
+  "ACCOUNT_OFFICER", 
+  "ASSISTANT_ACCOUNT",
+  "PRINCIPAL",
+  "REGIONAL_DIRECTOR",
+  "REGIONAL_FINANCE_MANAGER",
+  "DIRECTOR_GENERAL",
+  "DIRECTOR_OF_FINANCE", 
+  "FINANCE_MANAGER", 
+  "CHIEF_ACCOUNTANT", 
+  "DEVELOPER", 
+  "TESTER"] },
+  { title: "Collections", url: "/user/pages/collections", icon: IconReceipt, roles: [
+  "BURSAR", 
+  "ACCOUNT_OFFICER", 
+  "ASSISTANT_ACCOUNT",
+  "PRINCIPAL",
+  "REGIONAL_DIRECTOR",
+  "REGIONAL_FINANCE_MANAGER",
+  "DIRECTOR_GENERAL",
+  "DIRECTOR_OF_FINANCE", 
+  "FINANCE_MANAGER", 
+  "CHIEF_ACCOUNTANT", 
+  "DEVELOPER", 
+  "TESTER"] },
+  { title: "Distributions", url: "/user/pages/distributions", icon: IconArrowDownDashed,roles: [
+  "BURSAR", 
+  "ACCOUNT_OFFICER", 
+  "ASSISTANT_ACCOUNT",
+  "PRINCIPAL",
+  "REGIONAL_DIRECTOR",
+  "REGIONAL_FINANCE_MANAGER",
+  "DIRECTOR_GENERAL",
+  "DIRECTOR_OF_FINANCE", 
+  "FINANCE_MANAGER", 
+  "CHIEF_ACCOUNTANT", 
+  "DEVELOPER", 
+  "TESTER"] },
+  { title: "Apposhment", url: "/user/pages/apposhment", icon: IconArrowsShuffle, roles: [
+  "BURSAR", 
+  "ACCOUNT_OFFICER", 
+  "ASSISTANT_ACCOUNT",
+  "PRINCIPAL",
+  "REGIONAL_DIRECTOR",
+  "REGIONAL_FINANCE_MANAGER",
+  "DIRECTOR_GENERAL",
+  "DIRECTOR_OF_FINANCE", 
+  "FINANCE_MANAGER", 
+  "CHIEF_ACCOUNTANT", 
+  "DEVELOPER", 
+  "TESTER"] },
+  
+  { title: "Use of Proceeds", url: "/user/pages/expenditure", icon: IconCoin, roles: [
+  "BURSAR"] },
+
+
+  { title: "Reports", url: "/user/pages/reports", icon: IconReceipt, roles: [
+  "BURSAR", 
+  "ACCOUNT_OFFICER", 
+  "ASSISTANT_ACCOUNT",
+  "PRINCIPAL",
+  "REGIONAL_DIRECTOR",
+  "REGIONAL_FINANCE_MANAGER",
+  "DIRECTOR_GENERAL",
+  "DIRECTOR_OF_FINANCE", 
+  "FINANCE_MANAGER", 
+  "CHIEF_ACCOUNTANT", 
+  "DEVELOPER", 
+  "TESTER"] },
+
+
 
 ];
 
@@ -96,19 +163,27 @@ const CENTRE_ADMIN_ALLOWED_URLS = [
   return (
     <Sidebar collapsible="icon" {...props} className="bg-blue-950 dark:bg-gray-900">
       {/* Sidebar Header */}
-<SidebarHeader className="bg-blue-950 dark:bg-gray-900 border-b border-blue-800 dark:border-gray-700 flex flex-col items-center gap-2 py-4">
-  <div className="relative w-12 h-12 md:w-15 md:h-20">  {/* Responsive square container */}
+<SidebarHeader className="bg-blue-950 dark:bg-gray-900 border-b border-blue-800 dark:border-gray-700 flex flex-col items-center py-4 gap-2">
+  
+  {/* Logo container */}
+  <div className="relative w-12 h-12 md:w-16 md:h-16 p-3">
     <Image
       src="/veta.png"
-      alt="Logo"
-      height={60}
-      width={60}
-      className="object-fill rounded-full"
+      alt="VETIS Logo"
+      width={64}
+      height={64}
+      className="rounded-full object-cover"
       priority
     />
   </div>
-  <span className="font-bold text-xl md:text-2xl text-white dark:text-gray-100">VETIS</span>  {/* Optional: slightly larger text on bigger screens */}
+
+  {/* App name */}
+  <span className="font-bold text-base md:text-xl text-white dark:text-gray-100">
+    VETIS
+  </span>
+
 </SidebarHeader>
+
 
       {/* Sidebar Content */}
       <SidebarContent className="pt-4 bg-blue-950 dark:bg-gray-900">

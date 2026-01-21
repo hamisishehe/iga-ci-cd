@@ -33,25 +33,22 @@ public class Centre {
     @JsonIgnore
     private List<Customer> customers;
 
-    @OneToMany(mappedBy = "centres")
+    @OneToMany(mappedBy = "centre")
     @JsonIgnore
     private List<Collections> collectionsList;
 
-    @OneToMany(mappedBy = "centres")
+    @OneToMany(mappedBy = "centre")
     @JsonIgnore
     private List<Allocation> allocationList;
+
 
     @OneToMany(mappedBy = "centres")
     @JsonIgnore
     private List<Apposhment> apposhments;
 
-
     @ManyToOne
     @JoinColumn(name = "zone_id", nullable = false)
     private Zone zones;
-
-
-
 
 
 

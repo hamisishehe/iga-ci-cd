@@ -60,7 +60,7 @@ interface ApiItem {
   date?: string;
   amount?: number;
   customer?: ApiCustomer;
-  gfs_code?: ApiGfsCode;
+  gfsCode?: ApiGfsCode;
 }
 
 interface Payment {
@@ -97,7 +97,7 @@ interface Summary {
 export default function DashboardPage() {
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api";
 
-  const CENTER_RESTRICTED_ROLES = ["CHIEF_ACCOUNTANT", "ACCOUNTANT"];
+  const CENTER_RESTRICTED_ROLES = ["BURSAR", "ACCOUNT_OFFICER","ASSISTANT_ACCOUNT_OFFICER","PRINCIPAL"];
   const [loading, setLoading] = useState(true);
   const [role, setRole] = useState<string>("");
   const [userCentre, setUserCentre] = useState<string>("");
@@ -193,6 +193,7 @@ const fetchData = useCallback(async () => {
     if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
     const data: ApiItem[] = await res.json();
 
+    console.log(data);
     const mappedData: Payment[] = data
       .map((item) => {
         const dateIso = item.date ?? "";
@@ -203,13 +204,13 @@ const fetchData = useCallback(async () => {
         if (isNaN(dateObj.getTime())) return null;
 
         const datePart = dateIso.split("T")[0];
-        const serviceDesc = item.gfs_code?.description ?? "";
+        const serviceDesc = item.gfsCode?.description ?? "";
 
         return {
           name: item.customer?.name ?? "Unknown",
           center: item.customer?.centre?.name ?? "No Center",
           zone: item.customer?.centre?.zones?.name ?? "-",
-          serviceCode: item.gfs_code?.code ?? "N/A",
+          serviceCode: item.gfsCode?.code ?? "N/A",
           service: serviceDesc,
           course: formatCourseName(serviceDesc),
           amount: Number(item.amount ?? 0),
@@ -295,6 +296,10 @@ filteredData = filterByDate(filteredData, filterType);
   useEffect(() => {
     fetchData();
 
+    console.log("=======================>");
+    console.log(role);
+     console.log("=======================>");
+
   }, [fetchData]);
 
   // Chart data
@@ -339,206 +344,313 @@ filteredData = filterByDate(filteredData, filterType);
     );
   }
 
-  return (
+ return (
+  <div className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-slate-50">
     <div className="p-6 space-y-6">
-      {/* Breadcrumb */}
-      <Breadcrumb>
-        <BreadcrumbList>
-          <BreadcrumbItem>
-            <BreadcrumbLink href="/user/pages/dashboard">
-             {role === "DG" ? "Director General" : role === "DF" ? "Director Finance" : "Accountant"}
-            </BreadcrumbLink>
-          </BreadcrumbItem>
-          <BreadcrumbSeparator />
-          <BreadcrumbItem>Dashboard</BreadcrumbItem>
-        </BreadcrumbList>
-      </Breadcrumb>
+      {/* Header */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div className="space-y-2">
+          <Breadcrumb>
+            <BreadcrumbList>
+              <BreadcrumbItem>
+                <BreadcrumbLink href="/user/pages/dashboard">
+                  Dashboard
+                </BreadcrumbLink>
+              </BreadcrumbItem>
+              <BreadcrumbSeparator />
+              <BreadcrumbItem>Dashboard</BreadcrumbItem>
+            </BreadcrumbList>
+          </Breadcrumb>
 
-      {/* Filter Buttons */}
-      <div className="flex gap-2 mb-4">
-       
-        <Button
-          variant={filterType === "yesterday" ? "default" : "outline"}
-          onClick={() => setFilterType("yesterday")}
-        >
-          Yesterday
-        </Button>
-         <Button
-          variant={filterType === "day" ? "default" : "outline"}
-          onClick={() => setFilterType("day")}
-        >
-          Today
-        </Button>
-        <Button
-          variant={filterType === "month" ? "default" : "outline"}
-          onClick={() => setFilterType("month")}
-        >
-          This Month
-        </Button>
-      </div>
-
-      {/* Stats Cards */}
-      <div
-        className={`grid gap-4 ${
-          role === "DG"
-            ? "sm:grid-cols-2 lg:grid-cols-4"
-            : "sm:grid-cols-2 lg:grid-cols-3"
-        }`}
-      >
-        <Card className="text-center">
-          <CardContent className="pt-6">
-            <Banknote size={30} className="mx-auto text-green-500 mb-2" />
-            <CardTitle>
-             Total Income (
-  {filterType === "day"
-    ? "Today"
-    : filterType === "yesterday"
-    ? "Yesterday"
-    : "This Month"}
-)
-
-            </CardTitle>
-            <p className="text-lg font-bold text-green-600">
-              {summary.totalIncome.toLocaleString()} TZS
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-slate-900">
+              Financial Overview
+            </h1>
+            <p className="text-sm text-slate-600">
+              Track income, transactions and performance at a glance.
             </p>
-          </CardContent>
-        </Card>
-
-        <Card className="text-center">
-          <CardContent className="pt-6">
-            <FileText size={30} className="mx-auto text-blue-500 mb-2" />
-            <CardTitle>
-              Total Transactions (
-              {filterType === "day" ? "Today" : filterType === "yesterday" ? "Yesterday" : "This Month"})
-            </CardTitle>
-            <p className="text-lg font-bold text-blue-600">
-              {summary.totalTransactions}
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card className="text-center h-fit">
-          <CardContent className="pt-6">
-            <PieChart
-              size={30}
-              className="mx-auto text-yellow-500 mb-2 h-full"
-            />
-            <CardTitle>Top Service</CardTitle>
-            <p className="text-lg font-bold text-yellow-600">
-              {summary.topServices[0]?.service
-                ? formatServiceName(summary.topServices[0].service)
-                : "-"}
-            </p>
-          </CardContent>
-        </Card>
-
-        {role === "DG" && (
-          <Card className="text-center">
-            <CardContent className="pt-6">
-              <Building2 size={30} className="mx-auto text-indigo-500 mb-2" />
-              <CardTitle>Top Center</CardTitle>
-              <p className="text-lg font-bold text-indigo-600">
-                {summary.topCenters[0]?.center || "-"}
-              </p>
-            </CardContent>
-          </Card>
-        )}
-      </div>
-
-      <Separator />
-
-      {/* Charts */}
-      {role === "DG" && (
-        <div className="grid gap-6 grid-cols-1 lg:grid-cols-3">
-          <Card className="lg:col-span-2">
-            <CardHeader>
-              <CardTitle>Top Services</CardTitle>
-            </CardHeader>
-            <CardContent className="h-64 sm:h-80">
-              <Bar
-                data={barData}
-                options={{ responsive: true, maintainAspectRatio: false }}
-              />
-            </CardContent>
-          </Card>
-
-          <div className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Top 3 Centers</CardTitle>
-              </CardHeader>
-              <CardContent className="h-56 sm:h-64">
-                <Doughnut
-                  data={topCentersData}
-                  options={{ responsive: true, maintainAspectRatio: false }}
-                />
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Bottom 3 Centers</CardTitle>
-              </CardHeader>
-              <CardContent className="h-56 sm:h-64">
-                <Doughnut
-                  data={bottomCentersData}
-                  options={{ responsive: true, maintainAspectRatio: false }}
-                />
-              </CardContent>
-            </Card>
           </div>
         </div>
-      )}
 
-      {role === "CHIEF_ACCOUNTANT" && (
-        <div className="grid gap-6 grid-cols-1 lg:grid-cols-1">
-          <Card className="lg:col-span-2">
-            <CardHeader>
-              <CardTitle>Top Services</CardTitle>
-            </CardHeader>
-            <CardContent className="h-64 sm:h-80">
-              <Bar
-                data={barData}
-                options={{ responsive: true, maintainAspectRatio: false }}
-              />
-            </CardContent>
-          </Card>
+        {/* Filters */}
+        <div className="flex flex-wrap gap-2">
+          {[
+            { id: "yesterday", label: "Yesterday" },
+            { id: "day", label: "Today" },
+            { id: "month", label: "This Month" },
+          ].map((f) => {
+            const active = filterType === (f.id as any);
+            return (
+              <Button
+                key={f.id}
+                onClick={() => setFilterType(f.id as any)}
+                className={
+                  active
+                    ? "h-10 rounded-xl bg-slate-900 text-white hover:bg-slate-800 shadow-sm"
+                    : "h-10 rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                }
+              >
+                {f.label}
+              </Button>
+            );
+          })}
         </div>
-      )}
+      </div>
 
-      <Separator />
+   {/* Stats */}
+<div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+  {/* Total Income */}
+  <Card className="relative overflow-hidden rounded-2xl border-slate-200/60 bg-white shadow-sm transition hover:shadow-md">
+    <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/12 via-transparent to-teal-500/12" />
+    <CardContent className="relative pt-6">
+      <div className="mx-auto mb-3 grid h-11 w-11 place-items-center rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-500 text-white shadow-sm">
+        <Banknote size={22} />
+      </div>
+
+      <p className="text-sm font-medium text-slate-600 text-center">
+        Total Income{" "}
+        <span className="text-slate-500">
+          (
+          {filterType === "day"
+            ? "Today"
+            : filterType === "yesterday"
+            ? "Yesterday"
+            : "This Month"}
+          )
+        </span>
+      </p>
+
+      <p className="mt-2 text-center text-2xl font-semibold tracking-tight text-slate-900">
+        {Number(summary?.totalIncome ?? 0).toLocaleString()}{" "}
+        <span className="text-sm font-medium text-slate-500">TZS</span>
+      </p>
+
+      <div className="mt-3 flex items-center justify-center gap-2 text-xs text-slate-600">
+        <span className="inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+        Updated by selected filter
+      </div>
+    </CardContent>
+  </Card>
+
+  {/* Total Transactions */}
+  <Card className="relative overflow-hidden rounded-2xl border-slate-200/60 bg-white shadow-sm transition hover:shadow-md">
+    <div className="absolute inset-0 bg-gradient-to-br from-sky-500/12 via-transparent to-indigo-500/12" />
+    <CardContent className="relative pt-6">
+      <div className="mx-auto mb-3 grid h-11 w-11 place-items-center rounded-2xl bg-gradient-to-br from-sky-500 to-indigo-500 text-white shadow-sm">
+        <FileText size={22} />
+      </div>
+
+      <p className="text-sm font-medium text-slate-600 text-center">
+        Total Transactions{" "}
+        <span className="text-slate-500">
+          (
+          {filterType === "day"
+            ? "Today"
+            : filterType === "yesterday"
+            ? "Yesterday"
+            : "This Month"}
+          )
+        </span>
+      </p>
+
+      <p className="mt-2 text-center text-2xl font-semibold tracking-tight text-slate-900">
+        {Number(summary?.totalTransactions ?? 0)}
+      </p>
+
+      <div className="mt-3 flex items-center justify-center gap-2 text-xs text-slate-600">
+        <span className="inline-flex h-2 w-2 rounded-full bg-sky-500" />
+        Count of completed payments
+      </div>
+    </CardContent>
+  </Card>
+
+  {/* Top Service */}
+  <Card className="relative overflow-hidden rounded-2xl border-slate-200/60 bg-white shadow-sm transition hover:shadow-md">
+    <div className="absolute inset-0 bg-gradient-to-br from-amber-500/12 via-transparent to-orange-500/12" />
+    <CardContent className="relative pt-6">
+      <div className="mx-auto mb-3 grid h-11 w-11 place-items-center rounded-2xl bg-gradient-to-br from-amber-500 to-orange-500 text-white shadow-sm">
+        <PieChart size={22} />
+      </div>
+
+      <p className="text-sm font-medium text-slate-600 text-center">Top Service</p>
+
+      <p className="mt-2 text-center text-xl font-semibold tracking-tight text-slate-900">
+        {summary?.topServices?.[0]?.service
+          ? formatServiceName(summary.topServices[0].service)
+          : "-"}
+      </p>
+
+      <div className="mt-3 flex items-center justify-center gap-2 text-xs text-slate-600">
+        <span className="inline-flex h-2 w-2 rounded-full bg-amber-500" />
+        Highest revenue contributor
+      </div>
+    </CardContent>
+  </Card>
+
+  {/* Top Center (DG/DOF/FINANCE_MANAGER only) */}
+  {(role === "DIRECTOR_GENERAL" ||
+    role === "DIRECTOR_OF_FINANCE" ||
+    role === "FINANCE_MANAGER") && (
+    <Card className="relative overflow-hidden rounded-2xl border-slate-200/60 bg-white shadow-sm transition hover:shadow-md">
+      <div className="absolute inset-0 bg-gradient-to-br from-fuchsia-500/12 via-transparent to-rose-500/12" />
+      <CardContent className="relative pt-6">
+        <div className="mx-auto mb-3 grid h-11 w-11 place-items-center rounded-2xl bg-gradient-to-br from-fuchsia-500 to-rose-500 text-white shadow-sm">
+          <Building2 size={22} />
+        </div>
+
+        <p className="text-sm font-medium text-slate-600 text-center">Top Center</p>
+
+        <p className="mt-2 text-center text-xl font-semibold tracking-tight text-slate-900">
+          {summary?.topCenters?.[0]?.center || "-"}
+        </p>
+
+        <div className="mt-3 flex items-center justify-center gap-2 text-xs text-slate-600">
+          <span className="inline-flex h-2 w-2 rounded-full bg-fuchsia-500" />
+          Best performing center
+        </div>
+      </CardContent>
+    </Card>
+  )}
+</div>
+
+
+
+      {/* Charts */}
+{(role === "DIRECTOR_GENERAL" ||
+  role === "DIRECTOR_OF_FINANCE" ||
+  role === "FINANCE_MANAGER") && (
+  <div className="grid gap-6 grid-cols-1 lg:grid-cols-3">
+    <Card className="rounded-2xl border-slate-200/60 bg-white shadow-sm lg:col-span-2">
+      <CardHeader className="flex flex-row items-center justify-between">
+        <div>
+          <CardTitle className="text-base text-slate-900">Top Services</CardTitle>
+          <p className="text-xs text-slate-600">
+            Revenue comparison across services
+          </p>
+        </div>
+        <div className="h-9 w-9 rounded-2xl bg-slate-100 grid place-items-center text-slate-700">
+          <span className="text-xs font-semibold">BAR</span>
+        </div>
+      </CardHeader>
+
+      <CardContent className="h-full sm:h-80">
+        <div className="h-full rounded-2xl border border-slate-200/60 bg-gradient-to-b from-slate-50 to-white p-3">
+          <Bar
+            data={barData}
+            options={{ responsive: true, maintainAspectRatio: false }}
+          />
+        </div>
+      </CardContent>
+    </Card>
+
+    <div className="space-y-6">
+      <Card className="rounded-2xl border-slate-200/60 bg-white shadow-sm">
+        <CardHeader>
+          <CardTitle className="text-base text-slate-900">Top 3 Centers</CardTitle>
+          <p className="text-xs text-slate-600">Highest revenue centers</p>
+        </CardHeader>
+        <CardContent className="h-56 sm:h-64">
+          <div className="h-full rounded-2xl border border-slate-200/60 bg-gradient-to-b from-slate-50 to-white p-3">
+            <Doughnut
+              data={topCentersData}
+              options={{ responsive: true, maintainAspectRatio: false }}
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="rounded-2xl border-slate-200/60 bg-white shadow-sm">
+        <CardHeader>
+          <CardTitle className="text-base text-slate-900">Bottom 3 Centers</CardTitle>
+          <p className="text-xs text-slate-600">Lowest revenue centers</p>
+        </CardHeader>
+        <CardContent className="h-56 sm:h-64">
+          <div className="h-full rounded-2xl border border-slate-200/60 bg-gradient-to-b from-slate-50 to-white p-3">
+            <Doughnut
+              data={bottomCentersData}
+              options={{ responsive: true, maintainAspectRatio: false }}
+            />
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  </div>
+)}
+
+
+      {(role === "BURSAR" ||
+  role === "ACCOUNT_OFFICER" ||
+  role === "ASSISTANT_ACCOUNT_OFFICER" ||
+  role === "PRINCIPAL") && (
+  <div className="grid gap-6 grid-cols-1">
+    <Card className="rounded-2xl border-slate-200/60 bg-white shadow-sm">
+      <CardHeader className="flex flex-row items-center justify-between">
+        <div>
+          <CardTitle className="text-base text-slate-900">Top Services</CardTitle>
+          <p className="text-xs text-slate-600">
+            Summary filtered by your center
+          </p>
+        </div>
+        <div className="h-9 w-9 rounded-2xl bg-slate-100 grid place-items-center text-slate-700">
+          <span className="text-xs font-semibold">BAR</span>
+        </div>
+      </CardHeader>
+
+      <CardContent className="h-64 sm:h-80">
+        <div className="h-full rounded-2xl border border-slate-200/60 bg-gradient-to-b from-slate-50 to-white p-3">
+          <Bar
+            data={barData}
+            options={{ responsive: true, maintainAspectRatio: false }}
+          />
+        </div>
+      </CardContent>
+    </Card>
+  </div>
+)}
+
+
+      <Separator className="bg-slate-200/70" />
 
       {/* Recent Payments */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Recent Payments</CardTitle>
-          <CardDescription>
+      <Card className="rounded-2xl border-slate-200/60 bg-white shadow-sm">
+        <CardHeader className="flex flex-col gap-1">
+          <CardTitle className="text-base text-slate-900">Recent Payments</CardTitle>
+          <CardDescription className="text-slate-600">
             Latest 8 transactions{" "}
             {role === "CHIEF_ACCOUNTANT"
               ? `(filtered by your center, ${
-                  filterType === "day" ? "today" : "this month"
+                  filterType === "day" ? "today" : filterType === "yesterday" ? "yesterday" : "this month"
                 })`
               : ""}
           </CardDescription>
         </CardHeader>
+
         <CardContent>
-          <div className="overflow-auto max-h-64">
-            <table className="w-full text-sm border">
-              <thead className="bg-muted text-left sticky top-0">
-                <tr>
-                  <th className="p-2">Name</th>
-                  <th className="p-2">Service</th>
-                  <th className="p-2">Amount</th>
-                  <th className="p-2">Date Paid</th>
+          <div className="overflow-auto max-h-72 rounded-2xl border border-slate-200/70">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 text-left sticky top-0 z-10">
+                <tr className="border-b border-slate-200/70">
+                  <th className="p-3 font-medium text-slate-700">Name</th>
+                  <th className="p-3 font-medium text-slate-700">Service</th>
+                  <th className="p-3 font-medium text-slate-700">Amount</th>
+                  <th className="p-3 font-medium text-slate-700">Date Paid</th>
                 </tr>
               </thead>
               <tbody>
                 {summary.recentPayments.map((p, i) => (
-                  <tr key={i} className="border-t">
-                    <td className="p-2">{p.name}</td>
-                    <td className="p-2">{formatServiceName(p.service)}</td>
-                    <td className="p-2">{p.amount.toLocaleString()} TZS</td>
-                    <td className="p-2">{p.date}</td>
+                  <tr
+                    key={i}
+                    className="border-b border-slate-200/60 last:border-b-0 hover:bg-slate-50/70"
+                  >
+                    <td className="p-3 text-slate-800">{p.name}</td>
+                    <td className="p-3 text-slate-700">
+                      {formatServiceName(p.service)}
+                    </td>
+                    <td className="p-3 font-semibold text-slate-900">
+                      {p.amount.toLocaleString()}{" "}
+                      <span className="font-medium text-slate-500">TZS</span>
+                    </td>
+                    <td className="p-3 text-slate-700">{p.date}</td>
                   </tr>
                 ))}
               </tbody>
@@ -547,5 +659,7 @@ filteredData = filterByDate(filteredData, filterType);
         </CardContent>
       </Card>
     </div>
-  );
+  </div>
+);
+
 }

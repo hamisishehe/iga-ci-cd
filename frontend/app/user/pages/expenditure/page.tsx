@@ -11,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card";
 import {
   Breadcrumb,
   BreadcrumbList,
@@ -393,200 +393,248 @@ Remaining: ${(serviceBalance - totalForThisService).toLocaleString()} TSH`,
     );
 
   return (
-    <div className="px-4  py-6">
-      <Breadcrumb>
-        <BreadcrumbList>
-          <BreadcrumbItem>
-            <BreadcrumbLink href="/user/chief_accountant/dashboard">
-              Dashboard
-            </BreadcrumbLink>
-          </BreadcrumbItem>
-          <BreadcrumbSeparator />
-          <BreadcrumbItem>Expenditure</BreadcrumbItem>
-        </BreadcrumbList>
-      </Breadcrumb>
-      {/* Filters */}
+  <div className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-slate-50">
+    <div className="px-4 py-6 space-y-6">
+      {/* Breadcrumb */}
+      <div className="flex items-center justify-between">
+        <Breadcrumb>
+          <BreadcrumbList>
+            <BreadcrumbItem>
+              <BreadcrumbLink
+                href="/user/chief_accountant/dashboard"
+                className="font-semibold text-slate-800"
+              >
+                Dashboard
+              </BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem className="text-slate-600">Expenditure</BreadcrumbItem>
+          </BreadcrumbList>
+        </Breadcrumb>
+      </div>
 
-      <Card className="mb-6 mt-5">
-        <CardContent className="grid grid-cols-1 md:grid-cols-6 gap-4 items-end">
-          <div>
-            <label className="block text-sm font-medium mb-1">Start Date</label>
-            <Input
-              type="date"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-            />
+      {/* Filters */}
+      <Card className="relative overflow-hidden rounded-2xl border-slate-200/60 bg-white shadow-sm">
+        <div className="absolute inset-0 bg-gradient-to-br from-sky-500/8 via-transparent to-indigo-500/8" />
+        <CardContent className="relative p-5">
+          <div className="flex flex-col gap-1 mb-4">
+            <div className="text-base font-semibold text-slate-900">Filters</div>
+            <div className="text-sm text-slate-600">
+              Choose date range (and centre if available) to view expenditure.
+            </div>
           </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">End Date</label>
-            <Input
-              type="date"
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
-            />
+
+          <div className="grid grid-cols-1 md:grid-cols-6 gap-4 items-end">
+            <div className="space-y-1.5">
+              <label className="block text-xs font-medium text-slate-700">Start Date</label>
+              <Input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="h-10 rounded-xl border-slate-200 bg-white"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="block text-xs font-medium text-slate-700">End Date</label>
+              <Input
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                className="h-10 rounded-xl border-slate-200 bg-white"
+              />
+            </div>
+
+            {userType !== "CENTRE" && (
+              <div className="space-y-1.5">
+                <label className="block text-xs font-medium text-slate-700">Centre</label>
+                <Select value={centre} onValueChange={setCentre}>
+                  <SelectTrigger className="h-10 rounded-xl border-slate-200 bg-white">
+                    <SelectValue placeholder="All Centres" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {centres.map((c, i) => (
+                      <SelectItem key={i} value={c}>
+                        {c}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            <div className="md:col-span-1">
+              <Button
+                onClick={() => fetchData(startDate, endDate, centre)}
+                className="h-10 w-full rounded-xl bg-slate-900 text-white hover:bg-slate-800 shadow-sm"
+              >
+                Filter
+              </Button>
+            </div>
+
+            <div className="hidden md:block md:col-span-2">
+              <div className="h-10 rounded-xl border border-slate-200 bg-white px-3 flex items-center text-xs text-slate-600">
+                Tip: Use broad dates to capture more records.
+              </div>
+            </div>
           </div>
-          {userType !== "CENTRE" && (
-            <div>
-              <label className="block text-sm font-medium mb-1">Centre</label>
-              <Select value={centre} onValueChange={setCentre}>
-                <SelectTrigger>
-                  <SelectValue placeholder="All Centres" />
+        </CardContent>
+      </Card>
+
+      {/* Add Expense */}
+      <Card className="relative overflow-hidden rounded-2xl border-slate-200/60 bg-white shadow-sm">
+        <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/8 via-transparent to-teal-500/8" />
+        <CardHeader className="relative">
+          <CardTitle className="text-lg text-slate-900">Add Expenditure</CardTitle>
+          <CardDescription className="text-slate-600">
+            Record a new expense and automatically compute remaining balance.
+          </CardDescription>
+        </CardHeader>
+
+        <CardContent className="relative">
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
+            {/* Service */}
+            <div className="md:col-span-3 flex flex-col gap-2">
+              <label className="text-xs font-medium text-slate-700">Service</label>
+              <Select value={selectedService} onValueChange={setSelectedService}>
+                <SelectTrigger className="h-11 rounded-xl border-slate-200 bg-white">
+                  <SelectValue placeholder="Select Service" />
                 </SelectTrigger>
                 <SelectContent>
-                  {centres.map((c, i) => (
-                    <SelectItem key={i} value={c}>
-                      {c}
+                  {services.map((s, i) => (
+                    <SelectItem
+                      key={i}
+                      value={s.serviceName}
+                      className="truncate max-w-full"
+                    >
+                      <div className="flex items-center justify-between gap-3 w-full">
+                        <span className="truncate">{s.serviceName}</span>
+                        <span className="text-slate-500 text-xs whitespace-nowrap">
+                          BAL: {s.amount_paid_to_paid} TSH
+                        </span>
+                      </div>
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
-          )}
-          <Button
-            onClick={() => fetchData(startDate, endDate, centre)}
-            className="md:col-span-1"
-          >
-            Filter
-          </Button>
-        </CardContent>
-      </Card>
 
-      {/* Add Expense */}
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle>Add Expenditure</CardTitle>
-        </CardHeader>
-        <CardContent className="grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
-          {/* Service */}
-          <div className="md:col-span-3 flex flex-col gap-2">
-            <label className="text-sm font-medium text-gray-700">Service</label>
-            <Select value={selectedService} onValueChange={setSelectedService}>
-              <SelectTrigger className="h-11 rounded-xl">
-                <SelectValue placeholder="Select Service" />
-              </SelectTrigger>
-              <SelectContent>
-                {services.map((s, i) => (
-                  <SelectItem
-                    key={i}
-                    value={s.serviceName}
-                    className="truncate max-w-full"
-                  >
-                    <div className="flex items-center justify-between gap-2 w-full">
-                      <span className="truncate">{s.serviceName}</span>
-                      <span className="text-gray-500 text-xs whitespace-nowrap">
-                        BAL: {s.amount_paid_to_paid} TSH
-                      </span>
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Amount */}
-          <div className="md:col-span-3 flex flex-col gap-2">
-            <label className="text-sm font-medium text-gray-700">Amount</label>
-            <Input
-              type="number"
-              placeholder="Enter amount"
-              className="h-11 rounded-xl"
-              value={expenseAmount}
-              onChange={(e) => setExpenseAmount(e.target.value)}
-            />
-          </div>
-
-          {/* Description (Textarea) */}
-          <div className="md:col-span-4 flex flex-col gap-2">
-            <label className="text-sm font-medium text-gray-700">
-              Description
-            </label>
-            <textarea
-              placeholder="Write expense description..."
-              className="w-full h-24 rounded-xl border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              value={expenseDescription}
-              onChange={(e) => setExpenseDescription(e.target.value)}
-            />
-          </div>
-
-          {/* Button */}
-          <div className="md:col-span-2 flex items-end">
-            <Button className="w-full h-11 rounded-xl" onClick={addExpense}>
-              Save
-            </Button>
-          </div>
-
-          {/* Messages */}
-          {expenseError && (
-            <div className="text-red-600 md:col-span-12 text-sm font-medium">
-              {expenseError}
+            {/* Amount */}
+            <div className="md:col-span-3 flex flex-col gap-2">
+              <label className="text-xs font-medium text-slate-700">Amount</label>
+              <Input
+                type="number"
+                placeholder="Enter amount"
+                className="h-11 rounded-xl border-slate-200 bg-white"
+                value={expenseAmount}
+                onChange={(e) => setExpenseAmount(e.target.value)}
+              />
             </div>
-          )}
 
-          {successMessage && (
-            <div className="text-green-600 md:col-span-12 text-sm font-medium">
-              {successMessage}
+            {/* Description */}
+            <div className="md:col-span-4 flex flex-col gap-2">
+              <label className="text-xs font-medium text-slate-700">Description</label>
+              <textarea
+                placeholder="Write expense description..."
+                className="w-full h-24 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:ring-2 focus:ring-slate-900/10"
+                value={expenseDescription}
+                onChange={(e) => setExpenseDescription(e.target.value)}
+              />
             </div>
-          )}
+
+            {/* Save */}
+            <div className="md:col-span-2 flex items-end">
+              <Button
+                className="w-full h-11 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm"
+                onClick={addExpense}
+              >
+                Save
+              </Button>
+            </div>
+
+            {/* Messages */}
+            {expenseError && (
+              <div className="md:col-span-12 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {expenseError}
+              </div>
+            )}
+
+            {successMessage && (
+              <div className="md:col-span-12 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+                {successMessage}
+              </div>
+            )}
+          </div>
         </CardContent>
       </Card>
 
       {/* Expenses Table */}
-      <Card>
-        <CardContent className="overflow-x-auto">
-          <table className="min-w-full border border-gray-200 divide-y divide-gray-200">
-            <thead className="bg-blue-950 text-white">
-              <tr>
-                <th className="px-4 py-2 text-left text-sm font-medium">#</th>
-                <th className="px-4 py-2 text-left text-sm font-medium">
-                  Deducted from
-                </th>
-                <th className="px-4 py-2 text-left text-sm font-medium">
-                  Description
-                </th>
-                <th className="px-4 py-2 text-left text-sm font-medium">
-                  Amount
-                </th>
-                <th className="px-4 py-2 text-left text-sm font-medium">
-                  Remaining
-                </th>
-              </tr>
-            </thead>
-
-            <tbody className="divide-y divide-gray-200">
-              {expenses.length > 0 ? (
-                expenses.map((exp, i) => (
-                  <tr key={i} className="hover:bg-gray-50">
-                    <td className="px-4 py-2">{i + 1}</td>
-                    <td className="px-4 py-2">{exp.service_name}</td>
-                    <td className="px-4 py-2">{exp.description}</td>
-                    <td className="px-4 py-2">
-                      {formatNumber(exp.amount)} TSH
-                    </td>
-
-                    {/* Remaining balance */}
-                    <td className="px-4 py-2 font-semibold text-blue-600">
-                      {formatNumber(getRemainingBalance(exp.service_name))} TSH
-                    </td>
-                  </tr>
-                ))
-              ) : (
-                <tr>
-                  <td className="px-4 py-2 text-center" colSpan={5}>
-                    No expenditures added
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+      <Card className="rounded-2xl border-slate-200/60 bg-white shadow-sm">
+        <CardHeader className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <CardTitle className="text-lg text-slate-900">Expenditures</CardTitle>
+            <CardDescription className="text-slate-600">
+              All recorded expenses for the selected period.
+            </CardDescription>
+          </div>
 
           <Button
             onClick={exportExcel}
-            className="md:col-span-1 bg-green-500 m-3.5"
+            className="h-10 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm"
           >
             Export Excel
           </Button>
+        </CardHeader>
+
+        <CardContent className="overflow-x-auto">
+          <div className="overflow-auto rounded-2xl border border-slate-200/70">
+            <table className="min-w-full text-sm">
+              <thead className="sticky top-0 z-10 bg-slate-900 text-white">
+                <tr>
+                  <th className="px-4 py-3 text-left font-medium">#</th>
+                  <th className="px-4 py-3 text-left font-medium">Deducted from</th>
+                  <th className="px-4 py-3 text-left font-medium">Description</th>
+                  <th className="px-4 py-3 text-left font-medium">Amount</th>
+                  <th className="px-4 py-3 text-left font-medium">Remaining</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {expenses.length > 0 ? (
+                  expenses.map((exp, i) => (
+                    <tr
+                      key={i}
+                      className="border-t border-slate-200/70 hover:bg-slate-50"
+                    >
+                      <td className="px-4 py-3 text-slate-700">{i + 1}</td>
+                      <td className="px-4 py-3 text-slate-900">{exp.service_name}</td>
+                      <td className="px-4 py-3 text-slate-700">{exp.description}</td>
+                      <td className="px-4 py-3 font-semibold text-slate-900">
+                        {formatNumber(exp.amount)} <span className="font-medium text-slate-500">TSH</span>
+                      </td>
+                      <td className="px-4 py-3 font-semibold text-slate-900">
+                        <span className="inline-flex items-center gap-2">
+                          <span className="h-2 w-2 rounded-full bg-sky-500" />
+                          {formatNumber(getRemainingBalance(exp.service_name))}{" "}
+                          <span className="font-medium text-slate-500">TSH</span>
+                        </span>
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td className="px-4 py-10 text-center text-slate-500" colSpan={5}>
+                      No expenditures added
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </CardContent>
       </Card>
     </div>
-  );
+  </div>
+);
+
 }

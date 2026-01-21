@@ -11,8 +11,24 @@ import java.util.List;
 
 @Entity
 @Data
-@Table(name = "collections")
+@Table(
+        name = "collections",
+        indexes = {
+                // Date filtering (today / month)
+                @Index(name = "idx_collections_date", columnList = "date"),
+
+                // Center-based filtering (accountant / chief accountant)
+                @Index(name = "idx_collections_centre", columnList = "centre_id"),
+
+                // Service / GFS code aggregation
+                @Index(name = "idx_collections_gfs_code", columnList = "gfs_code_id"),
+
+                // MOST IMPORTANT: center + date (dashboard queries)
+                @Index(name = "idx_collections_centre_date", columnList = "centre_id, date")
+        }
+)
 public class Collections {
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -22,12 +38,12 @@ public class Collections {
     private Customer customer;
 
     @ManyToOne
-    @JoinColumn(name = "centre_id", nullable = false)
-    private Centre centres;
+    @JoinColumn(name="centre_id", nullable=false)
+    private Centre centre;
 
     @ManyToOne
     @JoinColumn(name = "gfs_code_id", nullable = false)
-    private GfsCode gfs_code;
+    private GfsCode gfsCode;
 
     @Column(nullable = false, precision = 12, scale = 2)
     private BigDecimal amount;
@@ -35,11 +51,10 @@ public class Collections {
     private String description;
 
     @Column(nullable = false)
-    private String control_number;
+    private String controlNumber;
 
     @Column(columnDefinition = "TIMESTAMP")
     private LocalDateTime last_fetched;
-
 
     @Column(nullable = false)
     private LocalDateTime date;

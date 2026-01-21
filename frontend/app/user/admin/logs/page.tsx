@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import {
   Card,
   CardContent,
+  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -156,73 +157,123 @@ const fetchLoginAttempts = async () => {
 
   /* ================= UI ================= */
   return (
+  <div className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-slate-50">
     <div className="p-6 space-y-6">
-      <h1 className="text-2xl font-semibold">System Logs</h1>
+      {/* Header */}
+      <div className="flex flex-col gap-1">
+        <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
+          System Logs
+        </h1>
+        <p className="text-sm text-slate-600">
+          Monitor authentication attempts and user actions across the system.
+        </p>
+      </div>
 
       <Tabs defaultValue="login">
-        <TabsList>
-          <TabsTrigger value="login">Login Attempts</TabsTrigger>
-          <TabsTrigger value="activity">User Activity</TabsTrigger>
+        <TabsList className="rounded-xl bg-white border border-slate-200/70 p-1 shadow-sm">
+          <TabsTrigger
+            value="login"
+            className="rounded-lg data-[state=active]:bg-slate-900 data-[state=active]:text-white"
+          >
+            Login Attempts
+          </TabsTrigger>
+          <TabsTrigger
+            value="activity"
+            className="rounded-lg data-[state=active]:bg-slate-900 data-[state=active]:text-white"
+          >
+            User Activity
+          </TabsTrigger>
         </TabsList>
 
         {/* ================= LOGIN ATTEMPTS ================= */}
-        <TabsContent value="login">
-          <Card>
-            <CardHeader className="flex flex-col gap-2 md:flex-row md:justify-between">
-              <CardTitle>Login Attempts</CardTitle>
-              <Input
-                placeholder="Search login attempts..."
-                value={search}
-                onChange={(e) => {
-                  setSearch(e.target.value);
-                  setCurrentPage(1);
-                }}
-                className="md:max-w-xs"
-              />
+        <TabsContent value="login" className="mt-4">
+          <Card className="relative overflow-hidden rounded-2xl border-slate-200/60 bg-white shadow-sm">
+            <div className="absolute inset-0 bg-gradient-to-br from-sky-500/8 via-transparent to-indigo-500/8" />
+
+            <CardHeader className="relative flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+              <div>
+                <CardTitle className="text-lg text-slate-900">Login Attempts</CardTitle>
+                <CardDescription className="text-slate-600">
+                  Recent sign-in activity including IP and success/failure status.
+                </CardDescription>
+              </div>
+
+              <div className="w-full md:max-w-xs space-y-1.5">
+                <label className="text-xs font-medium text-slate-700">
+                  Search attempts
+                </label>
+                <Input
+                  placeholder="Search by username or IP..."
+                  value={search}
+                  onChange={(e) => {
+                    setSearch(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  className="h-10 rounded-xl border-slate-200 bg-white"
+                />
+              </div>
             </CardHeader>
 
-            <CardContent>
-              <div className="overflow-x-auto border rounded-lg">
+            <CardContent className="relative">
+              <div className="overflow-x-auto rounded-2xl border border-slate-200/70 bg-white">
                 <table className="min-w-full text-sm">
-                  <thead className="bg-muted">
+                  <thead className="sticky top-0 z-10 bg-slate-900 text-white">
                     <tr>
-                      <th className="p-3 text-left">#</th>
-                      <th className="p-3 text-left">Username</th>
-                      <th className="p-3 text-left">IP Address</th>
-                      <th className="p-3 text-left">Status</th>
-                      <th className="p-3 text-left">Time</th>
+                      <th className="p-3 text-left font-medium">#</th>
+                      <th className="p-3 text-left font-medium">Username</th>
+                      <th className="p-3 text-left font-medium">IP Address</th>
+                      <th className="p-3 text-left font-medium">Status</th>
+                      <th className="p-3 text-left font-medium">Time</th>
                     </tr>
                   </thead>
+
                   <tbody>
                     {paginatedLoginAttempts.length ? (
-                      paginatedLoginAttempts.map((log, i) => (
-                        <tr key={log.id} className="border-t hover:bg-muted/40">
-                          <td className="p-3">
-                            {startLoginIndex + i + 1}
-                          </td>
-                          <td className="p-3 font-medium">{log.username}</td>
-                          <td className="p-3 text-muted-foreground">
-                            {log.ipAddress}
-                          </td>
-                          <td className="p-3">
-                            <Badge
-                              variant={
-                                log.status === "SUCCESS"
-                                  ? "default"
-                                  : "destructive"
-                              }
-                            >
-                              {log.status}
-                            </Badge>
-                          </td>
-                          <td className="p-3 text-muted-foreground">
-                            {new Date(log.createdAt).toLocaleString()}
-                          </td>
-                        </tr>
-                      ))
+                      paginatedLoginAttempts.map((log, i) => {
+                        const ok = log.status === "SUCCESS";
+                        return (
+                          <tr
+                            key={log.id}
+                            className="border-t border-slate-200/70 hover:bg-slate-50"
+                          >
+                            <td className="p-3 text-slate-700">
+                              {startLoginIndex + i + 1}
+                            </td>
+
+                            <td className="p-3">
+                              <div className="font-medium text-slate-900">
+                                {log.username}
+                              </div>
+                            </td>
+
+                            <td className="p-3 text-slate-600">{log.ipAddress}</td>
+
+                            <td className="p-3">
+                              <span
+                                className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs font-medium ${
+                                  ok
+                                    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                    : "border-red-200 bg-red-50 text-red-700"
+                                }`}
+                              >
+                                <span
+                                  className={`h-2 w-2 rounded-full ${
+                                    ok ? "bg-emerald-500" : "bg-red-500"
+                                  }`}
+                                />
+                                {log.status}
+                              </span>
+                            </td>
+
+                            <td className="p-3 text-slate-600">
+                              {new Date(log.createdAt).toLocaleString()}
+                            </td>
+                          </tr>
+                        );
+                      })
                     ) : (
                       <tr>
-                        <td colSpan={5} className="text-center py-6 text-muted-foreground">
+                        <td colSpan={5} className="text-center py-10 text-slate-500">
                           No login attempts found
                         </td>
                       </tr>
@@ -231,80 +282,104 @@ const fetchLoginAttempts = async () => {
                 </table>
               </div>
 
-              <Pagination
-                start={startLoginIndex}
-                total={filteredLoginAttempts.length}
-                rowsPerPage={rowsPerPage}
-                currentPage={currentPage}
-                totalPages={totalLoginPages}
-                prevPage={prevPage}
-                nextPage={() => nextPage(totalLoginPages)}
-              />
+              <div className="mt-4">
+                <Pagination
+                  start={startLoginIndex}
+                  total={filteredLoginAttempts.length}
+                  rowsPerPage={rowsPerPage}
+                  currentPage={currentPage}
+                  totalPages={totalLoginPages}
+                  prevPage={prevPage}
+                  nextPage={() => nextPage(totalLoginPages)}
+                />
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
 
         {/* ================= USER ACTIVITY ================= */}
-        <TabsContent value="activity">
-          <Card>
-            <CardHeader className="flex flex-col gap-2 md:flex-row md:justify-between">
-              <CardTitle>User Activity</CardTitle>
-              <Input
-                placeholder="Search activity logs..."
-                value={search}
-                onChange={(e) => {
-                  setSearch(e.target.value);
-                  setCurrentPage(1);
-                }}
-                className="md:max-w-xs"
-              />
+        <TabsContent value="activity" className="mt-4">
+          <Card className="relative overflow-hidden rounded-2xl border-slate-200/60 bg-white shadow-sm">
+            <div className="absolute inset-0 bg-gradient-to-br from-fuchsia-500/8 via-transparent to-rose-500/8" />
+
+            <CardHeader className="relative flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+              <div>
+                <CardTitle className="text-lg text-slate-900">User Activity</CardTitle>
+                <CardDescription className="text-slate-600">
+                  Audited actions (create/update/delete) with object and device details.
+                </CardDescription>
+              </div>
+
+              <div className="w-full md:max-w-xs space-y-1.5">
+                <label className="text-xs font-medium text-slate-700">
+                  Search activity
+                </label>
+                <Input
+                  placeholder="Search user, action, object..."
+                  value={search}
+                  onChange={(e) => {
+                    setSearch(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  className="h-10 rounded-xl border-slate-200 bg-white"
+                />
+              </div>
             </CardHeader>
 
-            <CardContent>
-              <div className="overflow-x-auto border rounded-lg">
+            <CardContent className="relative">
+              <div className="overflow-x-auto rounded-2xl border border-slate-200/70 bg-white">
                 <table className="min-w-full text-sm">
-                  <thead className="bg-muted">
+                  <thead className="sticky top-0 z-10 bg-slate-900 text-white">
                     <tr>
-                      <th className="p-3 text-left">#</th>
-                      <th className="p-3 text-left">User</th>
-                      <th className="p-3 text-left">Action</th>
-                      <th className="p-3 text-left">Object</th>
-                      <th className="p-3 text-left">User Agent</th>
-                      <th className="p-3 text-left">IP</th>
-                      <th className="p-3 text-left">Time</th>
+                      <th className="p-3 text-left font-medium">#</th>
+                      <th className="p-3 text-left font-medium">User</th>
+                      <th className="p-3 text-left font-medium">Action</th>
+                      <th className="p-3 text-left font-medium">Object</th>
+                      <th className="p-3 text-left font-medium">User Agent</th>
+                      <th className="p-3 text-left font-medium">IP</th>
+                      <th className="p-3 text-left font-medium">Time</th>
                     </tr>
                   </thead>
+
                   <tbody>
                     {paginatedActivityLogs.length ? (
                       paginatedActivityLogs.map((log, i) => (
-                        <tr key={log.id} className="border-t hover:bg-muted/40">
-                          <td className="p-3">
+                        <tr
+                          key={log.id}
+                          className="border-t border-slate-200/70 hover:bg-slate-50"
+                        >
+                          <td className="p-3 text-slate-700">
                             {startActivityIndex + i + 1}
                           </td>
-                          <td className="p-3 font-medium">
-                            {log.username} 
-                          </td>
+
                           <td className="p-3">
-                            <Badge variant="outline">{log.action}</Badge>
+                            <div className="font-medium text-slate-900">
+                              {log.username}
+                            </div>
                           </td>
+
                           <td className="p-3">
+                            <span className="inline-flex items-center rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700">
+                              {log.action}
+                            </span>
+                          </td>
+
+                          <td className="p-3 text-slate-700">
                             {log.objectType}
                             {log.objectId && ` #${log.objectId}`}
                           </td>
-                           <td className="p-3 text-muted-foreground">
-                            {log.userAgent}
-                          </td>
-                          <td className="p-3 text-muted-foreground">
-                            {log.ipAddress}
-                          </td>
-                          <td className="p-3 text-muted-foreground">
+
+                          <td className="p-3 text-slate-600">{log.userAgent}</td>
+                          <td className="p-3 text-slate-600">{log.ipAddress}</td>
+
+                          <td className="p-3 text-slate-600">
                             {new Date(log.createdAt).toLocaleString()}
                           </td>
                         </tr>
                       ))
                     ) : (
                       <tr>
-                        <td colSpan={6} className="text-center py-6 text-muted-foreground">
+                        <td colSpan={7} className="text-center py-10 text-slate-500">
                           No activity logs found
                         </td>
                       </tr>
@@ -313,21 +388,25 @@ const fetchLoginAttempts = async () => {
                 </table>
               </div>
 
-              <Pagination
-                start={startActivityIndex}
-                total={filteredActivityLogs.length}
-                rowsPerPage={rowsPerPage}
-                currentPage={currentPage}
-                totalPages={totalActivityPages}
-                prevPage={prevPage}
-                nextPage={() => nextPage(totalActivityPages)}
-              />
+              <div className="mt-4">
+                <Pagination
+                  start={startActivityIndex}
+                  total={filteredActivityLogs.length}
+                  rowsPerPage={rowsPerPage}
+                  currentPage={currentPage}
+                  totalPages={totalActivityPages}
+                  prevPage={prevPage}
+                  nextPage={() => nextPage(totalActivityPages)}
+                />
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
       </Tabs>
     </div>
-  );
+  </div>
+);
+
 }
 
 /* ================= PAGINATION COMPONENT ================= */

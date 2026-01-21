@@ -18,7 +18,7 @@ public class DistributionFormula {
 
     @ManyToOne
     @JoinColumn(name = "gfs_code_id", nullable = false)
-    private GfsCode gfs_code;
+    private GfsCode gfsCode;
 
     @ManyToOne
     @JoinColumn(name = "system_config_id", nullable = false)
