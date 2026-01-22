@@ -1,6 +1,8 @@
 package com.example.iga_veta.components;
 
-import com.example.iga_veta.Model.*;
+import com.example.iga_veta.Model.Centre;
+import com.example.iga_veta.Model.Department;
+import com.example.iga_veta.Model.User;
 import com.example.iga_veta.Repository.CentreRepository;
 import com.example.iga_veta.Repository.DepartmentRepository;
 import com.example.iga_veta.Repository.UserRepository;
@@ -30,16 +32,20 @@ public class UserSeeder implements CommandLineRunner {
 
     @Override
     public void run(String... args) {
-        if (userRepository.count() == 0) {
 
+        List<Centre> centres = centreRepository.findAll();
+        List<Department> departments = departmentRepository.findAll();
 
-            List<Centre> centres = centreRepository.findAll();
-            List<Department> departments = departmentRepository.findAll();
+        if (centres.isEmpty() || departments.isEmpty()) {
+            System.out.println("❌ Centres or Departments not found. User seeding aborted.");
+            return;
+        }
 
-            // Create User seeder class
-            //app
+        /* ===================== ADMIN USER ===================== */
+        if (userRepository.findByUserName("admin").isEmpty()) {
+
             User admin = new User();
-            admin.setFirstName("hamis");
+            admin.setFirstName("Hamis");
             admin.setMiddleName("S.");
             admin.setLastName("Shafii");
             admin.setUserName("admin");
@@ -53,8 +59,32 @@ public class UserSeeder implements CommandLineRunner {
             admin.setDepartments(departments.get(0));
 
             userRepository.save(admin);
+            System.out.println("✅ ADMIN user created");
+        } else {
+            System.out.println("ℹ️ ADMIN user already exists");
+        }
 
-            System.out.println("✅ Seeded initial user data.");
+        /* ===================== STAFF USER ===================== */
+        if (userRepository.findByUserName("staff").isEmpty()) {
+
+            User staff = new User();
+            staff.setFirstName("John");
+            staff.setMiddleName("M.");
+            staff.setLastName("Doe");
+            staff.setUserName("staff");
+            staff.setEmail("staffadmin@veta.go.tz");
+            staff.setPhoneNumber("0987654321");
+            staff.setPassword(passwordEncoder.encode("123456"));
+            staff.setRole(User.Role.ADMIN);
+            staff.setUserType(User.UserType.HQ);
+            staff.setStatus(User.Status.ACTIVE);
+            staff.setCentres(centres.get(0));
+            staff.setDepartments(departments.get(0));
+
+            userRepository.save(staff);
+            System.out.println("✅ STAFF user created");
+        } else {
+            System.out.println("ℹ️ STAFF user already exists");
         }
     }
 }
