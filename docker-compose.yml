@@ -1,5 +1,4 @@
 services:
-  # PostgreSQL database
   db:
     image: postgres:16
     environment:
@@ -17,7 +16,6 @@ services:
       retries: 10
     restart: unless-stopped
 
-  # Spring Boot backend
   app:
     build:
       context: ./backend
@@ -28,11 +26,11 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/iga-database
       SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: Hamisi2233.
-    ports:
-      - "8080:8080"
+    # optional: do not expose publicly
+    # ports:
+    #   - "127.0.0.1:8080:8080"
     restart: unless-stopped
 
-  # Next.js frontend
   frontend:
     build:
       context: ./frontend
@@ -40,12 +38,11 @@ services:
       app:
         condition: service_started
     environment:
-      NEXT_PUBLIC_API_URL: http://app:8080
+      NEXT_PUBLIC_API_URL: /api
     ports:
       - "3000:3000"
     restart: unless-stopped
 
-  # Nginx reverse proxy (HTTP ONLY)
   nginx:
     image: nginx:alpine
     depends_on:
