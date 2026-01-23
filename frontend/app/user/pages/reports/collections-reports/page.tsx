@@ -379,9 +379,7 @@ for (let i = 1; i <= totalPages; i++) {
 
 
 
- const exportExcel = () => {
-
-
+const exportExcel = () => {
   const title1 = "VETA";
   const title2 = "COLLECTIONS REPORT";
   const rangeLabel = `Date Range: ${fromDate || "-"}  to  ${toDate || "-"}`;
@@ -389,6 +387,7 @@ for (let i = 1; i <= totalPages; i++) {
     service || "ALL"
   }`;
 
+  // ✅ Header (9 columns)
   const header = [
     "#",
     "Customer",
@@ -401,19 +400,24 @@ for (let i = 1; i <= totalPages; i++) {
     "Date Paid",
   ];
 
+  // ✅ Body matches header order (Amount index 7, Date index 8)
   const body = filteredData.map((r, i) => [
     i + 1,
-    r.name,
-    r.center,
-    r.zone,
-    r.serviceCode,
-    r.controlNumber,
-    r.service,
-    r.amount,
-    r.date,
+    r.name ?? "",
+    r.center ?? "",
+    r.zone ?? "",
+    r.serviceCode ?? "",
+    r.controlNumber ?? "",
+    r.service ?? "",
+    Number(r.amount ?? 0), // force numeric
+    r.date ?? "",
   ]);
 
-  const totalRow = ["", "", "", "", "", "TOTAL", totalAmount, ""];
+  const totalAmount = filteredData.reduce((sum, r) => sum + Number(r.amount ?? 0), 0);
+
+  // ✅ Total row MUST also be 9 columns (same length as header)
+  // Put "TOTAL" under the Service column (index 6) and totalAmount under Amount (index 7)
+  const totalRow = ["", "", "", "", "", "", "TOTAL", totalAmount, ""];
 
   // --- Build sheet with a modern title block (top 4 rows) ---
   // Row 0: VETA (merged)
@@ -434,8 +438,8 @@ for (let i = 1; i <= totalPages; i++) {
   const ws = XLSX.utils.aoa_to_sheet(wsData);
 
   // ---------- Helpers ----------
-  const colCount = header.length;
-  const lastCol = colCount - 1;
+  const colCount = header.length; // 9
+  const lastCol = colCount - 1; // 8
 
   const cellAddr = (r: number, c: number) => XLSX.utils.encode_cell({ r, c });
 
@@ -555,22 +559,24 @@ for (let i = 1; i <= totalPages; i++) {
       });
     }
 
-    // Amount column (index 6)
-    const amountAddr = cellAddr(r, 6);
+    // ✅ Amount column is index 7 (NOT 6)
+    const amountColIndex = 7;
+    const amountAddr = cellAddr(r, amountColIndex);
     if (ws[amountAddr]) {
       ws[amountAddr].t = "n";
       ws[amountAddr].z = '#,##0" TZS"';
-      applyStyle(r, 6, {
+      applyStyle(r, amountColIndex, {
         alignment: { horizontal: "right", vertical: "center" },
         font: { bold: true, color: { rgb: "0F172A" } },
       });
     }
 
-    // Date column (index 7)
-    const dateAddr = cellAddr(r, 7);
+    // ✅ Date column is index 8 (NOT 7)
+    const dateColIndex = 8;
+    const dateAddr = cellAddr(r, dateColIndex);
     if (ws[dateAddr]) {
       ws[dateAddr].z = "dd mmm yyyy";
-      applyStyle(r, 7, {
+      applyStyle(r, dateColIndex, {
         alignment: { horizontal: "left", vertical: "center" },
       });
     }
@@ -590,12 +596,12 @@ for (let i = 1; i <= totalPages; i++) {
         left: { style: "thin", color: { rgb: "86EFAC" } },
         right: { style: "thin", color: { rgb: "86EFAC" } },
       },
-      alignment: { horizontal: c === 6 ? "right" : "center", vertical: "center" },
+      alignment: { horizontal: c === 7 ? "right" : "center", vertical: "center" },
     });
   }
 
-  // Ensure total amount cell numeric formatting
-  const totalAmtAddr = cellAddr(totalRowIndex, 6);
+  // ✅ Ensure total amount cell numeric formatting (index 7)
+  const totalAmtAddr = cellAddr(totalRowIndex, 7);
   if (ws[totalAmtAddr]) {
     ws[totalAmtAddr].t = "n";
     ws[totalAmtAddr].z = '#,##0" TZS"';
@@ -610,13 +616,14 @@ for (let i = 1; i <= totalPages; i++) {
     { hpt: 20 }, // Table header
   ];
 
-  // ---------- Column widths ----------
+  // ✅ Column widths MUST be 9 columns
   ws["!cols"] = [
     { wch: 5 },  // #
     { wch: 22 }, // Customer
     { wch: 18 }, // Center
     { wch: 14 }, // Zone
     { wch: 16 }, // Service Code
+    { wch: 18 }, // Control Number
     { wch: 28 }, // Service
     { wch: 18 }, // Amount
     { wch: 16 }, // Date

@@ -53,7 +53,7 @@ public class CollectionService {
         return collectionsRepository.findAll();
     }
 
-    @Scheduled(fixedRate = 10000) // every 60 seconds
+    @Scheduled(fixedRate = 100000) // every 60 seconds
     public void fetchDataPeriodically() {
         fetchDataFromApi();
     }
@@ -63,7 +63,7 @@ public class CollectionService {
         // Get last fetched date from DB (or fallback)
         LocalDateTime lastFetchedDateFromDb = collectionsRepository
                 .findLastFetchedDate()
-                .orElse(LocalDateTime.of(2000, 1, 1, 0, 0));
+                .orElse(LocalDateTime.of(2025, 12, 31, 0, 0));
 
         DateTimeFormatter isoFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss");
 
@@ -169,7 +169,7 @@ public class CollectionService {
                 return centreRepository.save(newCentre);
             });
 
-            // 2️⃣ Find or create Customer ✅ (NO duplicate customers)
+
             // 2️⃣ Find or create Customer
             Customer customer = new Customer();
             customer.setName(fullName);
@@ -186,14 +186,12 @@ public class CollectionService {
                 return gfsCodeRepository.save(newCode);
             });
 
-//            // Adjustments
-//            if (controlNumber != null && "142202540053".equals(gfsCode.getCode())
-//                    && amount.compareTo(new BigDecimal("5000")) >= 0) {
+            // Adjustments
+//            if ("142202540053".equals(gfsCode.getCode()) && amount.compareTo(new BigDecimal("5000")) >= 0) {
 //                amount = new BigDecimal("5000");
 //            }
 //
-//            if (controlNumber != null && "142301600001".equals(gfsCode.getCode())
-//                    && amount.compareTo(new BigDecimal("5000")) >= 0) {
+//            if ("142301600001".equals(gfsCode.getCode()) && amount.compareTo(new BigDecimal("5000")) >= 0) {
 //                amount = amount.subtract(new BigDecimal("5000"));
 //            }
 
@@ -253,7 +251,6 @@ public class CollectionService {
         if (dateStr == null || dateStr.isEmpty()) return null;
         return LocalDateTime.parse(dateStr);
     }
-
 
     public List<Collections> findAll() {
         return collectionsRepository.findAll();
