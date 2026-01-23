@@ -195,74 +195,79 @@ const fetchData = useCallback(async () => {
 
     console.log(data);
     const mappedData: Payment[] = data
-      .map((item) => {
-        const dateIso = item.date ?? "";
-        if (!dateIso) return null; // skip invalid
+  .map((item) => {
+    const dateIso = item.date ?? "";
+    if (!dateIso) return null;
 
-        const dateObj = new Date(dateIso);
-        // Handle invalid dates
-        if (isNaN(dateObj.getTime())) return null;
 
-        const datePart = dateIso.split("T")[0];
-        const serviceDesc = item.gfsCode?.description ?? "";
+    // local midnight to avoid UTC shifting issues
+   const datePart = dateIso.includes("T") ? dateIso.split("T")[0] : dateIso; // YYYY-MM-DD
 
-        return {
-          name: item.customer?.name ?? "Unknown",
-          center: item.customer?.centre?.name ?? "No Center",
-          zone: item.customer?.centre?.zones?.name ?? "-",
-          serviceCode: item.gfsCode?.code ?? "N/A",
-          service: serviceDesc,
-          course: formatCourseName(serviceDesc),
-          amount: Number(item.amount ?? 0),
-          date: datePart,
-          dateObj,
-        };
-      })
-      .filter(Boolean) as Payment[]; // remove nulls
+const [yy, mm, dd] = datePart.split("-").map(Number);
+// build LOCAL midnight (no UTC shift)
+const dateObj = new Date(yy, (mm || 1) - 1, dd || 1);
+
+if (isNaN(dateObj.getTime())) return null;
+
+    const serviceDesc = item.gfsCode?.description ?? "";
+
+    return {
+      name: item.customer?.name ?? "Unknown",
+      center: item.customer?.centre?.name ?? "No Center",
+      zone: item.customer?.centre?.zones?.name ?? "-",
+      serviceCode: item.gfsCode?.code ?? "N/A",
+      service: serviceDesc,
+      course: formatCourseName(serviceDesc),
+      amount: Number(item.amount ?? 0),
+      date: datePart,
+      dateObj,
+    };
+  })
+  .filter(Boolean) as Payment[];
+
 
     // Step 1: Role-based filtering (CHIEF_ACCOUNTANT sees only their center)
    // Step 1: Role-based filtering
-let filteredData: Payment[] = CENTER_RESTRICTED_ROLES.includes(storedRole)
+// Step 1: Role-based filtering
+const roleFiltered: Payment[] = CENTER_RESTRICTED_ROLES.includes(storedRole)
   ? mappedData.filter((p) => p.center === storedCentre)
   : mappedData;
 
-// Step 2: Date filtering (Today / Yesterday / Month)
-filteredData = filterByDate(filteredData, filterType);
+// Step 2A: UI filter dataset (day / yesterday / month) -> for total income, transactions, top services chart, etc.
+const filteredData: Payment[] = filterByDate(roleFiltered, filterType);
 
+// Step 2B: MONTH-ONLY dataset -> for Top Center / Top Centers chart
+const now = new Date();
+const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
 
+const monthOnlyData = roleFiltered.filter(
+  (p) => p.dateObj >= monthStart && p.dateObj < monthEnd
+);
 
-    // Rest of summary calculation remains same...
-    const serviceAcc: Record<string, ServiceSummary> = {};
-    const centerAcc: Record<string, CenterSummary> = {};
+// Accumulators for services -> based on filteredData (UI filter)
+const serviceAcc: Record<string, ServiceSummary> = {};
+for (const p of filteredData) {
+  const sKey = p.serviceCode || p.service || "Unknown";
+  if (!serviceAcc[sKey]) {
+    serviceAcc[sKey] = { serviceCode: sKey, service: p.service, total: 0 };
+  }
+  serviceAcc[sKey].total += p.amount;
+}
+const serviceSummary = Object.values(serviceAcc).sort((a, b) => b.total - a.total);
 
-    for (const p of filteredData) {
-      const sKey = p.serviceCode || p.service || "Unknown";
-      if (!serviceAcc[sKey]) {
-        serviceAcc[sKey] = {
-          serviceCode: sKey,
-          service: p.service,
-          total: 0,
-        };
-      }
-      serviceAcc[sKey].total += p.amount;
+// Accumulators for centers -> based on monthOnlyData (MONTH ONLY ✅)
+const centerAcc: Record<string, CenterSummary> = {};
+for (const p of monthOnlyData) {
+  const cKey = p.center || "Unknown";
+  if (!centerAcc[cKey]) centerAcc[cKey] = { center: cKey, total: 0 };
+  centerAcc[cKey].total += p.amount;
+}
 
-      const cKey = p.center || "Unknown";
-      if (!centerAcc[cKey]) {
-        centerAcc[cKey] = { center: cKey, total: 0 };
-      }
-      centerAcc[cKey].total += p.amount;
-    }
+const centersSummary = Object.values(centerAcc);
+const topCenters = [...centersSummary].sort((a, b) => b.total - a.total).slice(0, 3);
+const bottomCenters = [...centersSummary].sort((a, b) => a.total - b.total).slice(0, 3);
 
-    const serviceSummary = Object.values(serviceAcc)
-      .sort((a, b) => b.total - a.total);
-
-    const centersSummary = Object.values(centerAcc);
-    const topCenters = [...centersSummary]
-      .sort((a, b) => b.total - a.total)
-      .slice(0, 3);
-    const bottomCenters = [...centersSummary]
-      .sort((a, b) => a.total - b.total)
-      .slice(0, 3);
 
     // Recent payments - global (not filtered by time), latest 8 unique
     const uniquePaymentsMap = new Map<string, Payment>();
@@ -277,13 +282,14 @@ filteredData = filterByDate(filteredData, filterType);
       .slice(0, 8);
 
     setSummary({
-      totalIncome: filteredData.reduce((sum, p) => sum + p.amount, 0),
-      totalTransactions: filteredData.length,
-      topServices: serviceSummary.slice(0, 3),
-      topCenters,
-      bottomCenters,
-      recentPayments,
-    });
+  totalIncome: filteredData.reduce((sum, p) => sum + p.amount, 0),
+  totalTransactions: filteredData.length,
+  topServices: serviceSummary.slice(0, 3),
+  topCenters,
+  bottomCenters,
+  recentPayments,
+});
+
 
     setLastUpdated(new Date().toLocaleTimeString());
     setLoading(false);
@@ -291,7 +297,7 @@ filteredData = filterByDate(filteredData, filterType);
     console.error("Error fetching dashboard data:", error);
     setLoading(false);
   }
-}, [apiUrl, filterType, userCentre]); 
+}, [apiUrl, filterType]); 
 
   useEffect(() => {
     fetchData();
@@ -398,7 +404,7 @@ filteredData = filterByDate(filteredData, filterType);
       </div>
 
    {/* Stats */}
-<div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+<div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
   {/* Total Income */}
   <Card className="relative overflow-hidden rounded-2xl border-slate-200/60 bg-white shadow-sm transition hover:shadow-md">
     <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/12 via-transparent to-teal-500/12" />
@@ -488,7 +494,7 @@ filteredData = filterByDate(filteredData, filterType);
   </Card>
 
   {/* Top Center (DG/DOF/FINANCE_MANAGER only) */}
-  {(role === "DIRECTOR_GENERAL" ||
+  {/* {(role === "DIRECTOR_GENERAL" ||
     role === "DIRECTOR_OF_FINANCE" ||
     role === "FINANCE_MANAGER") && (
     <Card className="relative overflow-hidden rounded-2xl border-slate-200/60 bg-white shadow-sm transition hover:shadow-md">
@@ -510,7 +516,7 @@ filteredData = filterByDate(filteredData, filterType);
         </div>
       </CardContent>
     </Card>
-  )}
+  )} */}
 </div>
 
 
