@@ -46,7 +46,7 @@ export default function LoginPage() {
     }
 
     try {
-      const apiUrl = process.env.NEXT_AUTH_URL || "http://vets.veta.go.tz:8080/auth";
+      const apiUrl = process.env.NEXT_AUTH_URL || "https://vets.veta.go.tz/auth";
 
       const response = await fetch(`${apiUrl}/login`, {
         method: "POST",
