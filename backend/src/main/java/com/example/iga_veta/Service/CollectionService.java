@@ -44,8 +44,6 @@ public class CollectionService {
         this.restTemplate = restTemplate;
     }
 
-
-
     private static final String API_URL = "http://41.59.229.41:6092/api/collections/fetch";
 
 
