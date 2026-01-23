@@ -49,7 +49,7 @@ export default function LoginPage() {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || "/api";
 
 
-      const response = await fetch(`${apiUrl}/login`, {
+      const response = await fetch(`${apiUrl}/auth/login`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
