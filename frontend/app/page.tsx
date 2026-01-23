@@ -46,7 +46,7 @@ export default function LoginPage() {
     }
 
     try {
-      const apiUrl = process.env.NEXT_AUTH_URL || "http://localhost:8080/auth";
+      const apiUrl = process.env.NEXT_AUTH_URL || "http://10.10.11.12/auth";
 
       const response = await fetch(`${apiUrl}/login`, {
         method: "POST",
