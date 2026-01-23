@@ -27,7 +27,8 @@ export default function ProfilePage() {
   }, []);
 
 
-const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
+const apiUrl = process.env.NEXT_PUBLIC_API_URL || "/api";
+
 
 const handlePasswordChange = async () => {
   if (!currentPassword || !newPassword || !confirmPassword) {

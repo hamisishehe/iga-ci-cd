@@ -18,7 +18,8 @@ interface Zone {
 
 export default function CentresPage() {
   const router = useRouter();
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api";
+     const apiUrl = process.env.NEXT_PUBLIC_API_URL || "/api";
+
 
   const [zone, setZone] = useState<Zone[]>([]);
   const [search, setSearch] = useState("");

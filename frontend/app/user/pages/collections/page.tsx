@@ -59,7 +59,8 @@ interface ServiceSummary {
 }
 
 export default function CollectionReport() {
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api";
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "/api";
+
 
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");

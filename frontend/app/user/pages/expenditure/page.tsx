@@ -58,7 +58,8 @@ export default function Expenditure() {
     string | null
   >(null);
 
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api";
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "/api";
+
 
   const [services, setServices] = useState<Service[]>([]);
   const [servicesAmount, setServicesAmount] = useState<Service[]>([]);

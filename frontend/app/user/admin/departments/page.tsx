@@ -24,8 +24,8 @@ interface Department {
 /* ===================== COMPONENT ===================== */
 
 export default function DepartmentPage() {
-  const apiUrl =
-    process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api";
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "/api";
+
 
   const [departments, setDepartments] = useState<Department[]>([]);
   const [search, setSearch] = useState("");

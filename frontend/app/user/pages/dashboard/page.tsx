@@ -95,7 +95,8 @@ interface Summary {
 }
 
 export default function DashboardPage() {
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api";
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "/api";
+
 
   const CENTER_RESTRICTED_ROLES = ["BURSAR", "ACCOUNT_OFFICER","ASSISTANT_ACCOUNT_OFFICER","PRINCIPAL"];
   const [loading, setLoading] = useState(true);
