@@ -303,10 +303,6 @@ const bottomCenters = [...centersSummary].sort((a, b) => a.total - b.total).slic
   useEffect(() => {
     fetchData();
 
-    console.log("=======================>");
-    console.log(role);
-     console.log("=======================>");
-
   }, [fetchData]);
 
   // Chart data

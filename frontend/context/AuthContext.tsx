@@ -11,7 +11,7 @@ import React, {
 import { useRouter } from "next/navigation";
 
 /* ================= CONSTANT ================= */
-const INACTIVITY_LIMIT = 5 * 60 * 1000; // 5 minutes
+const INACTIVITY_LIMIT = 15 * 60 * 1000; // 15 minutes
 
 /* ================= TYPES ================= */
 interface AuthData {
