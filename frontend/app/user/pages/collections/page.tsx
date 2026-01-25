@@ -340,12 +340,15 @@ const isZoneUser = userType === "ZONE" && Boolean(userZone);
 
 
   if (loading) {
-    return (
-      <div className="w-full h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-sky-800 border-solid"></div>
+  return (
+    <div className="w-full h-screen flex items-center justify-center">
+      <div className="relative w-16 h-16">
+        <span className="absolute inset-0 rounded-full bg-sky-600 animate-ping"></span>
+        <span className="absolute inset-2 rounded-full bg-sky-700"></span>
       </div>
-    );
-  }
+    </div>
+  );
+}
 
  return (
   <div className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-slate-50">

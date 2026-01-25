@@ -388,10 +388,16 @@ Remaining: ${(serviceBalance - totalForThisService).toLocaleString()} TSH`,
     }
   };
 
-  if (loading)
-    return (
-      <div className="text-center mt-10 text-lg font-semibold">Loading...</div>
-    );
+ if (loading) {
+  return (
+    <div className="w-full h-screen flex items-center justify-center">
+      <div className="relative w-16 h-16">
+        <span className="absolute inset-0 rounded-full bg-sky-600 animate-ping"></span>
+        <span className="absolute inset-2 rounded-full bg-sky-700"></span>
+      </div>
+    </div>
+  );
+}
 
   return (
   <div className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-slate-50">
