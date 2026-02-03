@@ -1,11 +1,8 @@
 package com.example.iga_veta.Controller;
 
 
-import com.example.iga_veta.DTO.ApposhmentDistributionDTO;
-import com.example.iga_veta.Model.Allocation;
+import com.example.iga_veta.dto.ApposhmentDistributionDTO;
 import com.example.iga_veta.Model.ApiUsage;
-import com.example.iga_veta.Model.ApposhmentDistribution;
-import com.example.iga_veta.Model.Collections;
 import com.example.iga_veta.Repository.ApiUsageRepository;
 import com.example.iga_veta.Service.ApposhmentDistributionService;
 import org.springframework.beans.factory.annotation.Autowired;

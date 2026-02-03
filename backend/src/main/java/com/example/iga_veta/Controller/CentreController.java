@@ -1,12 +1,9 @@
 package com.example.iga_veta.Controller;
 
 
-import com.example.iga_veta.DTO.CentreDTO;
 import com.example.iga_veta.Model.ApiUsage;
 import com.example.iga_veta.Model.Centre;
-import com.example.iga_veta.Model.Zone;
 import com.example.iga_veta.Repository.ApiUsageRepository;
-import com.example.iga_veta.Repository.CentreRepository;
 import com.example.iga_veta.Service.CentreService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;

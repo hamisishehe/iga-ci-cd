@@ -1,9 +1,7 @@
-package com.example.iga_veta.DTO;
+package com.example.iga_veta.dto;
 
-import com.example.iga_veta.DTO.ServiceItemDTO;
 import lombok.Data;
 
-import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 

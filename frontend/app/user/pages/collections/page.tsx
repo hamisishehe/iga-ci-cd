@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -22,594 +22,636 @@ import {
 import { FileSpreadsheet } from "lucide-react";
 import { toast } from "sonner";
 
-interface ApiCollectionItem {
+/** -------- types from backend projections -------- */
+interface ReportRow {
   id: number;
-  amount: number | string;
-  date: string;
-  customer?: {
-    name?: string;
-    centre?: {
-      name?: string;
-      zones?: {
-        name?: string;
-      };
-    };
-  };
-  gfsCode?: {
-    code?: string;
-    description?: string;
-  };
-}
-
-interface CollectionRecord {
-  id: number;
-  name: string;
-  center: string;
-  zone: string;
+  customerName: string;
+  centreName: string;
+  zoneName: string;
   serviceCode: string;
-  service: string;
+  serviceDesc: string;
   amount: number;
-  date: string;
+  datePaid: string; // ISO
 }
 
-interface ServiceSummary {
+interface ServiceSummaryRow {
   serviceCode: string;
-  service: string;
+  serviceDesc: string;
   total: number;
 }
+
+/** ✅ OPTIONAL: server can return dropdown options */
+interface ReportFilters {
+  centres?: string[];
+  zones?: string[];
+  services?: Array<{ serviceCode: string; serviceDesc: string }>;
+}
+
+interface ReportResponse extends ReportFilters {
+  totalIncome: number;
+  totalTransactions: number;
+
+  page: number;
+  size: number;
+  totalElements: number;
+  totalPages: number;
+
+  rows: ReportRow[];
+  summaryByService: ServiceSummaryRow[];
+  totalAmount: number;
+}
+
+/** -------- helpers -------- */
+const pad2 = (n: number) => String(n).padStart(2, "0");
+const formatDate = (d: Date) =>
+  `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+
+const toSafeNumber = (v: any) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+};
 
 export default function CollectionReport() {
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || "/api";
 
-
+  // dates
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
-  const [service, setService] = useState("ALL");
-  const [center, setCenter] = useState("ALL");
-  const [zone, setZone] = useState("ALL");
 
-  const [data, setData] = useState<CollectionRecord[]>([]);
-  const [filteredData, setFilteredData] = useState<CollectionRecord[]>([]);
+  /**
+   * ✅ UX muhimu:
+   * - centre dropdown uses centre name
+   * - service dropdown uses service name (serviceDesc) but value is serviceCode
+   */
+  const [centre, setCentre] = useState("ALL");
+  const [zone, setZone] = useState("ALL");
+  const [serviceCode, setServiceCode] = useState("ALL");
+
+  // server data
+  const [rows, setRows] = useState<ReportRow[]>([]);
+  const [summaryByService, setSummaryByService] = useState<ServiceSummaryRow[]>([]);
+  const [totalIncome, setTotalIncome] = useState(0);
+  const [totalTransactions, setTotalTransactions] = useState(0);
+  const [totalAmount, setTotalAmount] = useState(0);
+
+  // dropdown options (from server OR fallback from data)
+  const [centreOptions, setCentreOptions] = useState<string[]>([]);
+  const [zoneOptions, setZoneOptions] = useState<string[]>([]);
+  const [serviceOptions, setServiceOptions] = useState<Array<{ serviceCode: string; serviceDesc: string }>>([]);
+
   const [loading, setLoading] = useState(true);
-  const [currentPage, setCurrentPage] = useState(1);
-  const rowsPerPage = 10;
+
+  // paging
+  const [page, setPage] = useState(0);
+  const size = 10;
+  const [totalPages, setTotalPages] = useState(1);
 
   // === User Role & Permissions ===
-  const userType = (localStorage.getItem("userType") || "").toUpperCase(); // HQ, CENTRE, ZONE
-  const userCentre = localStorage.getItem("centre") || "";
-  const userZone = localStorage.getItem("zone") || "";
+  const userType =
+    (typeof window !== "undefined" ? (localStorage.getItem("userType") || "") : "").toUpperCase();
+  const userCentre = typeof window !== "undefined" ? (localStorage.getItem("centre") || "") : "";
+  const userZone = typeof window !== "undefined" ? (localStorage.getItem("zone") || "") : "";
 
   const isHQUser = userType === "HQ";
   const isCentreUser = userType === "CENTRE" && Boolean(userCentre);
-const isZoneUser = userType === "ZONE" && Boolean(userZone);
+  const isZoneUser = userType === "ZONE" && Boolean(userZone);
 
   // === Set default date range to current month ===
   useEffect(() => {
     const now = new Date();
     const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
     const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-
-    const formatDate = (d: Date) =>
-      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
-        d.getDate()
-      ).padStart(2, "0")}`;
-
     setFromDate(formatDate(firstDay));
     setToDate(formatDate(lastDay));
-  }, []);
 
-  // === Fetch data once on mount ===
+    // lock filters by role (same behavior as your original code)
+    if (isCentreUser) setCentre(userCentre);
+    if (isZoneUser) setZone(userZone);
+  }, [isCentreUser, isZoneUser, userCentre, userZone]);
+
+  /** build request payload */
+  const payload = useMemo(() => {
+    return {
+      fromDate,
+      toDate,
+      // ✅ centre filter: center users locked, others can select ALL
+      centre: isCentreUser ? userCentre : (centre === "ALL" ? null : centre),
+      // ✅ zone filter: zone users locked, HQ can select, centre user normally doesn't filter zone
+      zone: isZoneUser ? userZone : (zone === "ALL" ? null : zone),
+      // ✅ service filter
+      serviceCode: serviceCode === "ALL" ? null : serviceCode,
+      page,
+      size,
+    };
+  }, [fromDate, toDate, centre, zone, serviceCode, page, size, isCentreUser, isZoneUser, userCentre, userZone]);
+
+  /** debounce fetch */
+  const debounceRef = useRef<number | null>(null);
+
   useEffect(() => {
-    const fetchData = async () => {
-      setLoading(true);
-      try {
-        const token = localStorage.getItem("authToken");
-        const apiKey = process.env.NEXT_PUBLIC_API_KEY;
+    if (!fromDate || !toDate) return;
 
-        if (!token || !apiKey) {
-          toast.error("Missing authentication credentials");
-          setLoading(false);
-          return;
-        }
+    if (debounceRef.current) window.clearTimeout(debounceRef.current);
+    debounceRef.current = window.setTimeout(() => {
+      fetchReport(payload);
+    }, 250);
 
-        const res = await fetch(`${apiUrl}/collections/get`, {
-          method: "GET",
+    return () => {
+      if (debounceRef.current) window.clearTimeout(debounceRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [payload]);
+
+  const fetchReport = async (body: any) => {
+    setLoading(true);
+    try {
+      const token = localStorage.getItem("authToken");
+      const apiKey = process.env.NEXT_PUBLIC_API_KEY;
+
+      if (!token || !apiKey) {
+        toast.error("Missing authentication credentials");
+        return;
+      }
+
+      const res = await fetch(`${apiUrl}/collections/report`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+          "X-API-KEY": apiKey,
+        },
+        cache: "no-store",
+        body: JSON.stringify(body),
+      });
+
+      if (!res.ok) {
+        const txt = await res.text().catch(() => "");
+        console.error("Report fetch failed:", res.status, txt);
+        throw new Error(`HTTP ${res.status} ${txt ? `- ${txt}` : ""}`);
+      }
+
+      const data: ReportResponse = await res.json();
+
+      // main data
+      setRows(data.rows || []);
+      setSummaryByService(data.summaryByService || []);
+
+      setTotalIncome(toSafeNumber(data.totalIncome));
+      setTotalTransactions(toSafeNumber(data.totalTransactions));
+      setTotalAmount(toSafeNumber(data.totalAmount));
+
+      setTotalPages(Math.max(1, toSafeNumber(data.totalPages) || 1));
+
+      /**
+       * ✅ Dropdown Options (Clear like your old code)
+       * Prefer server-provided options. If missing, fallback from data.
+       */
+      const serverCentres = (data.centres || []).filter(Boolean);
+      const serverZones = (data.zones || []).filter(Boolean);
+      const serverServices = (data.services || []).filter((s) => s?.serviceCode && s?.serviceDesc);
+
+      // fallback from rows/summary
+      const fallbackCentres = Array.from(new Set((data.rows || []).map((r) => r.centreName).filter(Boolean)));
+      const fallbackZones = Array.from(new Set((data.rows || []).map((r) => r.zoneName).filter(Boolean)));
+
+      // services fallback (from summaryByService is best)
+      const fallbackServices = Array.from(
+        new Map(
+          (data.summaryByService || [])
+            .filter((s) => s?.serviceCode && s?.serviceDesc)
+            .map((s) => [s.serviceCode, { serviceCode: s.serviceCode, serviceDesc: s.serviceDesc }])
+        ).values()
+      );
+
+      setCentreOptions(isCentreUser ? [userCentre] : (serverCentres.length ? serverCentres : fallbackCentres));
+      setZoneOptions(isZoneUser ? [userZone] : (serverZones.length ? serverZones : fallbackZones));
+      setServiceOptions(serverServices.length ? serverServices : fallbackServices);
+
+      // ✅ If selected serviceCode is no longer available, reset to ALL
+      if (serviceCode !== "ALL") {
+        const exists = (serverServices.length ? serverServices : fallbackServices).some((s) => s.serviceCode === serviceCode);
+        if (!exists) setServiceCode("ALL");
+      }
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to load report");
+
+      setRows([]);
+      setSummaryByService([]);
+      setTotalIncome(0);
+      setTotalTransactions(0);
+      setTotalAmount(0);
+      setTotalPages(1);
+
+      setCentreOptions(isCentreUser ? [userCentre] : []);
+      setZoneOptions(isZoneUser ? [userZone] : []);
+      setServiceOptions([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  /** Export: fetch all pages */
+  const exportExcel = async () => {
+    try {
+      const token = localStorage.getItem("authToken");
+      const apiKey = process.env.NEXT_PUBLIC_API_KEY;
+
+      if (!token || !apiKey) {
+        toast.error("Missing authentication credentials");
+        return;
+      }
+
+      toast.message("Preparing Excel...");
+
+      const allRows: ReportRow[] = [];
+      const maxPages = totalPages;
+
+      for (let p = 0; p < maxPages; p++) {
+        const res = await fetch(`${apiUrl}/collections/report`, {
+          method: "POST",
           headers: {
+            "Content-Type": "application/json",
             Authorization: `Bearer ${token}`,
             "X-API-KEY": apiKey,
           },
+          cache: "no-store",
+          body: JSON.stringify({ ...payload, page: p, size: 2000 }),
         });
 
-        if (!res.ok) throw new Error("Failed to fetch collections");
+        if (!res.ok) throw new Error("Export fetch failed");
 
-        const json: ApiCollectionItem[] = await res.json();
+        const data: ReportResponse = await res.json();
+        allRows.push(...(data.rows || []));
 
-        const mapped: CollectionRecord[] = json.map((item) => ({
-          id: item.id,
-          name: item.customer?.name || "N/A",
-          center: item.customer?.centre?.name || "N/A",
-          zone: item.customer?.centre?.zones?.name || "N/A",
-          serviceCode: item.gfsCode?.code || "N/A",
-          service:
-            item.gfsCode?.description === "Miscellaneous receipts"
-              ? "Separate production Unit"
-              : item.gfsCode?.description || "N/A",
-          amount: Number(item.amount) || 0,
-          date: item.date ? item.date.split("T")[0] : "",
-        }));
+        if ((data.totalPages || 1) <= p + 1) break;
+      }
 
-        // Pre-filter by user role (HQ sees all, others restricted)
-        let filteredByRole = mapped;
+      const header = ["#", "Customer", "Center", "Zone", "Service Code", "Service", "Amount (TZS)", "Date Paid"];
 
-        if (isCentreUser) {
-          filteredByRole = mapped.filter((d) => d.center === userCentre);
-          setCenter(userCentre); // Lock dropdown
-        } else if (isZoneUser) {
-          filteredByRole = mapped.filter((d) => d.zone === userZone);
-          setZone(userZone); // Lock dropdown
+      const body = allRows.map((r, i) => [
+        i + 1,
+        r.customerName || "N/A",
+        r.centreName || "N/A",
+        r.zoneName || "N/A",
+        r.serviceCode || "N/A",
+        r.serviceDesc || "N/A",
+        toSafeNumber(r.amount),
+        r.datePaid ? String(r.datePaid).split("T")[0] : "",
+      ]);
+
+      const totalRow = ["", "", "", "", "", "TOTAL", toSafeNumber(totalAmount), ""];
+
+      const wsData = [header, ...body, totalRow];
+      const ws = XLSX.utils.aoa_to_sheet(wsData);
+
+      // style header
+      header.forEach((_, colIndex) => {
+        const cell = ws[XLSX.utils.encode_cell({ r: 0, c: colIndex })];
+        if (cell) {
+          cell.s = {
+            font: { bold: true, color: { rgb: "FFFFFF" } },
+            fill: { fgColor: { rgb: "2563EB" } },
+            alignment: { vertical: "center", horizontal: "center" },
+          };
         }
-        // HQ sees everything → no pre-filter
+      });
 
-        setData(filteredByRole);
-      } catch (err) {
-        console.error(err);
-        toast.error("Failed to load collections");
-        setData([]);
-      } finally {
-        setLoading(false);
-      }
-    };
+      // numeric amount format
+      body.forEach((_, rowIndex) => {
+        const excelRow = rowIndex + 1;
+        const amountCell = ws[XLSX.utils.encode_cell({ r: excelRow, c: 6 })];
+        if (amountCell) {
+          amountCell.t = "n";
+          amountCell.z = '#,##0" TZS"';
+        }
+      });
 
-    fetchData();
-  }, []);
+      // widths
+      ws["!cols"] = [
+        { wch: 5 },
+        { wch: 24 },
+        { wch: 18 },
+        { wch: 14 },
+        { wch: 16 },
+        { wch: 34 },
+        { wch: 16 },
+        { wch: 16 },
+      ];
 
-  // === Reactive Filtering (dates, service, center, zone) ===
-  useEffect(() => {
-    if (data.length === 0) {
-      setFilteredData([]);
-      return;
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Collections");
+      XLSX.writeFile(wb, "collection_report.xlsx");
+
+      toast.success("Excel exported");
+    } catch (e) {
+      console.error(e);
+      toast.error("Export failed");
     }
-
-    const from = fromDate ? new Date(fromDate + "T00:00:00") : null;
-    const to = toDate ? new Date(toDate + "T23:59:59") : null;
-
-    const filtered = data.filter((item) => {
-      const itemDate = new Date(item.date);
-
-      const inDateRange =
-        (!from || itemDate >= from) && (!to || itemDate <= to);
-
-      const matchService = service === "ALL" || item.service === service;
-
-      const matchCenter =
-        isCentreUser || // Centre user already filtered
-        center === "ALL" ||
-        item.center === center;
-
-      const matchZone =
-        !isHQUser || // Only HQ can filter by zone
-        zone === "ALL" ||
-        item.zone === zone;
-
-      return inDateRange && matchService && matchCenter && matchZone;
-    });
-
-    setFilteredData(filtered);
-    setCurrentPage(1);
-  }, [data, fromDate, toDate, service, center, zone, isCentreUser, isHQUser]);
-
-  // === Unique options for dropdowns ===
-  const uniqueServices = Array.from(new Set(data.map((d) => d.service))).filter(
-    Boolean
-  );
-
-  const uniqueCenters = isCentreUser
-    ? [userCentre]
-    : Array.from(new Set(data.map((d) => d.center))).filter(Boolean);
-
-  const uniqueZones = isZoneUser
-    ? [userZone]
-    : Array.from(new Set(data.map((d) => d.zone))).filter(Boolean);
-
-  // === Pagination & Totals ===
-  const indexOfLastRow = currentPage * rowsPerPage;
-  const indexOfFirstRow = indexOfLastRow - rowsPerPage;
-  const currentRows = filteredData.slice(indexOfFirstRow, indexOfLastRow);
-  const totalPages = Math.max(1, Math.ceil(filteredData.length / rowsPerPage));
-
-  const totalAmount = filteredData.reduce((sum, item) => sum + item.amount, 0);
-
-  const summaryByService: ServiceSummary[] = Object.values(
-    filteredData.reduce<Record<string, ServiceSummary>>((acc, item) => {
-      const key = item.serviceCode;
-      if (!acc[key]) {
-        acc[key] = { serviceCode: key, service: item.service, total: 0 };
-      }
-      acc[key].total += item.amount;
-      return acc;
-    }, {})
-  ).sort((a, b) => b.total - a.total);
-
-  // === Export Excel ===
-  const exportExcel = () => {
-  const header = [
-    "#",
-    "Customer",
-    "Center",
-    "Zone",
-    "Service Code",
-    "Service",
-    "Amount (TZS)",
-    "Date Paid",
-  ];
-
-  const body = filteredData.map((r, i) => [
-    i + 1,
-    r.name,
-    r.center,
-    r.zone,
-    r.serviceCode,
-    r.service,
-    r.amount,
-    r.date,
-  ]);
-
-  const totalRow = ["", "", "", "", "", "TOTAL", totalAmount, ""];
-
-  const wsData = [header, ...body, totalRow];
-
-  const ws = XLSX.utils.aoa_to_sheet(wsData);
-
-  /* ---------------- HEADER STYLE ---------------- */
-  header.forEach((_, colIndex) => {
-    const cell = ws[XLSX.utils.encode_cell({ r: 0, c: colIndex })];
-    if (cell) {
-      cell.s = {
-        font: { bold: true, color: { rgb: "FFFFFF" } },
-        fill: { fgColor: { rgb: "2563EB" } }, // Blue
-        alignment: { vertical: "center", horizontal: "center" },
-        border: {
-          top: { style: "thin" },
-          bottom: { style: "thin" },
-          left: { style: "thin" },
-          right: { style: "thin" },
-        },
-      };
-    }
-  });
-
-  /* ---------------- BODY STYLE ---------------- */
-  body.forEach((_, rowIndex) => {
-    const excelRow = rowIndex + 1;
-
-    // Amount column formatting
-    const amountCell = ws[XLSX.utils.encode_cell({ r: excelRow, c: 6 })];
-    if (amountCell) {
-      amountCell.t = "n";
-      amountCell.z = '#,##0" TZS"';
-      amountCell.s = {
-        alignment: { horizontal: "right" },
-      };
-    }
-
-    // Date column
-    const dateCell = ws[XLSX.utils.encode_cell({ r: excelRow, c: 7 })];
-    if (dateCell) {
-      dateCell.z = "dd mmm yyyy";
-    }
-  });
-
-  /* ---------------- TOTAL ROW STYLE ---------------- */
-  const totalRowIndex = wsData.length - 1;
-
-  for (let c = 0; c < header.length; c++) {
-    const cell = ws[XLSX.utils.encode_cell({ r: totalRowIndex, c })];
-    if (cell) {
-      cell.s = {
-        font: { bold: true },
-        fill: { fgColor: { rgb: "DBEAFE" } }, // Light blue
-        border: {
-          top: { style: "medium" },
-          bottom: { style: "medium" },
-        },
-        alignment: {
-          horizontal: c === 6 ? "right" : "center",
-        },
-      };
-    }
-  }
-
-  /* ---------------- COLUMN WIDTHS ---------------- */
-  ws["!cols"] = [
-    { wch: 5 },
-    { wch: 22 },
-    { wch: 18 },
-    { wch: 14 },
-    { wch: 16 },
-    { wch: 24 },
-    { wch: 16 },
-    { wch: 16 },
-  ];
-
-  /* ---------------- WORKBOOK ---------------- */
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Collections");
-
-  XLSX.writeFile(wb, "collection_report.xlsx");
-};
-
+  };
 
   if (loading) {
+    return (
+      <div className="w-full h-screen flex items-center justify-center">
+        <div className="relative w-16 h-16">
+          <span className="absolute inset-0 rounded-full bg-sky-600 animate-ping"></span>
+          <span className="absolute inset-2 rounded-full bg-sky-700"></span>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="w-full h-screen flex items-center justify-center">
-      <div className="relative w-16 h-16">
-        <span className="absolute inset-0 rounded-full bg-sky-600 animate-ping"></span>
-        <span className="absolute inset-2 rounded-full bg-sky-700"></span>
+    <div className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-slate-50">
+      <div className="p-6 space-y-6">
+        {/* Breadcrumb */}
+        <div className="flex items-center justify-between">
+          <Breadcrumb className="px-1 sm:px-2">
+            <BreadcrumbList>
+              <BreadcrumbItem>
+                <BreadcrumbLink href="/user/pages/dashboard" className="font-semibold text-slate-800">
+                  Dashboard
+                </BreadcrumbLink>
+              </BreadcrumbItem>
+              <BreadcrumbSeparator />
+              <BreadcrumbItem className="text-slate-600">Collections</BreadcrumbItem>
+            </BreadcrumbList>
+          </Breadcrumb>
+
+          {isCentreUser && (
+            <div className="hidden sm:inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-700 shadow-sm">
+              <span className="h-2 w-2 rounded-full bg-emerald-500" />
+              {userCentre}
+            </div>
+          )}
+        </div>
+
+        {/* Stats */}
+        <div className="grid gap-4 sm:grid-cols-3">
+          <Card className="rounded-2xl border-slate-200/60 bg-white shadow-sm">
+            <CardHeader>
+              <CardDescription>Total Income</CardDescription>
+            </CardHeader>
+            <CardContent className="text-2xl font-semibold">
+              {toSafeNumber(totalIncome).toLocaleString()} <span className="text-sm text-slate-500">TZS</span>
+            </CardContent>
+          </Card>
+
+          <Card className="rounded-2xl border-slate-200/60 bg-white shadow-sm">
+            <CardHeader>
+              <CardDescription>Total Transactions</CardDescription>
+            </CardHeader>
+            <CardContent className="text-2xl font-semibold">
+              {toSafeNumber(totalTransactions).toLocaleString()}
+            </CardContent>
+          </Card>
+
+          <Card className="rounded-2xl border-slate-200/60 bg-white shadow-sm">
+            <CardHeader>
+              <CardDescription>Total Amount (Filtered)</CardDescription>
+            </CardHeader>
+            <CardContent className="text-2xl font-semibold">
+              {toSafeNumber(totalAmount).toLocaleString()} <span className="text-sm text-slate-500">TZS</span>
+            </CardContent>
+          </Card>
+        </div>
+
+        <Card className="relative overflow-hidden rounded-2xl border-slate-200/60 bg-white shadow-sm">
+          <CardHeader className="relative">
+            <CardDescription className="text-slate-600">
+              Filter by date, service (name), centre and zone (server-side filtering for speed).
+            </CardDescription>
+          </CardHeader>
+
+          <CardContent className="relative">
+            {/* Filters */}
+            <div className="rounded-2xl border border-slate-200/70 bg-gradient-to-b from-slate-50 to-white p-4 sm:p-5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-6 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-slate-700">From</label>
+                  <Input
+                    type="date"
+                    value={fromDate}
+                    onChange={(e) => {
+                      setPage(0);
+                      setFromDate(e.target.value);
+                    }}
+                    className="h-10 rounded-xl border-slate-200 bg-white"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-slate-700">To</label>
+                  <Input
+                    type="date"
+                    value={toDate}
+                    onChange={(e) => {
+                      setPage(0);
+                      setToDate(e.target.value);
+                    }}
+                    className="h-10 rounded-xl border-slate-200 bg-white"
+                  />
+                </div>
+
+                {/* ✅ SERVICE: show name, value is code */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-slate-700">Service</label>
+                  <Select
+                    value={serviceCode}
+                    onValueChange={(v) => {
+                      setPage(0);
+                      setServiceCode(v);
+                    }}
+                  >
+                    <SelectTrigger className="h-10 rounded-xl border-slate-200 bg-white">
+                      <SelectValue placeholder="All" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ALL">All</SelectItem>
+                      {serviceOptions.map((s) => (
+                        <SelectItem key={s.serviceCode} value={s.serviceCode}>
+                          {s.serviceDesc}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* ✅ CENTRE: dropdown like your old code */}
+                {(!isCentreUser || isHQUser) && (
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-slate-700">Centre</label>
+                    <Select
+                      value={isCentreUser ? userCentre : centre}
+                      onValueChange={(v) => {
+                        setPage(0);
+                        setCentre(v);
+                      }}
+                      disabled={isCentreUser}
+                    >
+                      <SelectTrigger className="h-10 rounded-xl border-slate-200 bg-white">
+                        <SelectValue placeholder="All" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="ALL">All</SelectItem>
+                        {(centreOptions || []).map((c) => (
+                          <SelectItem key={c} value={c}>
+                            {c}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+
+                {/* ✅ ZONE: HQ can choose zone like your old code */}
+                {isHQUser && (
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-slate-700">Zone</label>
+                    <Select
+                      value={zone}
+                      onValueChange={(v) => {
+                        setPage(0);
+                        setZone(v);
+                      }}
+                    >
+                      <SelectTrigger className="h-10 rounded-xl border-slate-200 bg-white">
+                        <SelectValue placeholder="All" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="ALL">All</SelectItem>
+                        {(zoneOptions || []).map((z) => (
+                          <SelectItem key={z} value={z}>
+                            {z}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+
+                <div className="md:col-span-1 flex items-end">
+                  <div className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
+                    Tip: data is filtered on server (fast).
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Table */}
+            <div className="mt-6 overflow-auto rounded-2xl border border-slate-200/70 bg-white">
+              <table className="min-w-full text-sm text-left">
+                <thead className="sticky top-0 z-10 bg-slate-900 text-white">
+                  <tr>
+                    <th className="p-3 font-medium">#</th>
+                    <th className="p-3 font-medium">Customer</th>
+                    <th className="p-3 font-medium">Service Code</th>
+                    <th className="p-3 font-medium">Service</th>
+                    <th className="p-3 font-medium text-right">Amount (TZS)</th>
+                    <th className="p-3 font-medium">Date Paid</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.length > 0 ? (
+                    rows.map((row, i) => (
+                      <tr key={row.id} className="border-t border-slate-200/70 hover:bg-slate-50">
+                        <td className="p-3 text-slate-700">{page * size + i + 1}</td>
+                        <td className="p-3 text-slate-900">{row.customerName}</td>
+                        <td className="p-3 text-slate-700">{row.serviceCode}</td>
+                        <td className="p-3 text-slate-700">{row.serviceDesc}</td>
+                        <td className="p-3 text-right font-semibold text-slate-900">
+                          {toSafeNumber(row.amount).toLocaleString()}
+                        </td>
+                        <td className="p-3 text-slate-700">
+                          {row.datePaid ? String(row.datePaid).split("T")[0] : ""}
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={6} className="p-10 text-center text-slate-500">
+                        No records found.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Pagination */}
+            <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <Button
+                variant="outline"
+                disabled={page === 0}
+                onClick={() => setPage((p) => Math.max(p - 1, 0))}
+                className="h-10 rounded-xl border-slate-200 bg-white"
+              >
+                Previous
+              </Button>
+
+              <span className="text-sm text-slate-600">
+                Page <span className="font-semibold text-slate-900">{page + 1}</span> of{" "}
+                <span className="font-semibold text-slate-900">{totalPages}</span>
+              </span>
+
+              <Button
+                variant="outline"
+                disabled={page + 1 >= totalPages}
+                onClick={() => setPage((p) => Math.min(p + 1, totalPages - 1))}
+                className="h-10 rounded-xl border-slate-200 bg-white"
+              >
+                Next
+              </Button>
+            </div>
+
+            {/* Summary by Service */}
+            <div className="mt-10 flex items-end justify-between gap-4">
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900">Summary Per Service</h3>
+                <p className="text-sm text-slate-600">Totals grouped by service.</p>
+              </div>
+
+              <div className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-700 shadow-sm">
+                Total: <span className="font-semibold">{toSafeNumber(totalAmount).toLocaleString()} TZS</span>
+              </div>
+            </div>
+
+            <div className="mt-4 overflow-auto rounded-2xl border border-slate-200/70 bg-white">
+              <table className="min-w-full text-sm">
+                <thead className="sticky top-0 z-10 bg-slate-900 text-white">
+                  <tr>
+                    <th className="p-3 font-medium">Service Code</th>
+                    <th className="p-3 font-medium">Service Name</th>
+                    <th className="p-3 font-medium text-right">Total Amount (TZS)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {summaryByService.map((s) => (
+                    <tr key={s.serviceCode} className="border-t border-slate-200/70 hover:bg-slate-50">
+                      <td className="p-3 text-slate-700">{s.serviceCode}</td>
+                      <td className="p-3 text-slate-900">{s.serviceDesc}</td>
+                      <td className="p-3 text-right font-semibold text-slate-900">
+                        {toSafeNumber(s.total).toLocaleString()}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Export */}
+            <div className="mt-8 flex flex-wrap gap-3">
+              <Button
+                onClick={exportExcel}
+                className="h-10 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm"
+              >
+                <FileSpreadsheet className="mr-2 h-4 w-4" />
+                Export Excel
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );
-}
-
- return (
-  <div className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-slate-50">
-    <div className="p-6 space-y-6">
-      {/* Breadcrumb */}
-      <div className="flex items-center justify-between">
-        <Breadcrumb className="px-1 sm:px-2">
-          <BreadcrumbList>
-            <BreadcrumbItem>
-              <BreadcrumbLink href="/user/pages/dashboard" className="font-semibold text-slate-800">
-                Dashboard
-              </BreadcrumbLink>
-            </BreadcrumbItem>
-            <BreadcrumbSeparator />
-            <BreadcrumbItem className="text-slate-600">Collections</BreadcrumbItem>
-          </BreadcrumbList>
-        </Breadcrumb>
-
-        {/* Optional small badge */}
-        {isCentreUser && (
-          <div className="hidden sm:inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-700 shadow-sm">
-            <span className="h-2 w-2 rounded-full bg-emerald-500" />
-            {userCentre}
-          </div>
-        )}
-      </div>
-
-      {/* Page Card */}
-      <Card className="relative overflow-hidden rounded-2xl border-slate-200/60 bg-white shadow-sm">
-        <div className="absolute inset-0 bg-gradient-to-br from-sky-500/8 via-transparent to-indigo-500/8" />
-
-        <CardHeader className="relative flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <CardDescription className="text-slate-600">
-              Filter by date, service, centre and zone to generate the report.
-            </CardDescription>
-          </div>
-        </CardHeader>
-
-        <CardContent className="relative">
-          {/* Filters */}
-          <div className="rounded-2xl border border-slate-200/70 bg-gradient-to-b from-slate-50 to-white p-4 sm:p-5">
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-6 gap-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-slate-700">From</label>
-                <Input
-                  type="date"
-                  value={fromDate}
-                  onChange={(e) => setFromDate(e.target.value)}
-                  className="h-10 rounded-xl border-slate-200 bg-white"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-slate-700">To</label>
-                <Input
-                  type="date"
-                  value={toDate}
-                  onChange={(e) => setToDate(e.target.value)}
-                  className="h-10 rounded-xl border-slate-200 bg-white"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-slate-700">Service</label>
-                <Select value={service} onValueChange={setService}>
-                  <SelectTrigger className="h-10 rounded-xl border-slate-200 bg-white">
-                    <SelectValue placeholder="All" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="ALL">All</SelectItem>
-                    {uniqueServices.map((s, i) => (
-                      <SelectItem key={i} value={s}>
-                        {s}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Centre Filter - Visible for HQ and Zone users */}
-              {(!isCentreUser || isHQUser) && (
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-slate-700">Centre</label>
-                  <Select value={center} onValueChange={setCenter} disabled={isCentreUser}>
-                    <SelectTrigger className="h-10 rounded-xl border-slate-200 bg-white">
-                      <SelectValue placeholder="All" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="ALL">All</SelectItem>
-                      {uniqueCenters.map((c, i) => (
-                        <SelectItem key={i} value={c}>
-                          {c}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
-
-              {/* Zone Filter - Only visible for HQ users */}
-              {isHQUser && (
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-slate-700">Zone</label>
-                  <Select value={zone} onValueChange={setZone}>
-                    <SelectTrigger className="h-10 rounded-xl border-slate-200 bg-white">
-                      <SelectValue placeholder="All" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="ALL">All</SelectItem>
-                      {uniqueZones.map((z, i) => (
-                        <SelectItem key={i} value={z}>
-                          {z}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
-
-              {/* Quick action area (optional) */}
-              <div className="md:col-span-1 flex items-end">
-                <div className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
-                  Tip: Use “All” to include everything.
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Table */}
-          <div className="mt-6 overflow-auto rounded-2xl border border-slate-200/70 bg-white">
-            <table className="min-w-full text-sm text-left">
-              <thead className="sticky top-0 z-10 bg-slate-900 text-white">
-                <tr>
-                  <th className="p-3 font-medium">#</th>
-                  <th className="p-3 font-medium">Customer</th>
-                  <th className="p-3 font-medium">Service Code</th>
-                  <th className="p-3 font-medium">Service</th>
-                  <th className="p-3 font-medium text-right">Amount (TZS)</th>
-                  <th className="p-3 font-medium">Date Paid</th>
-                </tr>
-              </thead>
-              <tbody>
-                {currentRows.length > 0 ? (
-                  currentRows.map((row, i) => (
-                    <tr
-                      key={row.id}
-                      className="border-t border-slate-200/70 hover:bg-slate-50"
-                    >
-                      <td className="p-3 text-slate-700">
-                        {indexOfFirstRow + i + 1}
-                      </td>
-                      <td className="p-3 text-slate-900">{row.name}</td>
-                      <td className="p-3 text-slate-700">{row.serviceCode}</td>
-                      <td className="p-3 text-slate-700">{row.service}</td>
-                      <td className="p-3 text-right font-semibold text-slate-900">
-                        {row.amount.toLocaleString()}
-                      </td>
-                      <td className="p-3 text-slate-700">{row.date}</td>
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan={6} className="p-10 text-center text-slate-500">
-                      No records found.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Pagination */}
-          <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <Button
-              variant="outline"
-              disabled={currentPage === 1}
-              onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
-              className="h-10 rounded-xl border-slate-200 bg-white"
-            >
-              Previous
-            </Button>
-
-            <span className="text-sm text-slate-600">
-              Page <span className="font-semibold text-slate-900">{currentPage}</span> of{" "}
-              <span className="font-semibold text-slate-900">{totalPages}</span>
-            </span>
-
-            <Button
-              variant="outline"
-              disabled={currentPage === totalPages}
-              onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
-              className="h-10 rounded-xl border-slate-200 bg-white"
-            >
-              Next
-            </Button>
-          </div>
-
-          {/* Summary by Service */}
-          <div className="mt-10 flex items-end justify-between gap-4">
-            <div>
-              <h3 className="text-lg font-semibold text-slate-900">Summary Per Service</h3>
-              <p className="text-sm text-slate-600">Totals grouped by service code.</p>
-            </div>
-
-            <div className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-700 shadow-sm">
-              Total: <span className="font-semibold">{totalAmount.toLocaleString()} TZS</span>
-            </div>
-          </div>
-
-          <div className="mt-4 overflow-auto rounded-2xl border border-slate-200/70 bg-white">
-            <table className="min-w-full text-sm">
-              <thead className="sticky top-0 z-10 bg-slate-900 text-white">
-                <tr>
-                  <th className="p-3 font-medium">Service Code</th>
-                  <th className="p-3 font-medium">Service Name</th>
-                  <th className="p-3 font-medium text-right">Total Amount (TZS)</th>
-                </tr>
-              </thead>
-              <tbody>
-                {summaryByService.map((s) => (
-                  <tr
-                    key={s.serviceCode}
-                    className="border-t border-slate-200/70 hover:bg-slate-50"
-                  >
-                    <td className="p-3 text-slate-700">{s.serviceCode}</td>
-                    <td className="p-3 text-slate-900">{s.service}</td>
-                    <td className="p-3 text-right font-semibold text-slate-900">
-                      {s.total.toLocaleString()}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot className="bg-slate-50">
-                <tr>
-                  <td colSpan={2} className="p-4 text-right font-semibold text-slate-700">
-                    Total Income:
-                  </td>
-                  <td className="p-4 text-right text-base font-semibold text-slate-900">
-                    {totalAmount.toLocaleString()}{" "}
-                    <span className="text-sm font-medium text-slate-500">TZS</span>
-                  </td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-
-          {/* Export Buttons */}
-          <div className="mt-8 flex flex-wrap gap-3">
-            <Button
-              onClick={exportExcel}
-              className="h-10 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm"
-            >
-              <FileSpreadsheet className="mr-2 h-4 w-4" />
-              Export Excel
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
-  </div>
-);
-
 }

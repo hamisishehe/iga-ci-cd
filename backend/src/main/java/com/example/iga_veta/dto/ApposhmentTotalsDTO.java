@@ -1,4 +1,4 @@
-package com.example.iga_veta.DTO;
+package com.example.iga_veta.dto;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;

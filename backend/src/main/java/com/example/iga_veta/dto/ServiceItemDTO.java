@@ -1,6 +1,5 @@
-package com.example.iga_veta.DTO;
+package com.example.iga_veta.dto;
 
-import jakarta.persistence.Column;
 import lombok.Data;
 
 import java.math.BigDecimal;

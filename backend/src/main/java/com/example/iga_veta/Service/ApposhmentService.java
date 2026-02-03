@@ -1,8 +1,8 @@
 package com.example.iga_veta.Service;
 
-import com.example.iga_veta.DTO.ApposhmentDTO;
-import com.example.iga_veta.DTO.CentreDTO;
-import com.example.iga_veta.DTO.ServiceItemDTO;
+import com.example.iga_veta.dto.ApposhmentDTO;
+import com.example.iga_veta.dto.CentreDTO;
+import com.example.iga_veta.dto.ServiceItemDTO;
 import com.example.iga_veta.Model.Apposhment;
 import com.example.iga_veta.Model.Centre;
 import com.example.iga_veta.Model.ServiceItem;

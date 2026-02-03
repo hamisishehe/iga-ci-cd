@@ -40,28 +40,6 @@ ChartJS.register(
   Legend
 );
 
-interface ApiGfsCode {
-  code?: string;
-  description?: string;
-}
-interface ApiCentreZones {
-  name?: string;
-}
-interface ApiCentre {
-  name?: string;
-  zones?: ApiCentreZones;
-}
-interface ApiCustomer {
-  name?: string;
-  centre?: ApiCentre;
-}
-interface ApiItem {
-  date?: string;
-  amount?: number;
-  customer?: ApiCustomer;
-  gfsCode?: ApiGfsCode;
-}
-
 interface Payment {
   name: string;
   center: string;
@@ -70,8 +48,8 @@ interface Payment {
   service: string;
   course: string;
   amount: number;
-  date: string; // YYYY-MM-DD
-  ts: number; // numeric timestamp for recent ordering
+  date: string; // YYYY-MM-DD (from backend datePaid)
+  ts: number;
 }
 
 interface ServiceSummary {
@@ -79,6 +57,7 @@ interface ServiceSummary {
   service: string;
   total: number;
 }
+
 interface CenterSummary {
   center: string;
   total: number;
@@ -92,6 +71,42 @@ interface Summary {
   bottomCenters: CenterSummary[];
   recentPayments: Payment[];
 }
+
+// Backend response (Map JSON) — no DTO, so we accept flexible shapes
+type DashboardSummaryResponse = {
+  totalIncome?: number | string;
+  totalTransactions?: number | string;
+  topServices?: Array<{ serviceCode?: string; service?: string; total?: number | string }>;
+  topCenters?: Array<{ center?: string; total?: number | string }>;
+  bottomCenters?: Array<{ center?: string; total?: number | string }>;
+  recentPayments?: Array<{
+    name?: string;
+    center?: string;
+    zone?: string;
+    serviceCode?: string;
+    service?: string;
+    amount?: number | string;
+    datePaid?: string; // ISO date-time from backend
+  }>;
+};
+
+const safeNumber = (v: any): number => {
+  if (v === null || v === undefined) return 0;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+};
+
+const pad2 = (n: number) => String(n).padStart(2, "0");
+const toYMD = (d: Date) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+
+// getRange() returns { start: "YYYY-MM-DD", end: "YYYY-MM-DD" } where end is EXCLUSIVE.
+// This converts endExclusive -> inclusive toDate (endExclusive - 1 day)
+const toInclusiveDate = (endExclusiveYmd: string) => {
+  const d = new Date(`${endExclusiveYmd}T00:00:00`);
+  d.setDate(d.getDate() - 1);
+  return toYMD(d);
+};
+
 
 export default function DashboardPage() {
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || "/api";
@@ -138,17 +153,11 @@ export default function DashboardPage() {
     return service.toUpperCase();
   };
 
-  /**
-   * SPEED IMPROVEMENTS:
-   * 1) NO Date objects per row (super expensive) -> compare YYYY-MM-DD strings
-   * 2) ONE PASS aggregation (no multiple map/filter/sort over full dataset)
-   * 3) Recent list keeps only top 8 without sorting the whole dataset
-   */
-
   const pad2 = (n: number) => String(n).padStart(2, "0");
   const toYMD = (d: Date) =>
     `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 
+  // returns { start, endExclusive } in YYYY-MM-DD
   const getRange = (type: "day" | "yesterday" | "month") => {
     const now = new Date();
 
@@ -174,152 +183,127 @@ export default function DashboardPage() {
     return { start, end };
   };
 
-  const fetchData = useCallback(async () => {
-    try {
-      const token = localStorage.getItem("authToken");
-      const apiKey = process.env.NEXT_PUBLIC_API_KEY;
+  // Backend expects fromDate & toDate inclusive.
+  // Our UI range is start..endExclusive; so toDate = endExclusive - 1 day.
+  const minusOneDay = (ymd: string) => {
+    const [y, m, d] = ymd.split("-").map(Number);
+    const dt = new Date(y, m - 1, d);
+    dt.setDate(dt.getDate() - 1);
+    return toYMD(dt);
+  };
 
-      if (!token || !apiKey) {
-        toast("Missing authentication credentials");
-        return;
-      }
+  const safeNumber = (v: unknown) => {
+    if (v == null) return 0;
+    if (typeof v === "number") return v;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : 0;
+  };
 
-      setLoading(true);
+const fetchData = useCallback(async () => {
+  try {
+    const token = localStorage.getItem("authToken");
+    const apiKey = process.env.NEXT_PUBLIC_API_KEY;
 
-      const storedRole = localStorage.getItem("userRole") || "";
-      const storedCentre = localStorage.getItem("centre") || "";
-      setRole(storedRole);
-      setUserCentre(storedCentre);
-
-      const res = await fetch(`${apiUrl}/collections/get`, {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-          "X-API-KEY": apiKey,
-        },
-        // keep default; you can change to "force-cache" only if your backend sends cache headers correctly
-        cache: "no-store",
-      });
-
-      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-      const data: ApiItem[] = await res.json();
-
-      const restricted = CENTER_RESTRICTED_ROLES.includes(storedRole);
-
-      const { start: uiStart, end: uiEnd } = getRange(filterType);
-      const { start: monthStart, end: monthEnd } = getRange("month");
-
-      let totalIncome = 0;
-      let totalTransactions = 0;
-
-      const serviceAcc = new Map<string, ServiceSummary>();
-      const centerAcc = new Map<string, number>(); // month-only totals
-
-      // Recent top 8 without sorting full dataset
-      const recent: Payment[] = [];
-      const seenRecent = new Set<string>();
-
-      const pushRecent = (p: Payment) => {
-        const key = `${p.name}-${p.service}-${p.amount}-${p.date}`;
-        if (seenRecent.has(key)) return;
-        seenRecent.add(key);
-
-        // insert in descending ts order, keep length <= 8
-        let idx = 0;
-        while (idx < recent.length && recent[idx].ts > p.ts) idx++;
-        recent.splice(idx, 0, p);
-        if (recent.length > 8) recent.pop();
-      };
-
-      for (let i = 0; i < data.length; i++) {
-        const item = data[i];
-        const dateIso = item.date;
-        if (!dateIso) continue;
-
-        const datePart = dateIso.includes("T")
-          ? dateIso.split("T")[0]
-          : dateIso; // YYYY-MM-DD
-        if (datePart.length !== 10) continue;
-
-        const center = item.customer?.centre?.name ?? "No Center";
-        if (restricted && center !== storedCentre) continue;
-
-        const serviceDesc = item.gfsCode?.description ?? "";
-        const serviceCode = item.gfsCode?.code ?? "N/A";
-        const amount = Number(item.amount ?? 0);
-
-        // Build payment once (cheap)
-        const p: Payment = {
-          name: item.customer?.name ?? "Unknown",
-          center,
-          zone: item.customer?.centre?.zones?.name ?? "-",
-          serviceCode,
-          service: serviceDesc,
-          course: formatCourseName(serviceDesc),
-          amount,
-          date: datePart,
-          ts: Date.parse(`${datePart}T00:00:00`),
-        };
-
-        // UI filter totals + top services
-        if (datePart >= uiStart && datePart < uiEnd) {
-          totalIncome += amount;
-          totalTransactions++;
-
-          const sKey = serviceCode || serviceDesc || "Unknown";
-          const existing = serviceAcc.get(sKey);
-          if (existing) existing.total += amount;
-          else
-            serviceAcc.set(sKey, {
-              serviceCode: sKey,
-              service: serviceDesc,
-              total: amount,
-            });
-        }
-
-        // month-only centers (for top/bottom centers)
-        if (datePart >= monthStart && datePart < monthEnd) {
-          centerAcc.set(center, (centerAcc.get(center) ?? 0) + amount);
-        }
-
-        // recent payments (global)
-        pushRecent(p);
-      }
-
-      const topServices = Array.from(serviceAcc.values())
-        .sort((a, b) => b.total - a.total)
-        .slice(0, 3);
-
-      const centersSummary: CenterSummary[] = Array.from(centerAcc.entries()).map(
-        ([center, total]) => ({ center, total })
-      );
-
-      const topCenters = [...centersSummary]
-        .sort((a, b) => b.total - a.total)
-        .slice(0, 3);
-
-      const bottomCenters = [...centersSummary]
-        .sort((a, b) => a.total - b.total)
-        .slice(0, 3);
-
-      setSummary({
-        totalIncome,
-        totalTransactions,
-        topServices,
-        topCenters,
-        bottomCenters,
-        recentPayments: recent,
-      });
-
-      setLastUpdated(new Date().toLocaleTimeString());
-    } catch (error) {
-      console.error("Error fetching dashboard data:", error);
-      toast("Failed to fetch dashboard data");
-    } finally {
-      setLoading(false);
+    if (!token || !apiKey) {
+      toast("Missing authentication credentials");
+      return;
     }
-  }, [apiUrl, filterType]);
+
+    setLoading(true);
+
+    const storedRole = localStorage.getItem("userRole") || "";
+    const storedCentre = localStorage.getItem("centre") || "";
+    setRole(storedRole);
+    setUserCentre(storedCentre);
+
+    const restricted = CENTER_RESTRICTED_ROLES.includes(storedRole);
+
+    // Range for UI (start inclusive, end exclusive)
+    const { start: uiStart, end: uiEndExclusive } = getRange(filterType);
+
+    const body: any = {
+      fromDate: uiStart,
+      toDate: toInclusiveDate(uiEndExclusive), // inclusive (LocalDate)
+    };
+
+    // Only include centre if role is restricted AND centre exists
+    if (restricted && storedCentre) {
+      body.centre = storedCentre;
+    }
+
+    const res = await fetch(`${apiUrl}/collections/summary`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+        "X-API-KEY": apiKey,
+      },
+      cache: "no-store",
+      body: JSON.stringify(body),
+    });
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      console.error("Dashboard summary fetch failed:", res.status, text);
+      throw new Error(`HTTP ${res.status}${text ? ` - ${text}` : ""}`);
+    }
+
+    const data: DashboardSummaryResponse = await res.json();
+
+    console.log("DASHBOARD SUMMARY RAW:", data);
+
+
+    const topServices: ServiceSummary[] = (data.topServices ?? []).map((s) => ({
+      serviceCode: s.serviceCode ?? "N/A",
+      service: s.service ?? "",
+      total: safeNumber(s.total),
+    }));
+
+    const topCenters: CenterSummary[] = (data.topCenters ?? []).map((c) => ({
+      center: c.center ?? "No Center",
+      total: safeNumber(c.total),
+    }));
+
+    const bottomCenters: CenterSummary[] = (data.bottomCenters ?? []).map((c) => ({
+      center: c.center ?? "No Center",
+      total: safeNumber(c.total),
+    }));
+
+    const recentPayments: Payment[] = (data.recentPayments ?? []).map((p) => {
+      const iso = p.datePaid ?? "";
+      const datePart = iso.includes("T") ? iso.split("T")[0] : iso;
+
+      return {
+        name: p.name ?? "Unknown",
+        center: p.center ?? "No Center",
+        zone: p.zone ?? "-",
+        serviceCode: p.serviceCode ?? "N/A",
+        service: p.service ?? "",
+        course: formatCourseName(p.service ?? ""),
+        amount: safeNumber(p.amount),
+        date: datePart || "-",
+        ts: datePart ? Date.parse(`${datePart}T00:00:00`) : 0,
+      };
+    });
+
+    setSummary({
+      totalIncome: safeNumber(data.totalIncome),
+      totalTransactions: safeNumber(data.totalTransactions),
+      topServices,
+      topCenters,
+      bottomCenters,
+      recentPayments,
+    });
+
+    setLastUpdated(new Date().toLocaleTimeString());
+  } catch (error) {
+    console.error("Error fetching dashboard data:", error);
+    toast("Failed to fetch dashboard data");
+  } finally {
+    setLoading(false);
+  }
+}, [apiUrl, filterType]);
+
 
   useEffect(() => {
     fetchData();
@@ -359,21 +343,16 @@ export default function DashboardPage() {
     ],
   };
 
-if (loading) {
-  return (
-    <div className="w-full h-screen flex items-center justify-center">
-      <div className="relative w-16 h-16">
-        <span className="absolute inset-0 rounded-full bg-sky-600 animate-ping"></span>
-        <span className="absolute inset-2 rounded-full bg-sky-700"></span>
+  if (loading) {
+    return (
+      <div className="w-full h-screen flex items-center justify-center">
+        <div className="relative w-16 h-16">
+          <span className="absolute inset-0 rounded-full bg-sky-600 animate-ping"></span>
+          <span className="absolute inset-2 rounded-full bg-sky-700"></span>
+        </div>
       </div>
-    </div>
-  );
-}
-
-
-
-
-
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-slate-50">

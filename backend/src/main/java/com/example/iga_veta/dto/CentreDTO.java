@@ -1,4 +1,4 @@
-package com.example.iga_veta.DTO;
+package com.example.iga_veta.dto;
 
 import com.example.iga_veta.Model.Centre;
 import lombok.Data;

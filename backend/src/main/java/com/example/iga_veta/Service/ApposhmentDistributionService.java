@@ -1,10 +1,9 @@
 package com.example.iga_veta.Service;
 
 
-import com.example.iga_veta.DTO.ApposhmentDistributionDTO;
+import com.example.iga_veta.dto.ApposhmentDistributionDTO;
 import com.example.iga_veta.Model.Apposhment;
 import com.example.iga_veta.Model.ApposhmentDistribution;
-import com.example.iga_veta.Model.ServiceItem;
 import com.example.iga_veta.Repository.ApposhmentDistributionRepository;
 import com.example.iga_veta.Repository.ApposhmentRepository;
 import com.example.iga_veta.Repository.ServiceItemRepository;
@@ -12,7 +11,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
-import java.util.Collections;
 import java.util.List;
 
 @Service

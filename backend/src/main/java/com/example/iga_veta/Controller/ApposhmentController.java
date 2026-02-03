@@ -1,8 +1,7 @@
 package com.example.iga_veta.Controller;
 
-import com.example.iga_veta.DTO.ApposhmentDTO;
+import com.example.iga_veta.dto.ApposhmentDTO;
 import com.example.iga_veta.Model.ApiUsage;
-import com.example.iga_veta.Model.Apposhment;
 import com.example.iga_veta.Model.ServiceRequest;
 import com.example.iga_veta.Repository.ApiUsageRepository;
 import com.example.iga_veta.Service.ApposhmentService;

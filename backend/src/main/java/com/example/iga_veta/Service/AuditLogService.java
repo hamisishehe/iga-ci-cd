@@ -1,6 +1,6 @@
 package com.example.iga_veta.Service;
 
-import com.example.iga_veta.DTO.AuditLogDTO;
+import com.example.iga_veta.dto.AuditLogDTO;
 import com.example.iga_veta.Model.AuditLog;
 import com.example.iga_veta.Repository.AuditLogRepository;
 import org.springframework.beans.factory.annotation.Autowired;
