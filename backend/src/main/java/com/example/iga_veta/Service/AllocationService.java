@@ -164,7 +164,7 @@ public class AllocationService {
         if (collections.isEmpty()) return null;
 
         BigDecimal totalAmount = collections.stream()
-                .map(Collections::getAmount)
+                .map(Collections::getAmountBilled)
                 .reduce(BigDecimal.ZERO, BigDecimal::add)
                 .setScale(2, RoundingMode.HALF_UP);
 

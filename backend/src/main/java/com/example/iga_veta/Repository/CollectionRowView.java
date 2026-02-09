@@ -10,6 +10,11 @@ public interface CollectionRowView {
     String getZoneName();
     String getServiceCode();
     String getServiceDesc();
+
+    String getPaymentType();
+
+    String getControlNumber();
+
     BigDecimal getAmount();
     LocalDateTime getDatePaid();
 }

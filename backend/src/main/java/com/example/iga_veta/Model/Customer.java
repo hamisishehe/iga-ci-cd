@@ -1,6 +1,5 @@
 package com.example.iga_veta.Model;
 
-
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.Data;
@@ -13,12 +12,20 @@ import java.util.List;
 @Table(
         name = "customer",
         indexes = {
-        @Index(name = "idx_admission_number", columnList = "admissionNumber"),
-        @Index(name = "idx_phone_number", columnList = "phoneNumber"),
-        @Index(name = "idx_centre_id", columnList = "centre_id")
-})
+                @Index(name = "idx_admission_number", columnList = "admissionNumber"),
+                @Index(name = "idx_phone_number", columnList = "phoneNumber"),
+                @Index(name = "idx_centre_id", columnList = "centre_id"),
 
+                // ✅ supports fast lookup for findByNameAndCentre_Id
+                @Index(name = "idx_customer_name_centre", columnList = "name, centre_id")
+        }
+        // ✅ optional: enable only if name is guaranteed unique per centre
+        // ,uniqueConstraints = {
+        //     @UniqueConstraint(name = "uk_customer_name_centre", columnNames = {"name", "centre_id"})
+        // }
+)
 public class Customer {
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -38,11 +45,12 @@ public class Customer {
     @Column(length = 100)
     private String payStation;
 
-    @ManyToOne
+    @ManyToOne(optional = false)
     @JoinColumn(name = "centre_id", nullable = false)
     private Centre centre;
 
-    @OneToMany(cascade = CascadeType.ALL, mappedBy = "customer")
+    // ✅ safer: don't cascade ALL (avoid accidental deletes/updates)
+    @OneToMany(mappedBy = "customer")
     @JsonIgnore
     private List<Collections> collectionsList;
 
@@ -61,6 +69,4 @@ public class Customer {
     protected void onUpdate() {
         this.updatedAt = LocalDateTime.now();
     }
-
-
 }

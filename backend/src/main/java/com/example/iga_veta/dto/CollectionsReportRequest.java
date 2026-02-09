@@ -8,6 +8,8 @@ public class CollectionsReportRequest {
     private String centre;      // centre name or null
     private String zone;        // zone name or null
     private String serviceCode; // code or null
+
+
     private Integer page;       // 0...
     private Integer size;       // 10...
 

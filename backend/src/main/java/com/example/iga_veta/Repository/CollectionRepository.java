@@ -5,7 +5,6 @@ import com.example.iga_veta.Model.Customer;
 import com.example.iga_veta.Model.GfsCode;
 import com.example.iga_veta.Repository.projections.ServiceSummaryView;
 import com.example.iga_veta.Repository.projections.TotalsView;
-import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -18,13 +17,22 @@ import java.util.Optional;
 
 public interface CollectionRepository extends JpaRepository<Collections, Long> {
 
-    // -------------------- existing queries --------------------
+    // -------------------- existing queries (UPDATED to amountBilled) --------------------
 
+
+    boolean existsByControlNumberAndGfsCode_CodeAndCentre_IdAndDateAndDescriptionAndAmountBilled(
+            String controlNumber,
+            String code,
+            Long centreId,
+            LocalDateTime date,
+            String description,
+            java.math.BigDecimal amountBilled
+    );
 
     @Query("SELECT c FROM Collections c WHERE c.gfsCode.code = :code")
     List<Collections> findCollectionsByGfsCode(@Param("code") String code);
 
-    @Query("SELECT COALESCE(SUM(c.amount), 0) FROM Collections c WHERE c.gfsCode.code = :code")
+    @Query("SELECT COALESCE(SUM(c.amountBilled), 0) FROM Collections c WHERE c.gfsCode.code = :code")
     BigDecimal getTotalAmountByGfsCode(@Param("code") String code);
 
     @Query("SELECT MAX(c.createdAt) FROM Collections c")
@@ -50,7 +58,7 @@ public interface CollectionRepository extends JpaRepository<Collections, Long> {
     List<Collections> findByCentreName(@Param("centreName") String centreName);
 
     @Query("""
-        SELECT COALESCE(SUM(c.amount), 0)
+        SELECT COALESCE(SUM(c.amountBilled), 0)
         FROM Collections c
         WHERE c.centre.name = :centreName
           AND c.gfsCode.code = :gfsCode
@@ -66,25 +74,19 @@ public interface CollectionRepository extends JpaRepository<Collections, Long> {
             @Param("endDate") LocalDateTime endDate
     );
 
-    boolean existsByControlNumberAndGfsCode_CodeAndCentre_IdAndDateAndAmount(
+    // ✅ UPDATED dedupe to amountBilled (matches your service)
+    boolean existsByControlNumberAndGfsCode_CodeAndCentre_IdAndDateAndAmountBilled(
             String controlNumber,
             String gfsCode,
             Long centreId,
             LocalDateTime date,
-            BigDecimal amount
+            BigDecimal amountBilled
     );
 
-    // -------------------- DASHBOARD FAST QUERIES --------------------
+    // -------------------- DASHBOARD FAST QUERIES (UPDATED to amountBilled) --------------------
 
-    /**
-     * ✅ totals for selected range (today/yesterday/month)
-     * returns: [total_income(BigDecimal), total_tx(Long)]
-     *
-     * IMPORTANT: return List<Object[]> so you get row = [sum, count]
-     * instead of nested [[sum, count]]
-     */
     @Query("""
-        select coalesce(sum(c.amount), 0), count(c)
+        select coalesce(sum(c.amountBilled), 0), count(c)
         from Collections c
         where c.date >= :start and c.date < :end
           and (:centreName is null or c.centre.name = :centreName)
@@ -95,17 +97,16 @@ public interface CollectionRepository extends JpaRepository<Collections, Long> {
             @Param("centreName") String centreName
     );
 
-    // top services (range)
     @Query("""
         select
           coalesce(c.gfsCode.code, 'N/A'),
-          coalesce(c.gfsCode.description, ''),
-          coalesce(sum(c.amount), 0)
+          coalesce(c.gfsCode.description, ''),  
+          coalesce(sum(c.amountBilled), 0)
         from Collections c
         where c.date >= :start and c.date < :end
           and (:centreName is null or c.centre.name = :centreName)
         group by c.gfsCode.code, c.gfsCode.description
-        order by sum(c.amount) desc
+        order by sum(c.amountBilled) desc
     """)
     List<Object[]> topServices(
             @Param("start") LocalDateTime start,
@@ -114,15 +115,14 @@ public interface CollectionRepository extends JpaRepository<Collections, Long> {
             Pageable pageable
     );
 
-    // month-only centers (top)
     @Query("""
         select
           c.centre.name,
-          coalesce(sum(c.amount), 0)
+          coalesce(sum(c.amountBilled), 0)
         from Collections c
         where c.date >= :start and c.date < :end
         group by c.centre.name
-        order by sum(c.amount) desc
+        order by sum(c.amountBilled) desc
     """)
     List<Object[]> topCenters(
             @Param("start") LocalDateTime start,
@@ -130,15 +130,14 @@ public interface CollectionRepository extends JpaRepository<Collections, Long> {
             Pageable pageable
     );
 
-    // month-only centers (bottom)
     @Query("""
         select
           c.centre.name,
-          coalesce(sum(c.amount), 0)
+          coalesce(sum(c.amountBilled), 0)
         from Collections c
         where c.date >= :start and c.date < :end
         group by c.centre.name
-        order by sum(c.amount) asc
+        order by sum(c.amountBilled) asc
     """)
     List<Object[]> bottomCenters(
             @Param("start") LocalDateTime start,
@@ -146,7 +145,6 @@ public interface CollectionRepository extends JpaRepository<Collections, Long> {
             Pageable pageable
     );
 
-    // recent payments (latest 8)
     @Query("""
         select
           coalesce(c.customer.name, 'Unknown'),
@@ -154,16 +152,14 @@ public interface CollectionRepository extends JpaRepository<Collections, Long> {
           coalesce(c.customer.centre.zones.name, '-'),
           coalesce(c.gfsCode.code, 'N/A'),
           coalesce(c.gfsCode.description, ''),
-          c.amount,
+          c.amountBilled,
           c.date
         from Collections c
         order by c.date desc
     """)
     List<Object[]> recentPayments(Pageable pageable);
 
-
-
-    //for collection page
+    // -------------------- collection report page (UPDATED filters + amountBilled) --------------------
 
     @Query("""
       select 
@@ -172,8 +168,10 @@ public interface CollectionRepository extends JpaRepository<Collections, Long> {
         coalesce(c.centre.name, 'N/A') as centreName,
         coalesce(c.centre.zones.name, 'N/A') as zoneName,
         coalesce(c.gfsCode.code, 'N/A') as serviceCode,
+        coalesce(c.paymentType, '') as paymentType,    
+        coalesce(c.controlNumber, '') as controlNumber,    
         coalesce(c.gfsCode.description, 'N/A') as serviceDesc,
-        c.amount as amount,
+        c.amountBilled as amount,
         c.date as datePaid
       from Collections c
       where c.date >= :start and c.date < :end
@@ -192,7 +190,7 @@ public interface CollectionRepository extends JpaRepository<Collections, Long> {
     );
 
     @Query("""
-      select coalesce(sum(c.amount),0), count(c)
+      select coalesce(sum(c.amountBilled),0), count(c)
       from Collections c
       where c.date >= :start and c.date < :end
         and (:centre is null or c.centre.name = :centre)
@@ -211,14 +209,14 @@ public interface CollectionRepository extends JpaRepository<Collections, Long> {
       select
         coalesce(c.gfsCode.code, 'N/A'),
         coalesce(c.gfsCode.description, 'N/A'),
-        coalesce(sum(c.amount),0)
+        coalesce(sum(c.amountBilled),0)
       from Collections c
       where c.date >= :start and c.date < :end
         and (:centre is null or c.centre.name = :centre)
         and (:zone is null or c.centre.zones.name = :zone)
         and (:service is null or c.gfsCode.description = :service)
       group by c.gfsCode.code, c.gfsCode.description
-      order by sum(c.amount) desc
+      order by sum(c.amountBilled) desc
     """)
     List<Object[]> reportSummaryByService(
             @Param("start") LocalDateTime start,
@@ -228,15 +226,16 @@ public interface CollectionRepository extends JpaRepository<Collections, Long> {
             @Param("service") String service
     );
 
+    // -------------------- typed projections (UPDATED to amountBilled) --------------------
 
     @Query("""
-    select
-      coalesce(sum(c.amount), 0) as totalIncome,
-      count(c) as totalTransactions
-    from Collections c
-    where c.date >= :start and c.date < :end
-      and (:centreName is null or c.centre.name = :centreName)
-""")
+      select
+        coalesce(sum(c.amountBilled), 0) as totalIncome,
+        count(c) as totalTransactions
+      from Collections c
+      where c.date >= :start and c.date < :end
+        and (:centreName is null or c.centre.name = :centreName)
+    """)
     TotalsView totalsView(
             @Param("start") LocalDateTime start,
             @Param("end") LocalDateTime end,
@@ -244,17 +243,17 @@ public interface CollectionRepository extends JpaRepository<Collections, Long> {
     );
 
     @Query("""
-    select
-      coalesce(c.gfsCode.code, 'N/A') as serviceCode,
-      coalesce(c.gfsCode.description, 'N/A') as serviceDesc,
-      coalesce(sum(c.amount), 0) as total
-    from Collections c
-    where c.date >= :start and c.date < :end
-      and (:centreName is null or c.centre.name = :centreName)
-      and (:zoneName is null or c.centre.zones.name = :zoneName)
-    group by c.gfsCode.code, c.gfsCode.description
-    order by sum(c.amount) desc
-""")
+      select
+        coalesce(c.gfsCode.code, 'N/A') as serviceCode,
+        coalesce(c.gfsCode.description, 'N/A') as serviceDesc,
+        coalesce(sum(c.amountBilled), 0) as total
+      from Collections c
+      where c.date >= :start and c.date < :end
+        and (:centreName is null or c.centre.name = :centreName)
+        and (:zoneName is null or c.centre.zones.name = :zoneName)
+      group by c.gfsCode.code, c.gfsCode.description
+      order by sum(c.amountBilled) desc
+    """)
     List<ServiceSummaryView> summaryByService(
             @Param("start") LocalDateTime start,
             @Param("end") LocalDateTime end,
@@ -263,14 +262,14 @@ public interface CollectionRepository extends JpaRepository<Collections, Long> {
     );
 
     @Query("""
-  select
-    coalesce(sum(c.amount), 0) as totalIncome,
-    count(c) as totalTransactions
-  from Collections c
-  where c.date >= :start and c.date < :end
-    and (:centreName is null or c.centre.name = :centreName)
-    and (:zoneName is null or c.centre.zones.name = :zoneName)
-""")
+      select
+        coalesce(sum(c.amountBilled), 0) as totalIncome,
+        count(c) as totalTransactions
+      from Collections c
+      where c.date >= :start and c.date < :end
+        and (:centreName is null or c.centre.name = :centreName)
+        and (:zoneName is null or c.centre.zones.name = :zoneName)
+    """)
     TotalsView totals(
             @Param("start") LocalDateTime start,
             @Param("end") LocalDateTime end,
@@ -278,8 +277,8 @@ public interface CollectionRepository extends JpaRepository<Collections, Long> {
             @Param("zoneName") String zoneName
     );
 
+    // -------------------- options (no change) --------------------
 
-    // ✅ options: centres & zones (distinct)
     @Query("""
         select distinct c.centre.name
         from Collections c
@@ -296,7 +295,6 @@ public interface CollectionRepository extends JpaRepository<Collections, Long> {
     """)
     List<String> zoneOptions();
 
-    // ✅ options: services (code + desc distinct)
     @Query("""
         select distinct c.gfsCode.code, c.gfsCode.description
         from Collections c
@@ -305,17 +303,18 @@ public interface CollectionRepository extends JpaRepository<Collections, Long> {
     """)
     List<Object[]> serviceOptions();
 
+    // -------------------- totals with centre+zone+serviceCode filters (UPDATED) --------------------
 
     @Query("""
-    select
-      coalesce(sum(c.amount), 0) as totalIncome,
-      count(c) as totalTransactions
-    from Collections c
-    where c.date >= :start and c.date < :end
-      and (:centre is null or c.centre.name = :centre)
-      and (:zone is null or c.centre.zones.name = :zone)
-      and (:serviceCode is null or c.gfsCode.code = :serviceCode)
-""")
+      select
+        coalesce(sum(c.amountBilled), 0) as totalIncome,
+        count(c) as totalTransactions
+      from Collections c
+      where c.date >= :start and c.date < :end
+        and (:centre is null or c.centre.name = :centre)
+        and (:zone is null or c.centre.zones.name = :zone)
+        and (:serviceCode is null or c.gfsCode.code = :serviceCode)
+    """)
     TotalsView totalsView(
             @Param("start") LocalDateTime start,
             @Param("end") LocalDateTime end,
@@ -324,15 +323,14 @@ public interface CollectionRepository extends JpaRepository<Collections, Long> {
             @Param("serviceCode") String serviceCode
     );
 
-    // ✅ total amount exactly matching filters
     @Query("""
-    select coalesce(sum(c.amount), 0)
-    from Collections c
-    where c.date >= :start and c.date < :end
-      and (:centre is null or c.centre.name = :centre)
-      and (:zone is null or c.centre.zones.name = :zone)
-      and (:serviceCode is null or c.gfsCode.code = :serviceCode)
-""")
+      select coalesce(sum(c.amountBilled), 0)
+      from Collections c
+      where c.date >= :start and c.date < :end
+        and (:centre is null or c.centre.name = :centre)
+        and (:zone is null or c.centre.zones.name = :zone)
+        and (:serviceCode is null or c.gfsCode.code = :serviceCode)
+    """)
     BigDecimal totalAmount(
             @Param("start") LocalDateTime start,
             @Param("end") LocalDateTime end,
@@ -340,5 +338,4 @@ public interface CollectionRepository extends JpaRepository<Collections, Long> {
             @Param("zone") String zone,
             @Param("serviceCode") String serviceCode
     );
-
 }

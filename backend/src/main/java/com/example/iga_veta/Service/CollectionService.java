@@ -1,18 +1,16 @@
+// ✅ FULL MODIFIED CODE (CollectionService.java)
 package com.example.iga_veta.Service;
 
 import com.example.iga_veta.Model.*;
-import com.example.iga_veta.Model.Collections;
 import com.example.iga_veta.Repository.*;
 import jakarta.transaction.Transactional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.ResponseEntity;
+import org.springframework.http.*;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
-
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
 
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
@@ -23,20 +21,13 @@ import java.util.*;
 @Service
 public class CollectionService {
 
-    @Autowired
-    private CustomerRepository customerRepository;
+    private static final Logger log = LoggerFactory.getLogger(CollectionService.class);
 
-    @Autowired
-    private CentreRepository centreRepository;
-
-    @Autowired
-    private Gfs_codeRepository gfsCodeRepository;
-
-    @Autowired
-    private CollectionRepository collectionsRepository;
-
-    @Autowired
-    private ZoneRepository zoneRepository;
+    @Autowired private CustomerRepository customerRepository;
+    @Autowired private CentreRepository centreRepository;
+    @Autowired private Gfs_codeRepository gfsCodeRepository;
+    @Autowired private CollectionRepository collectionsRepository;
+    @Autowired private ZoneRepository zoneRepository;
 
     private final RestTemplate restTemplate;
 
@@ -45,116 +36,179 @@ public class CollectionService {
     }
 
     private static final String API_URL = "http://41.59.229.41:6092/api/collections/fetch";
+    private static final String API_KEY = "Vj7k_Oc7Gm5j2QHqZJ3lJ4UrVzml8GoxT9CwpuG8OqY";
 
-
-    public List<Collections> getAllCollections() {
+    public List<com.example.iga_veta.Model.Collections> getAllCollections() {
         return collectionsRepository.findAll();
     }
 
-    @Scheduled(fixedRate = 100000) // every 60 seconds
+    @Scheduled(fixedRate = 100000) // ~ every 100 seconds
     public void fetchDataPeriodically() {
         fetchDataFromApi();
     }
 
+    @SuppressWarnings("unchecked")
     public void fetchDataFromApi() {
 
-        // Get last fetched date from DB (or fallback)
         LocalDateTime lastFetchedDateFromDb = collectionsRepository
                 .findLastFetchedDate()
                 .orElse(LocalDateTime.of(2025, 12, 31, 0, 0));
 
         DateTimeFormatter isoFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss");
 
-        // Build request payload
         Map<String, Object> requestBody = new HashMap<>();
         requestBody.put("lastFetchedDate", lastFetchedDateFromDb.format(isoFormatter));
-        requestBody.put("apiKey", "Vj7k_Oc7Gm5j2QHqZJ3lJ4UrVzml8GoxT9CwpuG8OqY");
+        requestBody.put("apiKey", API_KEY);
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
 
         HttpEntity<Map<String, Object>> entity = new HttpEntity<>(requestBody, headers);
 
-        // Make API request
         ResponseEntity<Map> response = restTemplate.postForEntity(API_URL, entity, Map.class);
 
         if (response.getBody() != null) {
             String responseBody = response.getBody().toString();
             int sizeInBytes = responseBody.getBytes(StandardCharsets.UTF_8).length;
-            System.out.println("Response body size in bytes: " + sizeInBytes);
+            log.info("Response body size in bytes: {}", sizeInBytes);
         }
 
         if (!response.getStatusCode().is2xxSuccessful() || response.getBody() == null) {
-            throw new RuntimeException("Failed to fetch data from API");
+            throw new RuntimeException("Failed to fetch data from API, status=" + response.getStatusCode());
         }
 
         Map<String, Object> responseMap = response.getBody();
 
-        // Extract lastFetchedDate from API response
-        String lastFetchedDateStr = (String) responseMap.get("lastFetchedDate");
-        LocalDateTime apiLastFetchedDate = LocalDateTime.parse(lastFetchedDateStr);
+        String lastFetchedDateStr = safeString(responseMap.get("lastFetchedDate"));
+        LocalDateTime apiLastFetchedDate = parseDate(lastFetchedDateStr);
 
-        // Extract collections
-        List<Map<String, Object>> collections = (List<Map<String, Object>>) responseMap.get("collections");
+        List<Map<String, Object>> collections =
+                (List<Map<String, Object>>) responseMap.get("collections");
+        if (collections == null) collections = java.util.Collections.emptyList();
 
-        int apiItemsCount = collections.size();
-        System.out.println("Number of collection items returned by API: " + apiItemsCount);
+        log.info("Number of collection items returned by API: {}", collections.size());
 
         // Convert API data to list
         List<Map<String, String>> apiData = new ArrayList<>();
         for (Map<String, Object> item : collections) {
             Map<String, String> row = new HashMap<>();
             row.put("customerName", safeString(item.get("customerName")));
-            row.put("gfsCode", safeString(item.get("gfsCode")));           // ✅ service code
-            row.put("amountPaid", safeString(item.get("amountBilled")));
-            row.put("description", safeString(item.get("description")));   // ✅ service name/description
+            row.put("gfsCode", safeString(item.get("gfsCode")));
+            row.put("amountBilled", safeString(item.get("amountBilled")));
+            row.put("amountPaid", safeString(item.get("amountPaid")));
+            row.put("description", safeString(item.get("description")));
             row.put("centreName", safeString(item.get("centreName")));
+            row.put("paymentType", safeString(item.get("paymentType")));
             row.put("controlNumber", safeString(item.get("controlNumber")));
             row.put("paymentDate", safeString(item.get("paymentDate")));
             apiData.add(row);
         }
 
-        System.out.println("Number of rows prepared for insertion: " + apiData.size());
+        log.info("Number of rows prepared for insertion: {}", apiData.size());
 
-        // Process API data
         processApiData(apiData, apiLastFetchedDate);
     }
 
-    // ✅ FIX: return null for missing/blank values (not "")
     private String safeString(Object obj) {
         if (obj == null) return null;
         String s = obj.toString().trim();
         return s.isEmpty() ? null : s;
     }
 
+    private String safeTrim(String s) {
+        if (s == null) return null;
+        String t = s.trim();
+        return t.isEmpty() ? null : t;
+    }
+
+    /**
+     * ✅ Robust BigDecimal parser:
+     * - handles "250000.0" (Double string)
+     * - handles "250,000" (comma)
+     * - if invalid => returns null (so we can log + skip safely)
+     */
+    private BigDecimal parseBigDecimalOrNull(String s) {
+        if (s == null) return null;
+        String t = s.trim();
+        if (t.isEmpty()) return null;
+
+        // remove comma separators: 250,000 -> 250000
+        t = t.replace(",", "");
+
+        try {
+            return new BigDecimal(t);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * ✅ Safe date parsing
+     */
+    private LocalDateTime parseDate(String dateStr) {
+        if (dateStr == null || dateStr.isBlank()) return null;
+        String t = dateStr.trim();
+        try {
+            // works for "2026-01-21T05:48:18"
+            return LocalDateTime.parse(t);
+        } catch (Exception e) {
+            // fallback if needed
+            try {
+                DateTimeFormatter f = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss");
+                return LocalDateTime.parse(t, f);
+            } catch (Exception ex) {
+                return null;
+            }
+        }
+    }
+
     @Transactional
     public void processApiData(List<Map<String, String>> apiData, LocalDateTime apiLastFetchedDate) {
 
+        int inserted = 0;
+        int skippedMissingKey = 0;
+        int skippedBadAmounts = 0;
+        int skippedDuplicate = 0;
+
         for (Map<String, String> row : apiData) {
 
-            String fullName = row.get("customerName") != null ? row.get("customerName").trim() : "";
-            String gfsCodeValue = row.get("gfsCode") != null ? row.get("gfsCode").trim() : "";
-            BigDecimal amount = new BigDecimal(row.get("amountPaid") != null ? row.get("amountPaid") : "0");
+            String fullName = safeTrim(row.get("customerName"));
+            String gfsCodeValue = safeTrim(row.get("gfsCode"));
+            String centreName = safeTrim(row.get("centreName"));
+            String description = safeTrim(row.get("description"));
+            String controlNumber = safeTrim(row.get("controlNumber"));
+            String paymentType = safeTrim(row.get("paymentType"));
 
-            String centreName = row.get("centreName") != null ? row.get("centreName").trim() : "";
-            String description = row.get("description") != null ? row.get("description").trim() : "";
-
-            String controlNumber = row.get("controlNumber") != null ? row.get("controlNumber").trim() : null;
             LocalDateTime date = parseDate(row.get("paymentDate"));
 
-            // ✅ DB requires controlNumber and date (avoid bad inserts)
-            if (controlNumber == null || controlNumber.isBlank() || date == null) {
+            BigDecimal amountBilled = parseBigDecimalOrNull(row.get("amountBilled"));
+            BigDecimal amountPaid = parseBigDecimalOrNull(row.get("amountPaid"));
+
+            // ✅ Key checks
+            if (controlNumber == null || date == null || gfsCodeValue == null || centreName == null) {
+                skippedMissingKey++;
+                log.warn("SKIP(missing key) controlNumber={}, date={}, gfsCode={}, centreName={}, desc={}",
+                        controlNumber, row.get("paymentDate"), gfsCodeValue, centreName, description);
                 continue;
             }
 
-            // 1️⃣ Find or create Centre
+            // ✅ Amount checks: if API sends bad format, don’t convert to ZERO silently
+            if (amountBilled == null || amountPaid == null) {
+                skippedBadAmounts++;
+                log.warn("SKIP(bad amount) controlNumber={}, billed={}, paid={}, desc={}",
+                        controlNumber, row.get("amountBilled"), row.get("amountPaid"), description);
+                continue;
+            }
+
+            // 1) Find or create Centre
             Centre centre = centreRepository.getCentreByName(centreName).orElseGet(() -> {
                 Centre newCentre = new Centre();
                 newCentre.setName(centreName);
                 newCentre.setCode(UUID.randomUUID().toString().substring(0, 8));
                 newCentre.setRank(Centre.Rank.A);
 
-                String zoneName = getZoneName(centreName.split(" ")[0]);
+                String firstToken = (!centreName.isBlank()) ? centreName.split("\\s+")[0] : "";
+                String zoneName = getZoneName(firstToken);
 
                 Zone zone = zoneRepository.findOneByName(zoneName).orElseGet(() -> {
                     Zone newZone = new Zone();
@@ -167,102 +221,113 @@ public class CollectionService {
                 return centreRepository.save(newCentre);
             });
 
+            // 2) Find or create Customer
+            String safeCustomerName = (fullName != null) ? fullName : "UNKNOWN";
+            Customer customer = customerRepository
+                    .findByNameAndCentre_Id(safeCustomerName, centre.getId())
+                    .orElseGet(() -> {
+                        Customer c = new Customer();
+                        c.setName(safeCustomerName);
 
-            // 2️⃣ Find or create Customer
-            Customer customer = new Customer();
-            customer.setName(fullName);
-            customer.setEmail(fullName.replace(" ", ".").toLowerCase() + "@example.com");
-            customer.setCentre(centre);
-            customer = customerRepository.save(customer);
+                        String emailName = (!safeCustomerName.isBlank())
+                                ? safeCustomerName.replace(" ", ".").toLowerCase()
+                                : "unknown";
+                        c.setEmail(emailName + "@example.com");
+                        c.setCentre(centre);
+                        return customerRepository.save(c);
+                    });
 
-
-
-            // 3️⃣ Validate GFS Code ✅ (service code)
+            // 3) Find or create GFS Code
             GfsCode gfsCode = gfsCodeRepository.findByCode(gfsCodeValue).orElseGet(() -> {
                 GfsCode newCode = new GfsCode();
                 newCode.setCode(gfsCodeValue);
                 return gfsCodeRepository.save(newCode);
             });
 
-            // Adjustments
-//            if ("142202540053".equals(gfsCode.getCode()) && amount.compareTo(new BigDecimal("5000")) >= 0) {
-//                amount = new BigDecimal("5000");
-//            }
-//
-//            if ("142301600001".equals(gfsCode.getCode()) && amount.compareTo(new BigDecimal("5000")) >= 0) {
-//                amount = amount.subtract(new BigDecimal("5000"));
-//            }
-
-            // 4️⃣ ✅ DEDUPE CHECK (NO duplicate collections)
+            // ✅ 4) DEDUPE FIX:
+            // Your API can send multiple line-items with the same:
+            // controlNumber + gfsCode + centre + date + amountBilled
+            // (example: many 5000 items with different description).
+            // So include description in the dedupe key.
+            String safeDesc = (description != null) ? description : "";
             boolean exists = collectionsRepository
-                    .existsByControlNumberAndGfsCode_CodeAndCentre_IdAndDateAndAmount(
+                    .existsByControlNumberAndGfsCode_CodeAndCentre_IdAndDateAndDescriptionAndAmountBilled(
                             controlNumber,
                             gfsCodeValue,
                             centre.getId(),
                             date,
-                            amount
+                            safeDesc,
+                            amountBilled
                     );
 
             if (exists) {
+                skippedDuplicate++;
                 continue;
             }
 
-            // 5️⃣ Save Collection ✅ (keeps serviceCode + serviceName)
-            Collections collection = new Collections();
+            // 5) Save Collection
+            com.example.iga_veta.Model.Collections collection = new com.example.iga_veta.Model.Collections();
             collection.setCustomer(customer);
             collection.setCentre(centre);
-            collection.setGfsCode(gfsCode);                 // ✅ service code
+            collection.setGfsCode(gfsCode);
+
+            collection.setPaymentType(paymentType);
             collection.setControlNumber(controlNumber);
-            collection.setDescription(description);         // ✅ service name
-            collection.setAmount(amount);
-            collection.setLast_fetched(apiLastFetchedDate);
+            collection.setDescription(description);
+
+            collection.setAmountBilled(amountBilled);
+            collection.setAmountPaid(amountPaid);
+
+            collection.setLastFetched(apiLastFetchedDate);
             collection.setDate(date);
 
             collectionsRepository.save(collection);
+            inserted++;
         }
+
+        log.info("Process done. inserted={}, skippedMissingKey={}, skippedBadAmounts={}, skippedDuplicate={}",
+                inserted, skippedMissingKey, skippedBadAmounts, skippedDuplicate);
     }
 
     private String getZoneName(String firstName) {
-        if (firstName.equals("DODOMA") || firstName.equals("SINDIDA") || firstName.equals("MANYARA"))
+        if (firstName == null) return "HIGHLAND ZONE";
+        String name = firstName.trim().toUpperCase();
+
+        if (name.equals("DODOMA") || name.equals("SINDIDA") || name.equals("MANYARA"))
             return "CENTRAL ZONE";
-        if (firstName.equals("Mwanza") || firstName.equals("Mara") || firstName.equals("KAGERA") || firstName.equals("GEITA"))
+        if (name.equals("MWANZA") || name.equals("MARA") || name.equals("KAGERA") || name.equals("GEITA"))
             return "LAKE ZONE";
-        if (firstName.equals("Mbeya") || firstName.equals("Rukwa"))
+        if (name.equals("MBEYA") || name.equals("RUKWA"))
             return "SOUTH WEST ZONE";
-        if (firstName.equals("DAR"))
+        if (name.equals("DAR"))
             return "DSM ZONE";
-        if (firstName.equals("ARUSHA") || firstName.equals("Tanga"))
+        if (name.equals("ARUSHA") || name.equals("TANGA"))
             return "NORTHERN ZONE";
-        if (firstName.equals("Kigoma") || firstName.equals("Tabora") || firstName.equals("Shinyanga") || firstName.equals("Simiyu"))
+        if (name.equals("KIGOMA") || name.equals("TABORA") || name.equals("SHINYANGA") || name.equals("SIMIYU"))
             return "WESTERN ZONE";
-        if (firstName.equals("Pwani") || firstName.equals("Kihonda") || firstName.equals("Mikumi"))
+        if (name.equals("PWANI") || name.equals("KIHONDA") || name.equals("MIKUMI"))
             return "EASTERN ZONE";
-        if (firstName.equals("Mtwara") || firstName.equals("LINDI"))
+        if (name.equals("MTWARA") || name.equals("LINDI"))
             return "SOUTH EAST ZONE";
-        if (firstName.equals("Iringa") || firstName.equals("Njombe") || firstName.equals("Mikumi"))
+        if (name.equals("IRINGA") || name.equals("NJOMBE") || name.equals("MIKUMI"))
             return "HIGHLAND ZONE";
 
         return "HIGHLAND ZONE";
     }
 
-    private LocalDateTime parseDate(String dateStr) {
-        if (dateStr == null || dateStr.isEmpty()) return null;
-        return LocalDateTime.parse(dateStr);
-    }
-
-    public List<Collections> findAll() {
+    public List<com.example.iga_veta.Model.Collections> findAll() {
         return collectionsRepository.findAll();
     }
 
-    public List<Collections> findAllData() {
+    public List<com.example.iga_veta.Model.Collections> findAllData() {
         return collectionsRepository.findAll();
     }
 
-    public List<Collections> findAllByCentre_Name(String centreName) {
+    public List<com.example.iga_veta.Model.Collections> findAllByCentre_Name(String centreName) {
         return collectionsRepository.findByCentreName(centreName);
     }
 
-    public List<Collections> findAllByGfsCode_Name(String gfsCodeName) {
+    public List<com.example.iga_veta.Model.Collections> findAllByGfsCode_Name(String gfsCodeName) {
         return collectionsRepository.findCollectionsByGfsCode(gfsCodeName);
     }
 

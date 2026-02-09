@@ -30,6 +30,8 @@ interface ReportRow {
   zoneName: string;
   serviceCode: string;
   serviceDesc: string;
+  paymentType?: string; // ✅ ADD THIS
+  controlNumber: string;
   amount: number;
   datePaid: string; // ISO
 }
@@ -78,11 +80,6 @@ export default function CollectionReport() {
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
 
-  /**
-   * ✅ UX muhimu:
-   * - centre dropdown uses centre name
-   * - service dropdown uses service name (serviceDesc) but value is serviceCode
-   */
   const [centre, setCentre] = useState("ALL");
   const [zone, setZone] = useState("ALL");
   const [serviceCode, setServiceCode] = useState("ALL");
@@ -94,7 +91,7 @@ export default function CollectionReport() {
   const [totalTransactions, setTotalTransactions] = useState(0);
   const [totalAmount, setTotalAmount] = useState(0);
 
-  // dropdown options (from server OR fallback from data)
+  // dropdown options
   const [centreOptions, setCentreOptions] = useState<string[]>([]);
   const [zoneOptions, setZoneOptions] = useState<string[]>([]);
   const [serviceOptions, setServiceOptions] = useState<Array<{ serviceCode: string; serviceDesc: string }>>([]);
@@ -124,7 +121,6 @@ export default function CollectionReport() {
     setFromDate(formatDate(firstDay));
     setToDate(formatDate(lastDay));
 
-    // lock filters by role (same behavior as your original code)
     if (isCentreUser) setCentre(userCentre);
     if (isZoneUser) setZone(userZone);
   }, [isCentreUser, isZoneUser, userCentre, userZone]);
@@ -134,11 +130,8 @@ export default function CollectionReport() {
     return {
       fromDate,
       toDate,
-      // ✅ centre filter: center users locked, others can select ALL
       centre: isCentreUser ? userCentre : (centre === "ALL" ? null : centre),
-      // ✅ zone filter: zone users locked, HQ can select, centre user normally doesn't filter zone
       zone: isZoneUser ? userZone : (zone === "ALL" ? null : zone),
-      // ✅ service filter
       serviceCode: serviceCode === "ALL" ? null : serviceCode,
       page,
       size,
@@ -192,7 +185,6 @@ export default function CollectionReport() {
 
       const data: ReportResponse = await res.json();
 
-      // main data
       setRows(data.rows || []);
       setSummaryByService(data.summaryByService || []);
 
@@ -202,19 +194,13 @@ export default function CollectionReport() {
 
       setTotalPages(Math.max(1, toSafeNumber(data.totalPages) || 1));
 
-      /**
-       * ✅ Dropdown Options (Clear like your old code)
-       * Prefer server-provided options. If missing, fallback from data.
-       */
       const serverCentres = (data.centres || []).filter(Boolean);
       const serverZones = (data.zones || []).filter(Boolean);
       const serverServices = (data.services || []).filter((s) => s?.serviceCode && s?.serviceDesc);
 
-      // fallback from rows/summary
       const fallbackCentres = Array.from(new Set((data.rows || []).map((r) => r.centreName).filter(Boolean)));
       const fallbackZones = Array.from(new Set((data.rows || []).map((r) => r.zoneName).filter(Boolean)));
 
-      // services fallback (from summaryByService is best)
       const fallbackServices = Array.from(
         new Map(
           (data.summaryByService || [])
@@ -227,7 +213,6 @@ export default function CollectionReport() {
       setZoneOptions(isZoneUser ? [userZone] : (serverZones.length ? serverZones : fallbackZones));
       setServiceOptions(serverServices.length ? serverServices : fallbackServices);
 
-      // ✅ If selected serviceCode is no longer available, reset to ALL
       if (serviceCode !== "ALL") {
         const exists = (serverServices.length ? serverServices : fallbackServices).some((s) => s.serviceCode === serviceCode);
         if (!exists) setServiceCode("ALL");
@@ -287,7 +272,8 @@ export default function CollectionReport() {
         if ((data.totalPages || 1) <= p + 1) break;
       }
 
-      const header = ["#", "Customer", "Center", "Zone", "Service Code", "Service", "Amount (TZS)", "Date Paid"];
+      // ✅ ADD "Payment Type"
+      const header = ["#", "Customer", "Center", "Zone", "Service Code", "Service", "Payment Type", "Control Number", "Amount (TZS)", "Date Paid"];
 
       const body = allRows.map((r, i) => [
         i + 1,
@@ -296,11 +282,13 @@ export default function CollectionReport() {
         r.zoneName || "N/A",
         r.serviceCode || "N/A",
         r.serviceDesc || "N/A",
+        r.paymentType || "", 
+        r.controlNumber || "",
         toSafeNumber(r.amount),
         r.datePaid ? String(r.datePaid).split("T")[0] : "",
       ]);
 
-      const totalRow = ["", "", "", "", "", "TOTAL", toSafeNumber(totalAmount), ""];
+      const totalRow = ["", "", "", "", "", "", "TOTAL", toSafeNumber(totalAmount), ""];
 
       const wsData = [header, ...body, totalRow];
       const ws = XLSX.utils.aoa_to_sheet(wsData);
@@ -317,17 +305,17 @@ export default function CollectionReport() {
         }
       });
 
-      // numeric amount format
+      // numeric amount format (now amount is column 7)
       body.forEach((_, rowIndex) => {
         const excelRow = rowIndex + 1;
-        const amountCell = ws[XLSX.utils.encode_cell({ r: excelRow, c: 6 })];
+        const amountCell = ws[XLSX.utils.encode_cell({ r: excelRow, c: 7 })];
         if (amountCell) {
           amountCell.t = "n";
           amountCell.z = '#,##0" TZS"';
         }
       });
 
-      // widths
+      // widths (✅ add paymentType col)
       ws["!cols"] = [
         { wch: 5 },
         { wch: 24 },
@@ -335,6 +323,7 @@ export default function CollectionReport() {
         { wch: 14 },
         { wch: 16 },
         { wch: 34 },
+        { wch: 22 }, // Payment Type
         { wch: 16 },
         { wch: 16 },
       ];
@@ -453,8 +442,8 @@ export default function CollectionReport() {
                   />
                 </div>
 
-                {/* ✅ SERVICE: show name, value is code */}
-                <div className="space-y-1.5">
+                {/* SERVICE */}
+                {/* <div className="space-y-1.5">
                   <label className="text-xs font-medium text-slate-700">Service</label>
                   <Select
                     value={serviceCode}
@@ -475,9 +464,9 @@ export default function CollectionReport() {
                       ))}
                     </SelectContent>
                   </Select>
-                </div>
+                </div> */}
 
-                {/* ✅ CENTRE: dropdown like your old code */}
+                {/* CENTRE */}
                 {(!isCentreUser || isHQUser) && (
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-slate-700">Centre</label>
@@ -504,7 +493,7 @@ export default function CollectionReport() {
                   </div>
                 )}
 
-                {/* ✅ ZONE: HQ can choose zone like your old code */}
+                {/* ZONE */}
                 {isHQUser && (
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-slate-700">Zone</label>
@@ -539,44 +528,54 @@ export default function CollectionReport() {
             </div>
 
             {/* Table */}
-            <div className="mt-6 overflow-auto rounded-2xl border border-slate-200/70 bg-white">
-              <table className="min-w-full text-sm text-left">
-                <thead className="sticky top-0 z-10 bg-slate-900 text-white">
-                  <tr>
-                    <th className="p-3 font-medium">#</th>
-                    <th className="p-3 font-medium">Customer</th>
-                    <th className="p-3 font-medium">Service Code</th>
-                    <th className="p-3 font-medium">Service</th>
-                    <th className="p-3 font-medium text-right">Amount (TZS)</th>
-                    <th className="p-3 font-medium">Date Paid</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.length > 0 ? (
-                    rows.map((row, i) => (
-                      <tr key={row.id} className="border-t border-slate-200/70 hover:bg-slate-50">
-                        <td className="p-3 text-slate-700">{page * size + i + 1}</td>
-                        <td className="p-3 text-slate-900">{row.customerName}</td>
-                        <td className="p-3 text-slate-700">{row.serviceCode}</td>
-                        <td className="p-3 text-slate-700">{row.serviceDesc}</td>
-                        <td className="p-3 text-right font-semibold text-slate-900">
-                          {toSafeNumber(row.amount).toLocaleString()}
-                        </td>
-                        <td className="p-3 text-slate-700">
-                          {row.datePaid ? String(row.datePaid).split("T")[0] : ""}
-                        </td>
-                      </tr>
-                    ))
-                  ) : (
-                    <tr>
-                      <td colSpan={6} className="p-10 text-center text-slate-500">
-                        No records found.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
+            {/* Table */}
+<div className="mt-6 overflow-auto rounded-2xl border border-slate-200/70 bg-white">
+  <table className="min-w-full text-sm text-left">
+    <thead className="sticky top-0 z-10 bg-slate-900 text-white">
+      <tr>
+        <th className="p-3 font-medium">#</th>
+        <th className="p-3 font-medium">Customer</th>
+        <th className="p-3 font-medium">Service Code</th>
+        <th className="p-3 font-medium">Service</th>
+        <th className="p-3 font-medium">Payment Type</th>
+        <th className="p-3 font-medium">Control Number</th>
+        <th className="p-3 font-medium text-right">Amount (TZS)</th>
+        <th className="p-3 font-medium">Date Paid</th>
+      </tr>
+    </thead>
+
+    <tbody>
+      {rows.length > 0 ? (
+        rows.map((row, i) => (
+          <tr
+            key={row.id}
+            className="border-t border-slate-200/70 hover:bg-slate-50"
+          >
+            <td className="p-3 text-slate-700">{page * size + i + 1}</td>
+            <td className="p-3 text-slate-900">{row.customerName}</td>
+            <td className="p-3 text-slate-700">{row.serviceCode}</td>
+            <td className="p-3 text-slate-700">{row.serviceDesc}</td>
+            <td className="p-3 text-slate-700">{row.paymentType || "-"}</td>
+            <td className="p-3 text-slate-700">{row.controlNumber || "-"}</td>
+            <td className="p-3 text-right font-semibold text-slate-900">
+              {toSafeNumber(row.amount).toLocaleString()}
+            </td>
+            <td className="p-3 text-slate-700">
+              {row.datePaid ? String(row.datePaid).split("T")[0] : ""}
+            </td>
+          </tr>
+        ))
+      ) : (
+        <tr>
+          <td colSpan={7} className="p-10 text-center text-slate-500">
+            No records found.
+          </td>
+        </tr>
+      )}
+    </tbody>
+  </table>
+</div>
+
 
             {/* Pagination */}
             <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

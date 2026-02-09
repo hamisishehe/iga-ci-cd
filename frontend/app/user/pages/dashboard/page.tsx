@@ -47,7 +47,7 @@ interface Payment {
   serviceCode: string;
   service: string;
   course: string;
-  amount: number;
+  amountBilled: number;
   date: string; // YYYY-MM-DD (from backend datePaid)
   ts: number;
 }
@@ -85,9 +85,11 @@ type DashboardSummaryResponse = {
     zone?: string;
     serviceCode?: string;
     service?: string;
-    amount?: number | string;
-    datePaid?: string; // ISO date-time from backend
-  }>;
+    amountBilled?: number | string;
+    amount?: number | string;     // ✅ ADD
+    datePaid?: string;
+    date?: string;               // ✅ ADD
+}>;
 };
 
 const safeNumber = (v: any): number => {
@@ -270,21 +272,24 @@ const fetchData = useCallback(async () => {
     }));
 
     const recentPayments: Payment[] = (data.recentPayments ?? []).map((p) => {
-      const iso = p.datePaid ?? "";
-      const datePart = iso.includes("T") ? iso.split("T")[0] : iso;
+  const iso = p.datePaid ?? p.date ?? ""; // ✅ accept both
+  const datePart = iso.includes("T") ? iso.split("T")[0] : iso;
 
-      return {
-        name: p.name ?? "Unknown",
-        center: p.center ?? "No Center",
-        zone: p.zone ?? "-",
-        serviceCode: p.serviceCode ?? "N/A",
-        service: p.service ?? "",
-        course: formatCourseName(p.service ?? ""),
-        amount: safeNumber(p.amount),
-        date: datePart || "-",
-        ts: datePart ? Date.parse(`${datePart}T00:00:00`) : 0,
-      };
-    });
+  const amount = p.amountBilled ?? p.amount ?? 0; // ✅ accept both
+
+  return {
+    name: p.name ?? "Unknown",
+    center: p.center ?? "No Center",
+    zone: p.zone ?? "-",
+    serviceCode: p.serviceCode ?? "N/A",
+    service: p.service ?? "",
+    course: formatCourseName(p.service ?? ""),
+    amountBilled: safeNumber(amount), // ✅ use merged value
+    date: datePart || "-",
+    ts: datePart ? Date.parse(`${datePart}T00:00:00`) : 0,
+  };
+});
+
 
     setSummary({
       totalIncome: safeNumber(data.totalIncome),
@@ -648,7 +653,7 @@ const fetchData = useCallback(async () => {
                         {formatServiceName(p.service)}
                       </td>
                       <td className="p-3 font-semibold text-slate-900">
-                        {p.amount.toLocaleString()}{" "}
+                        {p.amountBilled.toLocaleString()}{" "}
                         <span className="font-medium text-slate-500">TZS</span>
                       </td>
                       <td className="p-3 text-slate-700">{p.date}</td>

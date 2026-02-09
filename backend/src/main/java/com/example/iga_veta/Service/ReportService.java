@@ -47,7 +47,7 @@ public class ReportService {
         PageRequest pageable = PageRequest.of(
                 Math.max(page, 0),
                 Math.max(size, 1),
-                Sort.by(Sort.Direction.DESC, "date")
+                Sort.by(Sort.Direction.ASC, "date")
         );
 
         // totals with filters
