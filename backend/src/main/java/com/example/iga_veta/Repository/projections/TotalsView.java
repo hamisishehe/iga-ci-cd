@@ -4,5 +4,7 @@ import java.math.BigDecimal;
 
 public interface TotalsView {
     BigDecimal getTotalIncome();
+
+    BigDecimal getTotalPaid();
     Long getTotalTransactions();
 }

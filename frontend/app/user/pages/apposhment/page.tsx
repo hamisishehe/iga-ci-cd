@@ -334,12 +334,12 @@ export default function ApportionmentReport() {
             </CardDescription>
           </div>
 
-          <Button
+          {/* <Button
             className="h-10 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm"
             onClick={exportExcel}
           >
             Export Excel
-          </Button>
+          </Button> */}
         </CardHeader>
 
         <CardContent className="overflow-x-auto">

@@ -50,22 +50,26 @@ public class ReportService {
                 Sort.by(Sort.Direction.ASC, "date")
         );
 
-        // totals with filters
+        // totals (amount billed + tx count)
         TotalsView tv = repo.totalsView(start, endExclusive, centre, zone, serviceCode);
         BigDecimal totalIncome = (tv != null && tv.getTotalIncome() != null) ? tv.getTotalIncome() : BigDecimal.ZERO;
         long totalTx = (tv != null && tv.getTotalTransactions() != null) ? tv.getTotalTransactions() : 0L;
 
+        // ✅ CORRECT totalPaid (avoid double-counting same controlNumber)
+        BigDecimal totalPaid = repo.totalPaidDistinctByControlAndDateNoZone(start, endExclusive, centre, serviceCode);
+        if (totalPaid == null) totalPaid = BigDecimal.ZERO;
+
         // rows
         Page<CollectionRowView> rowsPage = repo.reportRows(start, endExclusive, centre, zone, serviceCode, pageable);
 
-        // summary by service (for bottom table + dropdown)
+        // summary by service (bottom table + dropdown)
         List<ServiceSummaryView> byService = repo.summaryByService(start, endExclusive, centre, zone);
 
-        // exact total amount matching filters
+        // exact total amount billed matching filters
         BigDecimal totalAmount = repo.totalAmount(start, endExclusive, centre, zone, serviceCode);
         if (totalAmount == null) totalAmount = BigDecimal.ZERO;
 
-        // options: centres, zones, services
+        // options
         List<String> centres = repo.centreOptions();
         List<String> zones = repo.zoneOptions();
 
@@ -76,9 +80,11 @@ public class ReportService {
             if (code != null && desc != null) services.add(new ServiceOptionDto(code, desc));
         }
 
+        // response
         CollectionsReportResponse out = new CollectionsReportResponse();
         out.setTotalIncome(totalIncome);
         out.setTotalTransactions(totalTx);
+        out.setTotalPaid(totalPaid);
 
         out.setPage(rowsPage.getNumber());
         out.setSize(rowsPage.getSize());
@@ -89,7 +95,6 @@ public class ReportService {
         out.setSummaryByService(byService);
         out.setTotalAmount(totalAmount);
 
-        // ✅ include options in same endpoint
         out.setCentres(centres);
         out.setZones(zones);
         out.setServices(services);

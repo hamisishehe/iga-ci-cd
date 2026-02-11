@@ -13,7 +13,10 @@ public interface CollectionRowView {
 
     String getPaymentType();
 
+
     String getControlNumber();
+
+    BigDecimal getAmountPaid();
 
     BigDecimal getAmount();
     LocalDateTime getDatePaid();

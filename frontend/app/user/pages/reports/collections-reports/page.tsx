@@ -6,20 +6,8 @@ import * as XLSX from "xlsx";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectTrigger,
-  SelectContent,
-  SelectItem,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Breadcrumb,
-  BreadcrumbList,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbSeparator,
-} from "@/components/ui/breadcrumb";
+import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from "@/components/ui/select";
+import { Breadcrumb, BreadcrumbList, BreadcrumbItem, BreadcrumbLink, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
 import { FileSpreadsheet } from "lucide-react";
 import { toast } from "sonner";
 
@@ -34,16 +22,12 @@ interface ReportRow {
   zoneName: string;
   serviceCode: string;
   serviceDesc: string;
-  paymentType?: string; // ✅
-  controlNumber?: string; // ✅
-  amount: number;
-  datePaid: string; // ISO
-}
+  paymentType?: string;
+  controlNumber?: string;
 
-interface ServiceSummaryRow {
-  serviceCode: string;
-  serviceDesc: string;
-  total: number;
+  amount: number;        // billed
+  amountPaid?: number;   // ✅ NEW (must come from backend)
+  datePaid: string;      // ISO
 }
 
 interface ReportFilters {
@@ -55,6 +39,9 @@ interface ReportFilters {
 interface ReportResponse extends ReportFilters {
   totalIncome: number;
   totalTransactions: number;
+  totalAmount: number; // billed total (filtered)
+
+  totalPaid?: number; // ✅ NEW (from backend)
 
   page: number;
   size: number;
@@ -62,19 +49,32 @@ interface ReportResponse extends ReportFilters {
   totalPages: number;
 
   rows: ReportRow[];
-  summaryByService: ServiceSummaryRow[];
-  totalAmount: number;
 }
 
 /** -------- helpers -------- */
 const pad2 = (n: number) => String(n).padStart(2, "0");
-const formatDate = (d: Date) =>
-  `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+const formatDate = (d: Date) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 
 const toSafeNumber = (v: any) => {
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
 };
+
+// safe filename timestamp: YYYYMMDD_HHMMSS
+const fileStamp = () => {
+  const d = new Date();
+  return `${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}_${pad2(d.getHours())}${pad2(
+    d.getMinutes()
+  )}${pad2(d.getSeconds())}`;
+};
+
+const sanitizeName = (s: string) =>
+  (s || "user")
+    .toString()
+    .trim()
+    .replace(/\s+/g, "_")
+    .replace(/[^a-zA-Z0-9_\-]/g, "")
+    .slice(0, 30);
 
 export default function CollectionReport() {
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || "/api";
@@ -93,26 +93,36 @@ export default function CollectionReport() {
   const [totalIncome, setTotalIncome] = useState(0);
   const [totalTransactions, setTotalTransactions] = useState(0);
   const [totalAmount, setTotalAmount] = useState(0);
+  const [totalPaid, setTotalPaid] = useState(0);
 
   // options
   const [centreOptions, setCentreOptions] = useState<string[]>([]);
   const [zoneOptions, setZoneOptions] = useState<string[]>([]);
   const [serviceOptions, setServiceOptions] = useState<Array<{ serviceCode: string; serviceDesc: string }>>([]);
 
-  // paging (for preview if you ever re-add table)
+  // paging (big size: you have no table preview; export needs all)
   const [page, setPage] = useState(0);
-  const size = 2000; // ✅ big size because your UI has NO table preview; we need all rows for export
+  const size = 2000;
   const [loading, setLoading] = useState(true);
 
   // === User Role & Permissions (avoid hydration issues) ===
   const [userType, setUserType] = useState("");
   const [userCentre, setUserCentre] = useState("");
   const [userZone, setUserZone] = useState("");
+  const [username, setUsername] = useState("user"); // ✅ used in file name
 
   useEffect(() => {
     setUserType((localStorage.getItem("userType") || "").toUpperCase());
     setUserCentre(localStorage.getItem("centre") || "");
     setUserZone(localStorage.getItem("zone") || "");
+
+    // try to read some user display name if you store it
+    setUsername(
+      localStorage.getItem("name") ||
+        localStorage.getItem("username") ||
+        localStorage.getItem("email") ||
+        "user"
+    );
   }, []);
 
   const isHQUser = userType === "HQ";
@@ -124,7 +134,6 @@ export default function CollectionReport() {
     const now = new Date();
     const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
     const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-
     setFromDate(formatDate(firstDay));
     setToDate(formatDate(lastDay));
   }, []);
@@ -141,8 +150,8 @@ export default function CollectionReport() {
     return {
       fromDate,
       toDate,
-      centre: isCentreUser ? userCentre : (centre === "ALL" ? null : centre),
-      zone: isZoneUser ? userZone : (zone === "ALL" ? null : zone),
+      centre: isCentreUser ? userCentre : centre === "ALL" ? null : centre,
+      zone: isZoneUser ? userZone : zone === "ALL" ? null : zone,
       serviceCode: serviceCode === "ALL" ? null : serviceCode,
       page,
       size,
@@ -153,7 +162,7 @@ export default function CollectionReport() {
   const debounceRef = useRef<number | null>(null);
 
   useEffect(() => {
-    if (!userType) return; // wait localStorage
+    if (!userType) return;
     if (!fromDate || !toDate) return;
 
     if (debounceRef.current) window.clearTimeout(debounceRef.current);
@@ -201,8 +210,9 @@ export default function CollectionReport() {
       setTotalIncome(toSafeNumber(data.totalIncome));
       setTotalTransactions(toSafeNumber(data.totalTransactions));
       setTotalAmount(toSafeNumber(data.totalAmount));
+      setTotalPaid(toSafeNumber((data as any).totalPaid));
 
-      // dropdown options: prefer server-provided, fallback from rows
+      // dropdown options
       const serverCentres = (data.centres || []).filter(Boolean);
       const serverZones = (data.zones || []).filter(Boolean);
       const serverServices = (data.services || []).filter((s) => s?.serviceCode && s?.serviceDesc);
@@ -218,11 +228,10 @@ export default function CollectionReport() {
         ).values()
       ).sort((a, b) => a.serviceDesc.localeCompare(b.serviceDesc));
 
-      setCentreOptions(isCentreUser ? [userCentre] : (serverCentres.length ? serverCentres : fallbackCentres));
-      setZoneOptions(isZoneUser ? [userZone] : (serverZones.length ? serverZones : fallbackZones));
+      setCentreOptions(isCentreUser ? [userCentre] : serverCentres.length ? serverCentres : fallbackCentres);
+      setZoneOptions(isZoneUser ? [userZone] : serverZones.length ? serverZones : fallbackZones);
       setServiceOptions(serverServices.length ? serverServices : fallbackServices);
 
-      // if selected serviceCode not valid anymore -> reset
       if (serviceCode !== "ALL") {
         const exists = (serverServices.length ? serverServices : fallbackServices).some((s) => s.serviceCode === serviceCode);
         if (!exists) setServiceCode("ALL");
@@ -230,10 +239,12 @@ export default function CollectionReport() {
     } catch (e) {
       console.error(e);
       toast.error("Failed to load report");
+
       setRows([]);
       setTotalIncome(0);
       setTotalTransactions(0);
       setTotalAmount(0);
+      setTotalPaid(0);
 
       setCentreOptions(isCentreUser ? [userCentre] : []);
       setZoneOptions(isZoneUser ? [userZone] : []);
@@ -243,7 +254,7 @@ export default function CollectionReport() {
     }
   };
 
-  /** PDF export from current rows */
+  /** ✅ PDF export (includes Amount Paid + totals) */
   const exportPdf = () => {
     if (!rows.length) {
       toast.error("No data to export");
@@ -283,10 +294,11 @@ export default function CollectionReport() {
     const head = [[
       "#",
       "Customer",
-      "Control Number",
+      "Control No",
       "Service",
       "Payment Type",
-      "Amount (TZS)",
+      "Billed (TZS)",
+      "Paid (TZS)",
       "Date Paid",
     ]];
 
@@ -297,10 +309,21 @@ export default function CollectionReport() {
       r.serviceDesc || "N/A",
       r.paymentType || "-",
       toSafeNumber(r.amount).toLocaleString(),
+      toSafeNumber(r.amountPaid).toLocaleString(),
       r.datePaid ? String(r.datePaid).split("T")[0] : "",
     ]));
 
-    body.push(["", "", "", "", "", "", "TOTAL", toSafeNumber(totalAmount).toLocaleString(), ""]);
+    // ✅ totals row must match 8 columns
+    body.push([
+      "",
+      "",
+      "",
+      "",
+      "TOTALS",
+      toSafeNumber(totalAmount).toLocaleString(),
+      toSafeNumber(totalPaid).toLocaleString(),
+      "",
+    ]);
 
     autoTable(doc, {
       startY: 42,
@@ -311,7 +334,8 @@ export default function CollectionReport() {
       alternateRowStyles: { fillColor: [248, 250, 252] },
       columnStyles: {
         0: { halign: "center", cellWidth: 8 },
-        7: { halign: "right", cellWidth: 22 },
+        5: { halign: "right", cellWidth: 22 },
+        6: { halign: "right", cellWidth: 22 },
       },
       didParseCell: (d) => {
         if (d.row.index === body.length - 1) {
@@ -331,10 +355,11 @@ export default function CollectionReport() {
       doc.text(`Page ${i} of ${pages}`, 200, 290, { align: "right" });
     }
 
-    doc.save("collection_report.pdf");
+    const fname = `collection_report_${sanitizeName(username)}_${fileStamp()}.pdf`;
+    doc.save(fname);
   };
 
-  /** Excel export from current rows */
+  /** ✅ Excel export (includes Amount Paid + totals) */
   const exportExcel = () => {
     if (!rows.length) {
       toast.error("No data to export");
@@ -352,7 +377,8 @@ export default function CollectionReport() {
       "Control Number",
       "Service",
       "Payment Type",
-      "Amount (TZS)",
+      "Amount Billed (TZS)",
+      "Amount Paid (TZS)",
       "Date Paid",
     ];
 
@@ -363,10 +389,12 @@ export default function CollectionReport() {
       r.serviceDesc || "N/A",
       r.paymentType || "-",
       toSafeNumber(r.amount),
+      toSafeNumber(r.amountPaid),
       r.datePaid ? String(r.datePaid).split("T")[0] : "",
     ]);
 
-    const totalRow = ["", "", "", "", "", "TOTAL", "", toSafeNumber(totalAmount), ""];
+    // ✅ totals row must match header length
+    const totalsRow = ["", "", "", "", "TOTALS", toSafeNumber(totalAmount), toSafeNumber(totalPaid), ""];
 
     const wsData: any[][] = [
       [title1],
@@ -375,13 +403,13 @@ export default function CollectionReport() {
       [metaLabel],
       header,
       ...body,
-      totalRow,
+      totalsRow,
     ];
 
     const ws = XLSX.utils.aoa_to_sheet(wsData);
 
-    const colCount = header.length; // 9
-    const lastCol = colCount - 1; // 8
+    // merges for titles (0..3 rows)
+    const lastCol = header.length - 1; // 7
     ws["!merges"] = [
       { s: { r: 0, c: 0 }, e: { r: 0, c: lastCol } },
       { s: { r: 1, c: 0 }, e: { r: 1, c: lastCol } },
@@ -389,22 +417,41 @@ export default function CollectionReport() {
       { s: { r: 3, c: 0 }, e: { r: 3, c: lastCol } },
     ];
 
-    // column widths
+    // column widths (match 8 cols)
     ws["!cols"] = [
       { wch: 5 },
       { wch: 22 },
       { wch: 18 },
-      { wch: 14 },
-      { wch: 16 },
       { wch: 28 },
-      { wch: 22 },
       { wch: 18 },
-      { wch: 16 },
+      { wch: 18 },
+      { wch: 18 },
+      { wch: 14 },
     ];
+
+    // numeric formats (billed col=5, paid col=6) -> data starts at row index 5 in wsData (0-based)
+    const dataStartRow = 5; // because 0..3 meta, 4 header, 5 first body row
+    for (let r = 0; r < body.length; r++) {
+      const excelRow = dataStartRow + r;
+
+      const billedCell = ws[XLSX.utils.encode_cell({ r: excelRow, c: 5 })];
+      if (billedCell) {
+        billedCell.t = "n";
+        billedCell.z = '#,##0.00';
+      }
+
+      const paidCell = ws[XLSX.utils.encode_cell({ r: excelRow, c: 6 })];
+      if (paidCell) {
+        paidCell.t = "n";
+        paidCell.z = '#,##0.00';
+      }
+    }
 
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Collections");
-    XLSX.writeFile(wb, "collection_report.xlsx");
+
+    const fname = `collection_report_${sanitizeName(username)}_${fileStamp()}.xlsx`;
+    XLSX.writeFile(wb, fname);
   };
 
   if (loading && !rows.length) {
@@ -422,10 +469,7 @@ export default function CollectionReport() {
           <Breadcrumb className="px-1 sm:px-2">
             <BreadcrumbList>
               <BreadcrumbItem>
-                <BreadcrumbLink
-                  href="/user/pages/dashboard"
-                  className="font-semibold text-slate-800"
-                >
+                <BreadcrumbLink href="/user/pages/dashboard" className="font-semibold text-slate-800">
                   Dashboard
                 </BreadcrumbLink>
               </BreadcrumbItem>
@@ -503,30 +547,6 @@ export default function CollectionReport() {
                   />
                 </div>
 
-                {/* Service
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-slate-700">Service</label>
-                  <Select
-                    value={serviceCode}
-                    onValueChange={(v) => {
-                      setPage(0);
-                      setServiceCode(v);
-                    }}
-                  >
-                    <SelectTrigger className="h-10 rounded-xl border-slate-200 bg-white">
-                      <SelectValue placeholder="All" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="ALL">All</SelectItem>
-                      {serviceOptions.map((s) => (
-                        <SelectItem key={s.serviceCode} value={s.serviceCode}>
-                          {s.serviceDesc}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div> */}
-
                 {/* Centre */}
                 {(!isCentreUser || isHQUser) && (
                   <div className="space-y-1.5">
@@ -595,9 +615,7 @@ export default function CollectionReport() {
                   {rows?.length ? (
                     <>
                       Found{" "}
-                      <span className="font-semibold text-slate-900">
-                        {rows.length.toLocaleString()}
-                      </span>{" "}
+                      <span className="font-semibold text-slate-900">{rows.length.toLocaleString()}</span>{" "}
                       records.
                     </>
                   ) : (
@@ -605,11 +623,20 @@ export default function CollectionReport() {
                   )}
                 </div>
 
-                <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-700">
-                  Total:{" "}
-                  <span className="font-semibold text-slate-900">
-                    {toSafeNumber(totalAmount).toLocaleString()} TZS
-                  </span>
+                <div className="flex flex-wrap gap-2">
+                  <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-700">
+                    Billed:{" "}
+                    <span className="font-semibold text-slate-900">
+                      {toSafeNumber(totalAmount).toLocaleString()} TZS
+                    </span>
+                  </div>
+
+                  <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-700">
+                    Paid:{" "}
+                    <span className="font-semibold text-slate-900">
+                      {toSafeNumber(totalPaid).toLocaleString()} TZS
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>

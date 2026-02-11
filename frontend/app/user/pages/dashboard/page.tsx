@@ -37,7 +37,7 @@ ChartJS.register(
   BarElement,
   ArcElement,
   Tooltip,
-  Legend
+  Legend,
 );
 
 interface Payment {
@@ -76,7 +76,11 @@ interface Summary {
 type DashboardSummaryResponse = {
   totalIncome?: number | string;
   totalTransactions?: number | string;
-  topServices?: Array<{ serviceCode?: string; service?: string; total?: number | string }>;
+  topServices?: Array<{
+    serviceCode?: string;
+    service?: string;
+    total?: number | string;
+  }>;
   topCenters?: Array<{ center?: string; total?: number | string }>;
   bottomCenters?: Array<{ center?: string; total?: number | string }>;
   recentPayments?: Array<{
@@ -86,10 +90,10 @@ type DashboardSummaryResponse = {
     serviceCode?: string;
     service?: string;
     amountBilled?: number | string;
-    amount?: number | string;     // ✅ ADD
+    amount?: number | string; // ✅ ADD
     datePaid?: string;
-    date?: string;               // ✅ ADD
-}>;
+    date?: string; // ✅ ADD
+  }>;
 };
 
 const safeNumber = (v: any): number => {
@@ -99,7 +103,8 @@ const safeNumber = (v: any): number => {
 };
 
 const pad2 = (n: number) => String(n).padStart(2, "0");
-const toYMD = (d: Date) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+const toYMD = (d: Date) =>
+  `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 
 // getRange() returns { start: "YYYY-MM-DD", end: "YYYY-MM-DD" } where end is EXCLUSIVE.
 // This converts endExclusive -> inclusive toDate (endExclusive - 1 day)
@@ -108,7 +113,6 @@ const toInclusiveDate = (endExclusiveYmd: string) => {
   d.setDate(d.getDate() - 1);
   return toYMD(d);
 };
-
 
 export default function DashboardPage() {
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || "/api";
@@ -124,7 +128,7 @@ export default function DashboardPage() {
   const [role, setRole] = useState<string>("");
   const [userCentre, setUserCentre] = useState<string>("");
   const [filterType, setFilterType] = useState<"day" | "yesterday" | "month">(
-    "month"
+    "month",
   );
 
   const [summary, setSummary] = useState<Summary>({
@@ -166,7 +170,7 @@ export default function DashboardPage() {
     if (type === "day") {
       const start = toYMD(now);
       const end = toYMD(
-        new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1)
+        new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1),
       );
       return { start, end };
     }
@@ -201,114 +205,115 @@ export default function DashboardPage() {
     return Number.isFinite(n) ? n : 0;
   };
 
-const fetchData = useCallback(async () => {
-  try {
-    const token = localStorage.getItem("authToken");
-    const apiKey = process.env.NEXT_PUBLIC_API_KEY;
+  const fetchData = useCallback(async () => {
+    try {
+      const token = localStorage.getItem("authToken");
+      const apiKey = process.env.NEXT_PUBLIC_API_KEY;
 
-    if (!token || !apiKey) {
-      toast("Missing authentication credentials");
-      return;
+      if (!token || !apiKey) {
+        toast("Missing authentication credentials");
+        return;
+      }
+
+      setLoading(true);
+
+      const storedRole = localStorage.getItem("userRole") || "";
+      const storedCentre = localStorage.getItem("centre") || "";
+      setRole(storedRole);
+      setUserCentre(storedCentre);
+
+      const restricted = CENTER_RESTRICTED_ROLES.includes(storedRole);
+
+      // Range for UI (start inclusive, end exclusive)
+      const { start: uiStart, end: uiEndExclusive } = getRange(filterType);
+
+      const body: any = {
+        fromDate: uiStart,
+        toDate: toInclusiveDate(uiEndExclusive), // inclusive (LocalDate)
+      };
+
+      // Only include centre if role is restricted AND centre exists
+      if (restricted && storedCentre) {
+        body.centre = storedCentre;
+      }
+
+      const res = await fetch(`${apiUrl}/collections/summary`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+          "X-API-KEY": apiKey,
+        },
+        cache: "no-store",
+        body: JSON.stringify(body),
+      });
+
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        console.error("Dashboard summary fetch failed:", res.status, text);
+        throw new Error(`HTTP ${res.status}${text ? ` - ${text}` : ""}`);
+      }
+
+      const data: DashboardSummaryResponse = await res.json();
+
+      console.log("DASHBOARD SUMMARY RAW:", data);
+
+      const topServices: ServiceSummary[] = (data.topServices ?? []).map(
+        (s) => ({
+          serviceCode: s.serviceCode ?? "N/A",
+          service: s.service ?? "",
+          total: safeNumber(s.total),
+        }),
+      );
+
+      const topCenters: CenterSummary[] = (data.topCenters ?? []).map((c) => ({
+        center: c.center ?? "No Center",
+        total: safeNumber(c.total),
+      }));
+
+      const bottomCenters: CenterSummary[] = (data.bottomCenters ?? []).map(
+        (c) => ({
+          center: c.center ?? "No Center",
+          total: safeNumber(c.total),
+        }),
+      );
+
+      const recentPayments: Payment[] = (data.recentPayments ?? []).map((p) => {
+        const iso = p.datePaid ?? p.date ?? ""; // ✅ accept both
+        const datePart = iso.includes("T") ? iso.split("T")[0] : iso;
+
+        const amount = p.amountBilled ?? p.amount ?? 0; // ✅ accept both
+
+        return {
+          name: p.name ?? "Unknown",
+          center: p.center ?? "No Center",
+          zone: p.zone ?? "-",
+          serviceCode: p.serviceCode ?? "N/A",
+          service: p.service ?? "",
+          course: formatCourseName(p.service ?? ""),
+          amountBilled: safeNumber(amount), // ✅ use merged value
+          date: datePart || "-",
+          ts: datePart ? Date.parse(`${datePart}T00:00:00`) : 0,
+        };
+      });
+
+      setSummary({
+        totalIncome: safeNumber(data.totalIncome),
+        totalTransactions: safeNumber(data.totalTransactions),
+        topServices,
+        topCenters,
+        bottomCenters,
+        recentPayments,
+      });
+
+      setLastUpdated(new Date().toLocaleTimeString());
+    } catch (error) {
+      console.error("Error fetching dashboard data:", error);
+      toast("Failed to fetch dashboard data");
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(true);
-
-    const storedRole = localStorage.getItem("userRole") || "";
-    const storedCentre = localStorage.getItem("centre") || "";
-    setRole(storedRole);
-    setUserCentre(storedCentre);
-
-    const restricted = CENTER_RESTRICTED_ROLES.includes(storedRole);
-
-    // Range for UI (start inclusive, end exclusive)
-    const { start: uiStart, end: uiEndExclusive } = getRange(filterType);
-
-    const body: any = {
-      fromDate: uiStart,
-      toDate: toInclusiveDate(uiEndExclusive), // inclusive (LocalDate)
-    };
-
-    // Only include centre if role is restricted AND centre exists
-    if (restricted && storedCentre) {
-      body.centre = storedCentre;
-    }
-
-    const res = await fetch(`${apiUrl}/collections/summary`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-        "X-API-KEY": apiKey,
-      },
-      cache: "no-store",
-      body: JSON.stringify(body),
-    });
-
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      console.error("Dashboard summary fetch failed:", res.status, text);
-      throw new Error(`HTTP ${res.status}${text ? ` - ${text}` : ""}`);
-    }
-
-    const data: DashboardSummaryResponse = await res.json();
-
-    console.log("DASHBOARD SUMMARY RAW:", data);
-
-
-    const topServices: ServiceSummary[] = (data.topServices ?? []).map((s) => ({
-      serviceCode: s.serviceCode ?? "N/A",
-      service: s.service ?? "",
-      total: safeNumber(s.total),
-    }));
-
-    const topCenters: CenterSummary[] = (data.topCenters ?? []).map((c) => ({
-      center: c.center ?? "No Center",
-      total: safeNumber(c.total),
-    }));
-
-    const bottomCenters: CenterSummary[] = (data.bottomCenters ?? []).map((c) => ({
-      center: c.center ?? "No Center",
-      total: safeNumber(c.total),
-    }));
-
-    const recentPayments: Payment[] = (data.recentPayments ?? []).map((p) => {
-  const iso = p.datePaid ?? p.date ?? ""; // ✅ accept both
-  const datePart = iso.includes("T") ? iso.split("T")[0] : iso;
-
-  const amount = p.amountBilled ?? p.amount ?? 0; // ✅ accept both
-
-  return {
-    name: p.name ?? "Unknown",
-    center: p.center ?? "No Center",
-    zone: p.zone ?? "-",
-    serviceCode: p.serviceCode ?? "N/A",
-    service: p.service ?? "",
-    course: formatCourseName(p.service ?? ""),
-    amountBilled: safeNumber(amount), // ✅ use merged value
-    date: datePart || "-",
-    ts: datePart ? Date.parse(`${datePart}T00:00:00`) : 0,
-  };
-});
-
-
-    setSummary({
-      totalIncome: safeNumber(data.totalIncome),
-      totalTransactions: safeNumber(data.totalTransactions),
-      topServices,
-      topCenters,
-      bottomCenters,
-      recentPayments,
-    });
-
-    setLastUpdated(new Date().toLocaleTimeString());
-  } catch (error) {
-    console.error("Error fetching dashboard data:", error);
-    toast("Failed to fetch dashboard data");
-  } finally {
-    setLoading(false);
-  }
-}, [apiUrl, filterType]);
-
+  }, [apiUrl, filterType]);
 
   useEffect(() => {
     fetchData();
@@ -426,14 +431,14 @@ const fetchData = useCallback(async () => {
               </div>
 
               <p className="text-sm font-medium text-slate-600 text-center">
-                Total Income{" "}
+                Billed Amount{" "}
                 <span className="text-slate-500">
                   (
                   {filterType === "day"
                     ? "Today"
                     : filterType === "yesterday"
-                    ? "Yesterday"
-                    : "This Month"}
+                      ? "Yesterday"
+                      : "This Month"}
                   )
                 </span>
               </p>
@@ -465,8 +470,8 @@ const fetchData = useCallback(async () => {
                   {filterType === "day"
                     ? "Today"
                     : filterType === "yesterday"
-                    ? "Yesterday"
-                    : "This Month"}
+                      ? "Yesterday"
+                      : "This Month"}
                   )
                 </span>
               </p>
@@ -509,104 +514,152 @@ const fetchData = useCallback(async () => {
         </div>
 
         {/* Charts */}
+        {/* Charts */}
         {(role === "DIRECTOR_GENERAL" ||
           role === "DIRECTOR_OF_FINANCE" ||
           role === "FINANCE_MANAGER") && (
-          <div className="grid gap-6 grid-cols-1 lg:grid-cols-3">
-            <Card className="rounded-2xl border-slate-200/60 bg-white shadow-sm lg:col-span-2">
-              <CardHeader className="flex flex-row items-center justify-between">
-                <div>
-                  <CardTitle className="text-base text-slate-900">
-                    Top Services
-                  </CardTitle>
-                  <p className="text-xs text-slate-600">
-                    Revenue comparison across services
-                  </p>
-                </div>
-                <div className="h-9 w-9 rounded-2xl bg-slate-100 grid place-items-center text-slate-700">
-                  <span className="text-xs font-semibold">BAR</span>
-                </div>
-              </CardHeader>
+          <section className="space-y-6">
+            {/* Header row (optional) */}
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-900">
+                  Analytics
+                </h2>
+                <p className="text-sm text-slate-600">
+                  Revenue insights across services and centers
+                </p>
+              </div>
 
-              <CardContent className="h-full sm:h-80">
-                <div className="h-full rounded-2xl border border-slate-200/60 bg-gradient-to-b from-slate-50 to-white p-3">
-                  <Bar
-                    data={barData}
-                    options={{ responsive: true, maintainAspectRatio: false }}
-                  />
-                </div>
-              </CardContent>
-            </Card>
-
-            <div className="space-y-6">
-              <Card className="rounded-2xl border-slate-200/60 bg-white shadow-sm">
-                <CardHeader>
-                  <CardTitle className="text-base text-slate-900">
-                    Top 3 Centers
-                  </CardTitle>
-                  <p className="text-xs text-slate-600">
-                    Highest revenue centers
-                  </p>
-                </CardHeader>
-                <CardContent className="h-56 sm:h-64">
-                  <div className="h-full rounded-2xl border border-slate-200/60 bg-gradient-to-b from-slate-50 to-white p-3">
-                    <Doughnut
-                      data={topCentersData}
-                      options={{
-                        responsive: true,
-                        maintainAspectRatio: false,
-                      }}
-                    />
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card className="rounded-2xl border-slate-200/60 bg-white shadow-sm">
-                <CardHeader>
-                  <CardTitle className="text-base text-slate-900">
-                    Bottom 3 Centers
-                  </CardTitle>
-                  <p className="text-xs text-slate-600">
-                    Lowest revenue centers
-                  </p>
-                </CardHeader>
-                <CardContent className="h-56 sm:h-64">
-                  <div className="h-full rounded-2xl border border-slate-200/60 bg-gradient-to-b from-slate-50 to-white p-3">
-                    <Doughnut
-                      data={bottomCentersData}
-                      options={{
-                        responsive: true,
-                        maintainAspectRatio: false,
-                      }}
-                    />
-                  </div>
-                </CardContent>
-              </Card>
+              <div className="hidden sm:flex items-center gap-2">
+                <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-600 shadow-sm">
+                  Updated: Live
+                </span>
+              </div>
             </div>
-          </div>
+
+            <div className="grid gap-6 lg:grid-cols-12">
+              {/* Top Services (wide) */}
+              <Card className="lg:col-span-8 rounded-2xl border border-slate-200/60 bg-gradient-to-br from-white via-white to-slate-50 shadow-sm">
+                <CardHeader className="flex flex-row items-start justify-between gap-4">
+                  <div className="space-y-1">
+                    <CardTitle className="text-base text-slate-900">
+                      Top Services
+                    </CardTitle>
+                    <p className="text-xs text-slate-600">
+                      Revenue comparison across services
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <span className="rounded-full bg-slate-900 px-3 py-1 text-xs font-medium text-white">
+                      Bar
+                    </span>
+                  </div>
+                </CardHeader>
+
+                <CardContent className="h-72 sm:h-80">
+                  <div className="h-full rounded-2xl border border-slate-200/60 bg-gradient-to-b from-slate-50 to-white p-3">
+                    <Bar
+                      data={barData}
+                      options={{ responsive: true, maintainAspectRatio: false }}
+                    />
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Right side stack */}
+              <div className="lg:col-span-4 space-y-6">
+                {/* Top 3 Centers */}
+                <Card className="rounded-2xl border border-slate-200/60 bg-gradient-to-br from-white via-white to-slate-50 shadow-sm">
+                  <CardHeader className="flex flex-row items-start justify-between gap-4">
+                    <div className="space-y-1">
+                      <CardTitle className="text-base text-slate-900">
+                        Top 3 Centers
+                      </CardTitle>
+                      <p className="text-xs text-slate-600">
+                        Highest revenue centers
+                      </p>
+                    </div>
+                    <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-600">
+                      Doughnut
+                    </span>
+                  </CardHeader>
+
+                  <CardContent className="h-56 sm:h-64">
+                    <div className="h-full rounded-2xl border border-slate-200/60 bg-gradient-to-b from-slate-50 to-white p-3">
+                      <Doughnut
+                        data={topCentersData}
+                        options={{
+                          responsive: true,
+                          maintainAspectRatio: false,
+                        }}
+                      />
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Bottom 3 Centers */}
+                <Card className="rounded-2xl border border-slate-200/60 bg-gradient-to-br from-white via-white to-slate-50 shadow-sm">
+                  <CardHeader className="flex flex-row items-start justify-between gap-4">
+                    <div className="space-y-1">
+                      <CardTitle className="text-base text-slate-900">
+                        Bottom 3 Centers
+                      </CardTitle>
+                      <p className="text-xs text-slate-600">
+                        Lowest revenue centers
+                      </p>
+                    </div>
+                    <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-600">
+                      Doughnut
+                    </span>
+                  </CardHeader>
+
+                  <CardContent className="h-56 sm:h-64">
+                    <div className="h-full rounded-2xl border border-slate-200/60 bg-gradient-to-b from-slate-50 to-white p-3">
+                      <Doughnut
+                        data={bottomCentersData}
+                        options={{
+                          responsive: true,
+                          maintainAspectRatio: false,
+                        }}
+                      />
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
+          </section>
         )}
 
         {(role === "BURSAR" ||
           role === "ACCOUNT_OFFICER" ||
           role === "ASSISTANT_ACCOUNT_OFFICER" ||
           role === "PRINCIPAL") && (
-          <div className="grid gap-6 grid-cols-1">
-            <Card className="rounded-2xl border-slate-200/60 bg-white shadow-sm">
-              <CardHeader className="flex flex-row items-center justify-between">
-                <div>
+          <section className="space-y-6">
+            <div>
+              <h2 className="text-lg font-semibold text-slate-900">
+                Analytics
+              </h2>
+              <p className="text-sm text-slate-600">
+                Summary filtered by your center
+              </p>
+            </div>
+
+            <Card className="rounded-2xl border border-slate-200/60 bg-gradient-to-br from-white via-white to-slate-50 shadow-sm">
+              <CardHeader className="flex flex-row items-start justify-between gap-4">
+                <div className="space-y-1">
                   <CardTitle className="text-base text-slate-900">
                     Top Services
                   </CardTitle>
-                  <p className="text-xs text-slate-600">
-                    Summary filtered by your center
-                  </p>
+                  <p className="text-xs text-slate-600">Revenue by service</p>
                 </div>
-                <div className="h-9 w-9 rounded-2xl bg-slate-100 grid place-items-center text-slate-700">
-                  <span className="text-xs font-semibold">BAR</span>
-                </div>
+
+                <span className="rounded-full bg-slate-900 px-3 py-1 text-xs font-medium text-white">
+                  Bar
+                </span>
               </CardHeader>
 
-              <CardContent className="h-64 sm:h-80">
+              <CardContent className="h-72 sm:h-80">
                 <div className="h-full rounded-2xl border border-slate-200/60 bg-gradient-to-b from-slate-50 to-white p-3">
                   <Bar
                     data={barData}
@@ -615,7 +668,7 @@ const fetchData = useCallback(async () => {
                 </div>
               </CardContent>
             </Card>
-          </div>
+          </section>
         )}
 
         <Separator className="bg-slate-200/70" />
@@ -639,7 +692,9 @@ const fetchData = useCallback(async () => {
                     <th className="p-3 font-medium text-slate-700">Name</th>
                     <th className="p-3 font-medium text-slate-700">Service</th>
                     <th className="p-3 font-medium text-slate-700">Amount</th>
-                    <th className="p-3 font-medium text-slate-700">Date Paid</th>
+                    <th className="p-3 font-medium text-slate-700">
+                      Date Paid
+                    </th>
                   </tr>
                 </thead>
                 <tbody>

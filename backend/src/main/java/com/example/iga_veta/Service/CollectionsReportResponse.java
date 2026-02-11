@@ -7,16 +7,18 @@ public class CollectionsReportResponse {
     private BigDecimal totalIncome;
     private long totalTransactions;
 
+    // ✅ NEW
+    private BigDecimal totalPaid;
+
     private int page;
     private int size;
     private long totalElements;
     private int totalPages;
 
-    private List<?> rows;               // projection list
-    private List<?> summaryByService;   // projection list
+    private List<?> rows;
+    private List<?> summaryByService;
     private BigDecimal totalAmount;
 
-    // ✅ dropdown options returned by endpoint
     private List<String> centres;
     private List<String> zones;
     private List<ServiceOptionDto> services;
@@ -26,6 +28,10 @@ public class CollectionsReportResponse {
 
     public long getTotalTransactions() { return totalTransactions; }
     public void setTotalTransactions(long totalTransactions) { this.totalTransactions = totalTransactions; }
+
+    // ✅ NEW
+    public BigDecimal getTotalPaid() { return totalPaid; }
+    public void setTotalPaid(BigDecimal totalPaid) { this.totalPaid = totalPaid; }
 
     public int getPage() { return page; }
     public void setPage(int page) { this.page = page; }

@@ -30,9 +30,15 @@ interface ReportRow {
   zoneName: string;
   serviceCode: string;
   serviceDesc: string;
-  paymentType?: string; // ✅ ADD THIS
+  paymentType?: string;
   controlNumber: string;
+
+  // ✅ existing: amount billed (backend uses amountBilled as "amount")
   amount: number;
+
+  // ✅ NEW: amount paid per row (requires backend to return it in reportRows projection)
+  amountPaid?: number;
+
   datePaid: string; // ISO
 }
 
@@ -53,6 +59,9 @@ interface ReportResponse extends ReportFilters {
   totalIncome: number;
   totalTransactions: number;
 
+  // ✅ NEW: total paid (sum of amountPaid)
+  totalPaid: number;
+
   page: number;
   size: number;
   totalElements: number;
@@ -60,7 +69,7 @@ interface ReportResponse extends ReportFilters {
 
   rows: ReportRow[];
   summaryByService: ServiceSummaryRow[];
-  totalAmount: number;
+  totalAmount: number; // exact total (filtered) for amount billed
 }
 
 /** -------- helpers -------- */
@@ -91,10 +100,15 @@ export default function CollectionReport() {
   const [totalTransactions, setTotalTransactions] = useState(0);
   const [totalAmount, setTotalAmount] = useState(0);
 
+  // ✅ NEW
+  const [totalPaid, setTotalPaid] = useState(0);
+
   // dropdown options
   const [centreOptions, setCentreOptions] = useState<string[]>([]);
   const [zoneOptions, setZoneOptions] = useState<string[]>([]);
-  const [serviceOptions, setServiceOptions] = useState<Array<{ serviceCode: string; serviceDesc: string }>>([]);
+  const [serviceOptions, setServiceOptions] = useState<
+    Array<{ serviceCode: string; serviceDesc: string }>
+  >([]);
 
   const [loading, setLoading] = useState(true);
 
@@ -105,9 +119,9 @@ export default function CollectionReport() {
 
   // === User Role & Permissions ===
   const userType =
-    (typeof window !== "undefined" ? (localStorage.getItem("userType") || "") : "").toUpperCase();
-  const userCentre = typeof window !== "undefined" ? (localStorage.getItem("centre") || "") : "";
-  const userZone = typeof window !== "undefined" ? (localStorage.getItem("zone") || "") : "";
+    (typeof window !== "undefined" ? localStorage.getItem("userType") || "" : "").toUpperCase();
+  const userCentre = typeof window !== "undefined" ? localStorage.getItem("centre") || "" : "";
+  const userZone = typeof window !== "undefined" ? localStorage.getItem("zone") || "" : "";
 
   const isHQUser = userType === "HQ";
   const isCentreUser = userType === "CENTRE" && Boolean(userCentre);
@@ -130,13 +144,25 @@ export default function CollectionReport() {
     return {
       fromDate,
       toDate,
-      centre: isCentreUser ? userCentre : (centre === "ALL" ? null : centre),
-      zone: isZoneUser ? userZone : (zone === "ALL" ? null : zone),
+      centre: isCentreUser ? userCentre : centre === "ALL" ? null : centre,
+      zone: isZoneUser ? userZone : zone === "ALL" ? null : zone,
       serviceCode: serviceCode === "ALL" ? null : serviceCode,
       page,
       size,
     };
-  }, [fromDate, toDate, centre, zone, serviceCode, page, size, isCentreUser, isZoneUser, userCentre, userZone]);
+  }, [
+    fromDate,
+    toDate,
+    centre,
+    zone,
+    serviceCode,
+    page,
+    size,
+    isCentreUser,
+    isZoneUser,
+    userCentre,
+    userZone,
+  ]);
 
   /** debounce fetch */
   const debounceRef = useRef<number | null>(null);
@@ -192,14 +218,21 @@ export default function CollectionReport() {
       setTotalTransactions(toSafeNumber(data.totalTransactions));
       setTotalAmount(toSafeNumber(data.totalAmount));
 
+      // ✅ NEW
+      setTotalPaid(toSafeNumber((data as any).totalPaid));
+
       setTotalPages(Math.max(1, toSafeNumber(data.totalPages) || 1));
 
       const serverCentres = (data.centres || []).filter(Boolean);
       const serverZones = (data.zones || []).filter(Boolean);
       const serverServices = (data.services || []).filter((s) => s?.serviceCode && s?.serviceDesc);
 
-      const fallbackCentres = Array.from(new Set((data.rows || []).map((r) => r.centreName).filter(Boolean)));
-      const fallbackZones = Array.from(new Set((data.rows || []).map((r) => r.zoneName).filter(Boolean)));
+      const fallbackCentres = Array.from(
+        new Set((data.rows || []).map((r) => r.centreName).filter(Boolean))
+      );
+      const fallbackZones = Array.from(
+        new Set((data.rows || []).map((r) => r.zoneName).filter(Boolean))
+      );
 
       const fallbackServices = Array.from(
         new Map(
@@ -209,12 +242,14 @@ export default function CollectionReport() {
         ).values()
       );
 
-      setCentreOptions(isCentreUser ? [userCentre] : (serverCentres.length ? serverCentres : fallbackCentres));
-      setZoneOptions(isZoneUser ? [userZone] : (serverZones.length ? serverZones : fallbackZones));
+      setCentreOptions(isCentreUser ? [userCentre] : serverCentres.length ? serverCentres : fallbackCentres);
+      setZoneOptions(isZoneUser ? [userZone] : serverZones.length ? serverZones : fallbackZones);
       setServiceOptions(serverServices.length ? serverServices : fallbackServices);
 
       if (serviceCode !== "ALL") {
-        const exists = (serverServices.length ? serverServices : fallbackServices).some((s) => s.serviceCode === serviceCode);
+        const exists = (serverServices.length ? serverServices : fallbackServices).some(
+          (s) => s.serviceCode === serviceCode
+        );
         if (!exists) setServiceCode("ALL");
       }
     } catch (e) {
@@ -226,6 +261,7 @@ export default function CollectionReport() {
       setTotalIncome(0);
       setTotalTransactions(0);
       setTotalAmount(0);
+      setTotalPaid(0);
       setTotalPages(1);
 
       setCentreOptions(isCentreUser ? [userCentre] : []);
@@ -252,6 +288,10 @@ export default function CollectionReport() {
       const allRows: ReportRow[] = [];
       const maxPages = totalPages;
 
+      // also capture totals from the first page response (it already contains totals)
+      let exportTotalAmount = totalAmount;
+      let exportTotalPaid = totalPaid;
+
       for (let p = 0; p < maxPages; p++) {
         const res = await fetch(`${apiUrl}/collections/report`, {
           method: "POST",
@@ -269,11 +309,28 @@ export default function CollectionReport() {
         const data: ReportResponse = await res.json();
         allRows.push(...(data.rows || []));
 
+        if (p === 0) {
+          exportTotalAmount = toSafeNumber(data.totalAmount);
+          exportTotalPaid = toSafeNumber((data as any).totalPaid);
+        }
+
         if ((data.totalPages || 1) <= p + 1) break;
       }
 
-      // ✅ ADD "Payment Type"
-      const header = ["#", "Customer", "Center", "Zone", "Service Code", "Service", "Payment Type", "Control Number", "Amount (TZS)", "Date Paid"];
+      // ✅ Updated header includes Amount Paid
+      const header = [
+        "#",
+        "Customer",
+        "Center",
+        "Zone",
+        "Service Code",
+        "Service",
+        "Payment Type",
+        "Control Number",
+        "Amount Billed (TZS)",
+        "Amount Paid (TZS)",
+        "Date Paid",
+      ];
 
       const body = allRows.map((r, i) => [
         i + 1,
@@ -282,15 +339,29 @@ export default function CollectionReport() {
         r.zoneName || "N/A",
         r.serviceCode || "N/A",
         r.serviceDesc || "N/A",
-        r.paymentType || "", 
+        r.paymentType || "",
         r.controlNumber || "",
         toSafeNumber(r.amount),
+        toSafeNumber(r.amountPaid),
         r.datePaid ? String(r.datePaid).split("T")[0] : "",
       ]);
 
-      const totalRow = ["", "", "", "", "", "", "TOTAL", toSafeNumber(totalAmount), ""];
+      // ✅ totals row matches header length
+      const totalsRow = [
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "TOTALS",
+        toSafeNumber(exportTotalAmount),
+        toSafeNumber(exportTotalPaid),
+        "",
+      ];
 
-      const wsData = [header, ...body, totalRow];
+      const wsData = [header, ...body, totalsRow];
       const ws = XLSX.utils.aoa_to_sheet(wsData);
 
       // style header
@@ -305,17 +376,23 @@ export default function CollectionReport() {
         }
       });
 
-      // numeric amount format (now amount is column 7)
+      // numeric format for billed (col 8) + paid (col 9)
       body.forEach((_, rowIndex) => {
         const excelRow = rowIndex + 1;
-        const amountCell = ws[XLSX.utils.encode_cell({ r: excelRow, c: 7 })];
-        if (amountCell) {
-          amountCell.t = "n";
-          amountCell.z = '#,##0" TZS"';
+
+        const billedCell = ws[XLSX.utils.encode_cell({ r: excelRow, c: 8 })];
+        if (billedCell) {
+          billedCell.t = "n";
+          billedCell.z = '#,##0" TZS"';
+        }
+
+        const paidCell = ws[XLSX.utils.encode_cell({ r: excelRow, c: 9 })];
+        if (paidCell) {
+          paidCell.t = "n";
+          paidCell.z = '#,##0" TZS"';
         }
       });
 
-      // widths (✅ add paymentType col)
       ws["!cols"] = [
         { wch: 5 },
         { wch: 24 },
@@ -323,9 +400,11 @@ export default function CollectionReport() {
         { wch: 14 },
         { wch: 16 },
         { wch: 34 },
-        { wch: 22 }, // Payment Type
-        { wch: 16 },
-        { wch: 16 },
+        { wch: 22 },
+        { wch: 18 },
+        { wch: 18 },
+        { wch: 18 },
+        { wch: 14 },
       ];
 
       const wb = XLSX.utils.book_new();
@@ -376,39 +455,57 @@ export default function CollectionReport() {
         </div>
 
         {/* Stats */}
-        <div className="grid gap-4 sm:grid-cols-3">
-          <Card className="rounded-2xl border-slate-200/60 bg-white shadow-sm">
-            <CardHeader>
-              <CardDescription>Total Income</CardDescription>
-            </CardHeader>
-            <CardContent className="text-2xl font-semibold">
-              {toSafeNumber(totalIncome).toLocaleString()} <span className="text-sm text-slate-500">TZS</span>
-            </CardContent>
-          </Card>
+        <div className="grid gap-4 sm:grid-cols-4">
 
-          <Card className="rounded-2xl border-slate-200/60 bg-white shadow-sm">
-            <CardHeader>
-              <CardDescription>Total Transactions</CardDescription>
-            </CardHeader>
-            <CardContent className="text-2xl font-semibold">
-              {toSafeNumber(totalTransactions).toLocaleString()}
-            </CardContent>
-          </Card>
+  {/* Total Income */}
+  <Card className="rounded-2xl border border-slate-200/60 bg-gradient-to-br from-blue-50 via-white to-blue-100 shadow-sm hover:shadow-md transition">
+    <CardHeader>
+      <CardDescription className="text-slate-600">Total Billed</CardDescription>
+    </CardHeader>
+    <CardContent className="text-2xl font-semibold text-slate-900">
+      {toSafeNumber(totalIncome).toLocaleString()}{" "}
+      <span className="text-sm text-slate-500">TZS</span>
+    </CardContent>
+  </Card>
 
-          <Card className="rounded-2xl border-slate-200/60 bg-white shadow-sm">
-            <CardHeader>
-              <CardDescription>Total Amount (Filtered)</CardDescription>
-            </CardHeader>
-            <CardContent className="text-2xl font-semibold">
-              {toSafeNumber(totalAmount).toLocaleString()} <span className="text-sm text-slate-500">TZS</span>
-            </CardContent>
-          </Card>
-        </div>
+  {/* Total Paid */}
+  <Card className="rounded-2xl border border-slate-200/60 bg-gradient-to-br from-green-50 via-white to-green-100 shadow-sm hover:shadow-md transition">
+    <CardHeader>
+      <CardDescription className="text-slate-600">Total Paid</CardDescription>
+    </CardHeader>
+    <CardContent className="text-2xl font-semibold text-slate-900">
+      {toSafeNumber(totalPaid).toLocaleString()}{" "}
+      <span className="text-sm text-slate-500">TZS</span>
+    </CardContent>
+  </Card>
+
+  {/* Total Transactions */}
+  <Card className="rounded-2xl border border-slate-200/60 bg-gradient-to-br from-purple-50 via-white to-purple-100 shadow-sm hover:shadow-md transition">
+    <CardHeader>
+      <CardDescription className="text-slate-600">Total Transactions</CardDescription>
+    </CardHeader>
+    <CardContent className="text-2xl font-semibold text-slate-900">
+      {toSafeNumber(totalTransactions).toLocaleString()}
+    </CardContent>
+  </Card>
+
+  {/* Total Amount Filtered */}
+  <Card className="rounded-2xl border border-slate-200/60 bg-gradient-to-br from-orange-50 via-white to-orange-100 shadow-sm hover:shadow-md transition">
+    <CardHeader>
+      <CardDescription className="text-slate-600">Total Amount (Filtered)</CardDescription>
+    </CardHeader>
+    <CardContent className="text-2xl font-semibold text-slate-900">
+      {toSafeNumber(totalAmount).toLocaleString()}{" "}
+      <span className="text-sm text-slate-500">TZS</span>
+    </CardContent>
+  </Card>
+
+</div>
 
         <Card className="relative overflow-hidden rounded-2xl border-slate-200/60 bg-white shadow-sm">
           <CardHeader className="relative">
             <CardDescription className="text-slate-600">
-              Filter by date, service (name), centre and zone (server-side filtering for speed).
+              Filter by date, service (name), centre and zone 
             </CardDescription>
           </CardHeader>
 
@@ -441,30 +538,6 @@ export default function CollectionReport() {
                     className="h-10 rounded-xl border-slate-200 bg-white"
                   />
                 </div>
-
-                {/* SERVICE */}
-                {/* <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-slate-700">Service</label>
-                  <Select
-                    value={serviceCode}
-                    onValueChange={(v) => {
-                      setPage(0);
-                      setServiceCode(v);
-                    }}
-                  >
-                    <SelectTrigger className="h-10 rounded-xl border-slate-200 bg-white">
-                      <SelectValue placeholder="All" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="ALL">All</SelectItem>
-                      {serviceOptions.map((s) => (
-                        <SelectItem key={s.serviceCode} value={s.serviceCode}>
-                          {s.serviceDesc}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div> */}
 
                 {/* CENTRE */}
                 {(!isCentreUser || isHQUser) && (
@@ -528,54 +601,53 @@ export default function CollectionReport() {
             </div>
 
             {/* Table */}
-            {/* Table */}
-<div className="mt-6 overflow-auto rounded-2xl border border-slate-200/70 bg-white">
-  <table className="min-w-full text-sm text-left">
-    <thead className="sticky top-0 z-10 bg-slate-900 text-white">
-      <tr>
-        <th className="p-3 font-medium">#</th>
-        <th className="p-3 font-medium">Customer</th>
-        <th className="p-3 font-medium">Service Code</th>
-        <th className="p-3 font-medium">Service</th>
-        <th className="p-3 font-medium">Payment Type</th>
-        <th className="p-3 font-medium">Control Number</th>
-        <th className="p-3 font-medium text-right">Amount (TZS)</th>
-        <th className="p-3 font-medium">Date Paid</th>
-      </tr>
-    </thead>
+            <div className="mt-6 overflow-auto rounded-2xl border border-slate-200/70 bg-white">
+              <table className="min-w-full text-sm text-left">
+                <thead className="sticky top-0 z-10 bg-slate-900 text-white">
+                  <tr>
+                    <th className="p-3 font-medium">#</th>
+                    <th className="p-3 font-medium">Customer</th>
+                    <th className="p-3 font-medium">Service Code</th>
+                    <th className="p-3 font-medium">Service</th>
+                    <th className="p-3 font-medium">Payment Type</th>
+                    <th className="p-3 font-medium">Control Number</th>
+                    <th className="p-3 font-medium text-right">Amount Billed (TZS)</th>
+                    <th className="p-3 font-medium text-right">Amount Paid (TZS)</th>
+                    <th className="p-3 font-medium">Date Paid</th>
+                  </tr>
+                </thead>
 
-    <tbody>
-      {rows.length > 0 ? (
-        rows.map((row, i) => (
-          <tr
-            key={row.id}
-            className="border-t border-slate-200/70 hover:bg-slate-50"
-          >
-            <td className="p-3 text-slate-700">{page * size + i + 1}</td>
-            <td className="p-3 text-slate-900">{row.customerName}</td>
-            <td className="p-3 text-slate-700">{row.serviceCode}</td>
-            <td className="p-3 text-slate-700">{row.serviceDesc}</td>
-            <td className="p-3 text-slate-700">{row.paymentType || "-"}</td>
-            <td className="p-3 text-slate-700">{row.controlNumber || "-"}</td>
-            <td className="p-3 text-right font-semibold text-slate-900">
-              {toSafeNumber(row.amount).toLocaleString()}
-            </td>
-            <td className="p-3 text-slate-700">
-              {row.datePaid ? String(row.datePaid).split("T")[0] : ""}
-            </td>
-          </tr>
-        ))
-      ) : (
-        <tr>
-          <td colSpan={7} className="p-10 text-center text-slate-500">
-            No records found.
-          </td>
-        </tr>
-      )}
-    </tbody>
-  </table>
-</div>
-
+                <tbody>
+                  {rows.length > 0 ? (
+                    rows.map((row, i) => (
+                      <tr key={row.id} className="border-t border-slate-200/70 hover:bg-slate-50">
+                        <td className="p-3 text-slate-700">{page * size + i + 1}</td>
+                        <td className="p-3 text-slate-900">{row.customerName}</td>
+                        <td className="p-3 text-slate-700">{row.serviceCode}</td>
+                        <td className="p-3 text-slate-700">{row.serviceDesc}</td>
+                        <td className="p-3 text-slate-700">{row.paymentType || "-"}</td>
+                        <td className="p-3 text-slate-700">{row.controlNumber || "-"}</td>
+                        <td className="p-3 text-right font-semibold text-slate-900">
+                          {toSafeNumber(row.amount).toLocaleString()}
+                        </td>
+                        <td className="p-3 text-right font-semibold text-slate-900">
+                          {toSafeNumber(row.amountPaid).toLocaleString()}
+                        </td>
+                        <td className="p-3 text-slate-700">
+                          {row.datePaid ? String(row.datePaid).split("T")[0] : ""}
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={9} className="p-10 text-center text-slate-500">
+                        No records found.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
 
             {/* Pagination */}
             <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -610,8 +682,13 @@ export default function CollectionReport() {
                 <p className="text-sm text-slate-600">Totals grouped by service.</p>
               </div>
 
-              <div className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-700 shadow-sm">
-                Total: <span className="font-semibold">{toSafeNumber(totalAmount).toLocaleString()} TZS</span>
+              <div className="flex gap-2">
+                <div className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-700 shadow-sm">
+                  Billed: <span className="font-semibold">{toSafeNumber(totalAmount).toLocaleString()} TZS</span>
+                </div>
+                <div className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-700 shadow-sm">
+                  Paid: <span className="font-semibold">{toSafeNumber(totalPaid).toLocaleString()} TZS</span>
+                </div>
               </div>
             </div>
 
@@ -638,7 +715,7 @@ export default function CollectionReport() {
               </table>
             </div>
 
-            {/* Export */}
+            {/* Export
             <div className="mt-8 flex flex-wrap gap-3">
               <Button
                 onClick={exportExcel}
@@ -647,7 +724,7 @@ export default function CollectionReport() {
                 <FileSpreadsheet className="mr-2 h-4 w-4" />
                 Export Excel
               </Button>
-            </div>
+            </div> */}
           </CardContent>
         </Card>
       </div>
