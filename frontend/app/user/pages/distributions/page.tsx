@@ -12,17 +12,11 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
 import Swal from "sweetalert2";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-} from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/card";
 import { toast } from "sonner";
 
 export default function DistributionReportPage() {
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || "/api";
-
 
   // Filters
   const [startDate, setStartDate] = useState("");
@@ -35,7 +29,10 @@ export default function DistributionReportPage() {
   // Data
   const [data, setData] = useState<any[]>([]);
   const [filteredData, setFilteredData] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+
+  // ✅ start NOT loading; only load when user clicks Apply
+  const [loading, setLoading] = useState(false);
+  const [hasApplied, setHasApplied] = useState(false);
 
   // Pagination + state
   const [currentPage, setCurrentPage] = useState(1);
@@ -168,6 +165,7 @@ export default function DistributionReportPage() {
 
       setData(userFilteredData);
       setFilteredData(userFilteredData);
+      setCurrentPage(1);
     } catch (err) {
       console.error("Error fetching distribution data:", err);
       toast("Failed to fetch data");
@@ -178,7 +176,7 @@ export default function DistributionReportPage() {
     }
   };
 
-  // Initial load: set current month and fetch
+  // ✅ Initial load: ONLY set dates, DON'T fetch until user clicks Apply
   useEffect(() => {
     const today = new Date();
     const year = today.getFullYear();
@@ -192,10 +190,17 @@ export default function DistributionReportPage() {
 
     setStartDate(firstDay);
     setEndDate(lastDay);
-
-    fetchData(firstDay, lastDay);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const handleApply = async () => {
+    if (!startDate || !endDate) {
+      toast("Please select both start and end date");
+      return;
+    }
+    setHasApplied(true);
+    setApportionmentSaved(false); // optional reset when re-applying
+    await fetchData(startDate, endDate);
+  };
 
   // Unique options based on data
   const uniqueCentres = useMemo(() => {
@@ -216,13 +221,11 @@ export default function DistributionReportPage() {
 
   const uniqueDescriptions = useMemo(() => {
     return Array.from(
-      new Set(data.map((item) =>
-        getDescriptionLabel(item.gfs_code_description)
-      ))
+      new Set(data.map((item) => getDescriptionLabel(item.gfs_code_description)))
     );
   }, [data]);
 
-  // Reactive filtering
+  // Reactive filtering (runs after fetch or filter changes)
   useEffect(() => {
     if (!data.length) {
       setFilteredData([]);
@@ -263,7 +266,17 @@ export default function DistributionReportPage() {
 
     setFilteredData(filtered);
     setCurrentPage(1);
-  }, [data, startDate, endDate, course, description, centre, zone, isCentreUser, isHQUser]);
+  }, [
+    data,
+    startDate,
+    endDate,
+    course,
+    description,
+    centre,
+    zone,
+    isCentreUser,
+    isHQUser,
+  ]);
 
   // Pagination
   const indexOfLastRow = currentPage * rowsPerPage;
@@ -418,19 +431,13 @@ export default function DistributionReportPage() {
   const saveApportionment = async () => {
     try {
       if (!centre && !isCentreUser) {
-        Swal.fire(
-          "Warning",
-          "Please select a centre to save apportionment.",
-          "warning"
-        );
+        Swal.fire("Warning", "Please select a centre to save apportionment.", "warning");
         return;
       }
 
       let centreRow;
       if (isCentreUser) {
-        centreRow = data.find(
-          (d) => d.centre?.toLowerCase() === userCentre.toLowerCase()
-        );
+        centreRow = data.find((d) => d.centre?.toLowerCase() === userCentre.toLowerCase());
       } else {
         centreRow = data.find((d) => d.centre?.toLowerCase() === centre.toLowerCase());
       }
@@ -443,8 +450,7 @@ export default function DistributionReportPage() {
       const centreId = centreRow.centre_id;
       const rowsForCentre = filteredData.filter(
         (row) =>
-          row.centre?.toLowerCase() ===
-          (isCentreUser ? userCentre : centre).toLowerCase()
+          row.centre?.toLowerCase() === (isCentreUser ? userCentre : centre).toLowerCase()
       );
 
       if (!rowsForCentre.length) {
@@ -497,16 +503,16 @@ export default function DistributionReportPage() {
     }
   };
 
- if (loading) {
-  return (
-    <div className="w-full h-screen flex items-center justify-center">
-      <div className="relative w-16 h-16">
-        <span className="absolute inset-0 rounded-full bg-sky-600 animate-ping"></span>
-        <span className="absolute inset-2 rounded-full bg-sky-700"></span>
+  if (loading) {
+    return (
+      <div className="w-full h-screen flex items-center justify-center">
+        <div className="relative w-16 h-16">
+          <span className="absolute inset-0 rounded-full bg-sky-600 animate-ping"></span>
+          <span className="absolute inset-2 rounded-full bg-sky-700"></span>
+        </div>
       </div>
-    </div>
-  );
-}
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-slate-50">
@@ -524,9 +530,7 @@ export default function DistributionReportPage() {
                 </BreadcrumbLink>
               </BreadcrumbItem>
               <BreadcrumbSeparator />
-              <BreadcrumbItem className="text-slate-600">
-                Distribution
-              </BreadcrumbItem>
+              <BreadcrumbItem className="text-slate-600">Distribution</BreadcrumbItem>
             </BreadcrumbList>
           </Breadcrumb>
 
@@ -552,7 +556,7 @@ export default function DistributionReportPage() {
             <div className="flex gap-2">
               <Button
                 className="h-10 rounded-xl bg-slate-900 text-white hover:bg-slate-800 shadow-sm"
-                onClick={() => fetchData(startDate, endDate)}
+                onClick={handleApply}
               >
                 Apply
               </Button>
@@ -564,9 +568,7 @@ export default function DistributionReportPage() {
             <div className="rounded-2xl border border-slate-200/70 bg-gradient-to-b from-slate-50 to-white p-4 sm:p-5">
               <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
                 <div className="md:col-span-2 space-y-1.5">
-                  <label className="block text-xs font-medium text-slate-700">
-                    From
-                  </label>
+                  <label className="block text-xs font-medium text-slate-700">From</label>
                   <Input
                     type="date"
                     value={startDate}
@@ -576,9 +578,7 @@ export default function DistributionReportPage() {
                 </div>
 
                 <div className="md:col-span-2 space-y-1.5">
-                  <label className="block text-xs font-medium text-slate-700">
-                    To
-                  </label>
+                  <label className="block text-xs font-medium text-slate-700">To</label>
                   <Input
                     type="date"
                     value={endDate}
@@ -588,9 +588,7 @@ export default function DistributionReportPage() {
                 </div>
 
                 <div className="md:col-span-2 space-y-1.5">
-                  <label className="block text-xs font-medium text-slate-700">
-                    Course
-                  </label>
+                  <label className="block text-xs font-medium text-slate-700">Course</label>
                   <select
                     className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none focus:ring-2 focus:ring-slate-900/10"
                     value={course}
@@ -606,9 +604,7 @@ export default function DistributionReportPage() {
                 </div>
 
                 <div className="md:col-span-3 space-y-1.5">
-                  <label className="block text-xs font-medium text-slate-700">
-                    Description
-                  </label>
+                  <label className="block text-xs font-medium text-slate-700">Description</label>
                   <select
                     className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none focus:ring-2 focus:ring-slate-900/10"
                     value={description}
@@ -625,9 +621,7 @@ export default function DistributionReportPage() {
 
                 {(isZoneUser || isHQUser) && (
                   <div className="md:col-span-1 space-y-1.5">
-                    <label className="block text-xs font-medium text-slate-700">
-                      Centre
-                    </label>
+                    <label className="block text-xs font-medium text-slate-700">Centre</label>
                     <select
                       className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none focus:ring-2 focus:ring-slate-900/10"
                       value={centre}
@@ -645,9 +639,7 @@ export default function DistributionReportPage() {
 
                 {isHQUser && (
                   <div className="md:col-span-1 space-y-1.5">
-                    <label className="block text-xs font-medium text-slate-700">
-                      Zone
-                    </label>
+                    <label className="block text-xs font-medium text-slate-700">Zone</label>
                     <select
                       className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none focus:ring-2 focus:ring-slate-900/10"
                       value={zone}
@@ -679,39 +671,21 @@ export default function DistributionReportPage() {
                     <th className="px-2 py-2 font-medium">#</th>
                     <th className="px-2 py-2 font-medium">Course</th>
                     <th className="px-2 py-2 font-medium">Description</th>
-                    <th className="px-2 py-2 font-medium text-right">
-                      Collections
-                    </th>
-                    <th className="px-2 py-2 font-medium text-right">
-                      Expenditure
-                    </th>
+                    <th className="px-2 py-2 font-medium text-right">Collections</th>
+                    <th className="px-2 py-2 font-medium text-right">Expenditure</th>
                     <th className="px-2 py-2 font-medium text-right text-xs">
                       Profit Markup As Per GIGA
                     </th>
-                    <th className="px-2 py-2 font-medium text-right">
-                      Contribution Central IGA
-                    </th>
-                    <th className="px-2 py-2 font-medium text-right">
-                      Facilitation Central
-                    </th>
-                    <th className="px-2 py-2 font-medium text-right">
-                      Facilitation Zonal
-                    </th>
-                    <th className="px-2 py-2 font-medium text-right">
-                      Facilitation Centre
-                    </th>
-                    <th className="px-2 py-2 font-medium text-right">
-                      Support Production
-                    </th>
-                    <th className="px-2 py-2 font-medium text-right">
-                      Contribution Centre IGA
-                    </th>
+                    <th className="px-2 py-2 font-medium text-right">Contribution Central IGA</th>
+                    <th className="px-2 py-2 font-medium text-right">Facilitation Central</th>
+                    <th className="px-2 py-2 font-medium text-right">Facilitation Zonal</th>
+                    <th className="px-2 py-2 font-medium text-right">Facilitation Centre</th>
+                    <th className="px-2 py-2 font-medium text-right">Support Production</th>
+                    <th className="px-2 py-2 font-medium text-right">Contribution Centre IGA</th>
                     <th className="px-2 py-2 font-medium text-left text-xs">
                       Depreciation/Incentive
                     </th>
-                    <th className="px-2 py-2 font-medium text-right">
-                      Remitted To Centre
-                    </th>
+                    <th className="px-2 py-2 font-medium text-right">Remitted To Centre</th>
                   </tr>
                 </thead>
 
@@ -731,7 +705,6 @@ export default function DistributionReportPage() {
                         <td className="px-2 py-2 text-slate-700">
                           {getDescriptionLabel(row.gfs_code_description)}
                         </td>
-
                         <td className="px-2 py-2 text-right font-semibold text-slate-900">
                           {formatNumber(row.originalAmount)}
                         </td>
@@ -745,17 +718,13 @@ export default function DistributionReportPage() {
                           {formatNumber(row.contributionToCentralIGA)}
                         </td>
                         <td className="px-2 py-2 text-right text-slate-800">
-                          {formatNumber(
-                            row.facilitationOfIGAForCentralActivities
-                          )}
+                          {formatNumber(row.facilitationOfIGAForCentralActivities)}
                         </td>
                         <td className="px-2 py-2 text-right text-slate-800">
                           {formatNumber(row.facilitationZonalActivities)}
                         </td>
                         <td className="px-2 py-2 text-right text-slate-800">
-                          {formatNumber(
-                            row.facilitationOfIGAForCentreActivities
-                          )}
+                          {formatNumber(row.facilitationOfIGAForCentreActivities)}
                         </td>
                         <td className="px-2 py-2 text-right text-slate-800">
                           {formatNumber(row.supportToProductionUnit)}
@@ -764,9 +733,7 @@ export default function DistributionReportPage() {
                           {formatNumber(row.contributionToCentreIGAFund)}
                         </td>
                         <td className="px-2 py-2 text-right text-slate-800">
-                          {formatNumber(
-                            row.depreciationIncentiveToFacilitators
-                          )}
+                          {formatNumber(row.depreciationIncentiveToFacilitators)}
                         </td>
                         <td className="px-2 py-2 text-right font-semibold text-slate-900">
                           {formatNumber(row.remittedToCentre)}
@@ -775,11 +742,10 @@ export default function DistributionReportPage() {
                     ))
                   ) : (
                     <tr>
-                      <td
-                        colSpan={14}
-                        className="text-center py-10 text-slate-500"
-                      >
-                        No data available
+                      <td colSpan={14} className="text-center py-10 text-slate-500">
+                        {!hasApplied
+                          ? "Select filters then click Apply to load the report"
+                          : "No data available for the selected filters"}
                       </td>
                     </tr>
                   )}
@@ -791,13 +757,8 @@ export default function DistributionReportPage() {
             <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between text-sm">
               <div className="text-slate-600">
                 Page{" "}
-                <span className="font-semibold text-slate-900">
-                  {currentPage}
-                </span>{" "}
-                of{" "}
-                <span className="font-semibold text-slate-900">
-                  {totalPages || 1}
-                </span>
+                <span className="font-semibold text-slate-900">{currentPage}</span> of{" "}
+                <span className="font-semibold text-slate-900">{totalPages || 1}</span>
               </div>
 
               <div className="flex gap-2">
@@ -813,9 +774,7 @@ export default function DistributionReportPage() {
                   variant="outline"
                   className="h-10 rounded-xl border-slate-200 bg-white"
                   disabled={currentPage === totalPages || totalPages === 0}
-                  onClick={() =>
-                    setCurrentPage((p) => Math.min(p + 1, totalPages))
-                  }
+                  onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
                 >
                   Next
                 </Button>
@@ -826,16 +785,11 @@ export default function DistributionReportPage() {
             <div className="mt-10 flex items-end justify-between gap-4">
               <div>
                 <h3 className="text-lg font-semibold text-slate-900">Summary</h3>
-                <p className="text-sm text-slate-600">
-                  Totals based on your current filters.
-                </p>
+                <p className="text-sm text-slate-600">Totals based on your current filters.</p>
               </div>
 
               <div className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-700 shadow-sm">
-                Grand Total:{" "}
-                <span className="font-semibold">
-                  {formatNumber(grandTotal)}
-                </span>
+                Grand Total: <span className="font-semibold">{formatNumber(grandTotal)}</span>
               </div>
             </div>
 
@@ -843,9 +797,7 @@ export default function DistributionReportPage() {
               <table className="min-w-full text-sm text-left border-collapse">
                 <tbody>
                   <tr className="border-b border-slate-200/70 font-semibold">
-                    <td className="px-3 py-3 text-slate-700">
-                      Expenditure as per GIGA
-                    </td>
+                    <td className="px-3 py-3 text-slate-700">Expenditure as per GIGA</td>
                     <td className="px-3 py-3 text-right text-slate-900">
                       {formatNumber(totalExpenditureAmount)}
                     </td>
@@ -855,9 +807,7 @@ export default function DistributionReportPage() {
                     <tr key={i} className="border-b border-slate-200/70">
                       <td className="px-3 py-3 text-slate-700">
                         Amount to be Remitted to Centre —{" "}
-                        <span className="font-medium text-slate-900">
-                          {s.course}
-                        </span>
+                        <span className="font-medium text-slate-900">{s.course}</span>
                       </td>
                       <td className="px-3 py-3 text-right text-slate-900">
                         {formatNumber(s.total)}
@@ -917,6 +867,7 @@ export default function DistributionReportPage() {
                 <Button
                   className="h-10 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm"
                   onClick={exportExcel}
+                  disabled={!hasApplied || filteredData.length === 0}
                 >
                   Export Excel
                 </Button>
@@ -925,7 +876,7 @@ export default function DistributionReportPage() {
                   <Button
                     className="h-10 rounded-xl bg-slate-900 text-white hover:bg-slate-800 shadow-sm disabled:opacity-60"
                     onClick={saveApportionment}
-                    disabled={apportionmentSaved}
+                    disabled={apportionmentSaved || !hasApplied || filteredData.length === 0}
                   >
                     {apportionmentSaved ? "Saved" : "Save Apportionment"}
                   </Button>

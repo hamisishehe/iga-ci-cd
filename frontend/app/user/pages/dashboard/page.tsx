@@ -31,14 +31,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 
-ChartJS.register(
-  CategoryScale,
-  LinearScale,
-  BarElement,
-  ArcElement,
-  Tooltip,
-  Legend,
-);
+ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, Tooltip, Legend);
 
 interface Payment {
   name: string;
@@ -72,7 +65,7 @@ interface Summary {
   recentPayments: Payment[];
 }
 
-// Backend response (Map JSON) — no DTO, so we accept flexible shapes
+// Backend response (flexible)
 type DashboardSummaryResponse = {
   totalIncome?: number | string;
   totalTransactions?: number | string;
@@ -90,9 +83,9 @@ type DashboardSummaryResponse = {
     serviceCode?: string;
     service?: string;
     amountBilled?: number | string;
-    amount?: number | string; // ✅ ADD
+    amount?: number | string; // accept both
     datePaid?: string;
-    date?: string; // ✅ ADD
+    date?: string; // accept both
   }>;
 };
 
@@ -103,11 +96,9 @@ const safeNumber = (v: any): number => {
 };
 
 const pad2 = (n: number) => String(n).padStart(2, "0");
-const toYMD = (d: Date) =>
-  `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+const toYMD = (d: Date) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 
-// getRange() returns { start: "YYYY-MM-DD", end: "YYYY-MM-DD" } where end is EXCLUSIVE.
-// This converts endExclusive -> inclusive toDate (endExclusive - 1 day)
+// endExclusive -> inclusive (endExclusive - 1 day)
 const toInclusiveDate = (endExclusiveYmd: string) => {
   const d = new Date(`${endExclusiveYmd}T00:00:00`);
   d.setDate(d.getDate() - 1);
@@ -117,19 +108,17 @@ const toInclusiveDate = (endExclusiveYmd: string) => {
 export default function DashboardPage() {
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || "/api";
 
-  const CENTER_RESTRICTED_ROLES = [
-    "BURSAR",
-    "ACCOUNT_OFFICER",
-    "ASSISTANT_ACCOUNT_OFFICER",
-    "PRINCIPAL",
-  ];
-
   const [loading, setLoading] = useState(true);
+
+  // Role for UI permissions
   const [role, setRole] = useState<string>("");
+
+  // ✅ userType controls filtering: CENTRE | ZONE | HQ
+  const [userType, setUserType] = useState<string>("");
   const [userCentre, setUserCentre] = useState<string>("");
-  const [filterType, setFilterType] = useState<"day" | "yesterday" | "month">(
-    "month",
-  );
+  const [userZone, setUserZone] = useState<string>("");
+
+  const [filterType, setFilterType] = useState<"day" | "yesterday" | "month">("month");
 
   const [summary, setSummary] = useState<Summary>({
     totalIncome: 0,
@@ -144,8 +133,7 @@ export default function DashboardPage() {
 
   const formatServiceName = (service?: string): string => {
     if (!service) return "-";
-    if (service === "Receipts from Application Fee")
-      return "LONG AND SHORT COURSE APPLICATION FEE";
+    if (service === "Receipts from Application Fee") return "LONG AND SHORT COURSE APPLICATION FEE";
     if (service === "OTH") return "SHORT COURSES";
     if (service === "Miscellaneous receipts") return "SEPARATE PRODUCTION UNIT";
     return service.toUpperCase();
@@ -153,15 +141,10 @@ export default function DashboardPage() {
 
   const formatCourseName = (service?: string): string => {
     if (!service) return "-";
-    if (service === "OTH")
-      return "SHORT COURSES, TAILOR MADE, CONTINUOUS LEARNING WORKSHOPS";
+    if (service === "OTH") return "SHORT COURSES, TAILOR MADE, CONTINUOUS LEARNING WORKSHOPS";
     if (service === "Miscellaneous receipts") return "SEPARATE PRODUCTION UNIT";
     return service.toUpperCase();
   };
-
-  const pad2 = (n: number) => String(n).padStart(2, "0");
-  const toYMD = (d: Date) =>
-    `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 
   // returns { start, endExclusive } in YYYY-MM-DD
   const getRange = (type: "day" | "yesterday" | "month") => {
@@ -169,9 +152,7 @@ export default function DashboardPage() {
 
     if (type === "day") {
       const start = toYMD(now);
-      const end = toYMD(
-        new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1),
-      );
+      const end = toYMD(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1));
       return { start, end };
     }
 
@@ -189,22 +170,6 @@ export default function DashboardPage() {
     return { start, end };
   };
 
-  // Backend expects fromDate & toDate inclusive.
-  // Our UI range is start..endExclusive; so toDate = endExclusive - 1 day.
-  const minusOneDay = (ymd: string) => {
-    const [y, m, d] = ymd.split("-").map(Number);
-    const dt = new Date(y, m - 1, d);
-    dt.setDate(dt.getDate() - 1);
-    return toYMD(dt);
-  };
-
-  const safeNumber = (v: unknown) => {
-    if (v == null) return 0;
-    if (typeof v === "number") return v;
-    const n = Number(v);
-    return Number.isFinite(n) ? n : 0;
-  };
-
   const fetchData = useCallback(async () => {
     try {
       const token = localStorage.getItem("authToken");
@@ -217,25 +182,32 @@ export default function DashboardPage() {
 
       setLoading(true);
 
+      // ✅ read from storage
       const storedRole = localStorage.getItem("userRole") || "";
+      const storedType = localStorage.getItem("userType") || ""; // CENTRE | ZONE | HQ
       const storedCentre = localStorage.getItem("centre") || "";
+      const storedZone = localStorage.getItem("zone") || "";
+
       setRole(storedRole);
+      setUserType(storedType);
       setUserCentre(storedCentre);
+      setUserZone(storedZone);
 
-      const restricted = CENTER_RESTRICTED_ROLES.includes(storedRole);
-
-      // Range for UI (start inclusive, end exclusive)
       const { start: uiStart, end: uiEndExclusive } = getRange(filterType);
 
+      // ✅ body with correct inclusive toDate
       const body: any = {
         fromDate: uiStart,
-        toDate: toInclusiveDate(uiEndExclusive), // inclusive (LocalDate)
+        toDate: toInclusiveDate(uiEndExclusive),
       };
 
-      // Only include centre if role is restricted AND centre exists
-      if (restricted && storedCentre) {
+      // ✅ IMPORTANT: apply filtering by userType
+      if (storedType === "CENTRE" && storedCentre) {
         body.centre = storedCentre;
+      } else if (storedType === "ZONE" && storedZone) {
+        body.zone = storedZone; // ✅ requires backend support for zone
       }
+      // HQ: send no centre/zone => global summary
 
       const res = await fetch(`${apiUrl}/collections/summary`, {
         method: "POST",
@@ -258,31 +230,27 @@ export default function DashboardPage() {
 
       console.log("DASHBOARD SUMMARY RAW:", data);
 
-      const topServices: ServiceSummary[] = (data.topServices ?? []).map(
-        (s) => ({
-          serviceCode: s.serviceCode ?? "N/A",
-          service: s.service ?? "",
-          total: safeNumber(s.total),
-        }),
-      );
+      const topServices: ServiceSummary[] = (data.topServices ?? []).map((s) => ({
+        serviceCode: s.serviceCode ?? "N/A",
+        service: s.service ?? "",
+        total: safeNumber(s.total),
+      }));
 
       const topCenters: CenterSummary[] = (data.topCenters ?? []).map((c) => ({
         center: c.center ?? "No Center",
         total: safeNumber(c.total),
       }));
 
-      const bottomCenters: CenterSummary[] = (data.bottomCenters ?? []).map(
-        (c) => ({
-          center: c.center ?? "No Center",
-          total: safeNumber(c.total),
-        }),
-      );
+      const bottomCenters: CenterSummary[] = (data.bottomCenters ?? []).map((c) => ({
+        center: c.center ?? "No Center",
+        total: safeNumber(c.total),
+      }));
 
       const recentPayments: Payment[] = (data.recentPayments ?? []).map((p) => {
-        const iso = p.datePaid ?? p.date ?? ""; // ✅ accept both
+        const iso = p.datePaid ?? p.date ?? "";
         const datePart = iso.includes("T") ? iso.split("T")[0] : iso;
 
-        const amount = p.amountBilled ?? p.amount ?? 0; // ✅ accept both
+        const amount = p.amountBilled ?? p.amount ?? 0;
 
         return {
           name: p.name ?? "Unknown",
@@ -291,7 +259,7 @@ export default function DashboardPage() {
           serviceCode: p.serviceCode ?? "N/A",
           service: p.service ?? "",
           course: formatCourseName(p.service ?? ""),
-          amountBilled: safeNumber(amount), // ✅ use merged value
+          amountBilled: safeNumber(amount),
           date: datePart || "-",
           ts: datePart ? Date.parse(`${datePart}T00:00:00`) : 0,
         };
@@ -326,6 +294,7 @@ export default function DashboardPage() {
       {
         label: "Amount Collected (TZS)",
         data: summary.topServices.map((s) => s.total),
+        // keep your colors if you want
         backgroundColor: ["#0d6efd", "#198754", "#ffc107"],
       },
     ],
@@ -353,6 +322,14 @@ export default function DashboardPage() {
     ],
   };
 
+  // Small badge text to confirm which filter is active
+  const scopeLabel =
+    userType === "CENTRE"
+      ? `CENTRE: ${userCentre || "-"}`
+      : userType === "ZONE"
+      ? `ZONE: ${userZone || "-"}`
+      : "HQ: ALL CENTRES";
+
   if (loading) {
     return (
       <div className="w-full h-screen flex items-center justify-center">
@@ -373,9 +350,7 @@ export default function DashboardPage() {
             <Breadcrumb>
               <BreadcrumbList>
                 <BreadcrumbItem>
-                  <BreadcrumbLink href="/user/pages/dashboard">
-                    Dashboard
-                  </BreadcrumbLink>
+                  <BreadcrumbLink href="/user/pages/dashboard">Dashboard</BreadcrumbLink>
                 </BreadcrumbItem>
                 <BreadcrumbSeparator />
                 <BreadcrumbItem>Dashboard</BreadcrumbItem>
@@ -389,9 +364,15 @@ export default function DashboardPage() {
               <p className="text-sm text-slate-600">
                 Track income, transactions and performance at a glance.
               </p>
-              <p className="text-xs text-slate-500 mt-1">
-                Last updated: {lastUpdated}
-              </p>
+
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-700 shadow-sm">
+                  <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                  {scopeLabel}
+                </span>
+
+                <span className="text-xs text-slate-500">Last updated: {lastUpdated}</span>
+              </div>
             </div>
           </div>
 
@@ -437,8 +418,8 @@ export default function DashboardPage() {
                   {filterType === "day"
                     ? "Today"
                     : filterType === "yesterday"
-                      ? "Yesterday"
-                      : "This Month"}
+                    ? "Yesterday"
+                    : "This Month"}
                   )
                 </span>
               </p>
@@ -470,8 +451,8 @@ export default function DashboardPage() {
                   {filterType === "day"
                     ? "Today"
                     : filterType === "yesterday"
-                      ? "Yesterday"
-                      : "This Month"}
+                    ? "Yesterday"
+                    : "This Month"}
                   )
                 </span>
               </p>
@@ -495,14 +476,10 @@ export default function DashboardPage() {
                 <PieChart size={22} />
               </div>
 
-              <p className="text-sm font-medium text-slate-600 text-center">
-                Top Service
-              </p>
+              <p className="text-sm font-medium text-slate-600 text-center">Top Service</p>
 
               <p className="mt-2 text-center text-xl font-semibold tracking-tight text-slate-900">
-                {summary?.topServices?.[0]?.service
-                  ? formatServiceName(summary.topServices[0].service)
-                  : "-"}
+                {summary?.topServices?.[0]?.service ? formatServiceName(summary.topServices[0].service) : "-"}
               </p>
 
               <div className="mt-3 flex items-center justify-center gap-2 text-xs text-slate-600">
@@ -514,20 +491,14 @@ export default function DashboardPage() {
         </div>
 
         {/* Charts */}
-        {/* Charts */}
         {(role === "DIRECTOR_GENERAL" ||
           role === "DIRECTOR_OF_FINANCE" ||
           role === "FINANCE_MANAGER") && (
           <section className="space-y-6">
-            {/* Header row (optional) */}
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-lg font-semibold text-slate-900">
-                  Analytics
-                </h2>
-                <p className="text-sm text-slate-600">
-                  Revenue insights across services and centers
-                </p>
+                <h2 className="text-lg font-semibold text-slate-900">Analytics</h2>
+                <p className="text-sm text-slate-600">Revenue insights across services and centers</p>
               </div>
 
               <div className="hidden sm:flex items-center gap-2">
@@ -538,16 +509,11 @@ export default function DashboardPage() {
             </div>
 
             <div className="grid gap-6 lg:grid-cols-12">
-              {/* Top Services (wide) */}
               <Card className="lg:col-span-8 rounded-2xl border border-slate-200/60 bg-gradient-to-br from-white via-white to-slate-50 shadow-sm">
                 <CardHeader className="flex flex-row items-start justify-between gap-4">
                   <div className="space-y-1">
-                    <CardTitle className="text-base text-slate-900">
-                      Top Services
-                    </CardTitle>
-                    <p className="text-xs text-slate-600">
-                      Revenue comparison across services
-                    </p>
+                    <CardTitle className="text-base text-slate-900">Top Services</CardTitle>
+                    <p className="text-xs text-slate-600">Revenue comparison across services</p>
                   </div>
 
                   <div className="flex items-center gap-2">
@@ -559,26 +525,17 @@ export default function DashboardPage() {
 
                 <CardContent className="h-72 sm:h-80">
                   <div className="h-full rounded-2xl border border-slate-200/60 bg-gradient-to-b from-slate-50 to-white p-3">
-                    <Bar
-                      data={barData}
-                      options={{ responsive: true, maintainAspectRatio: false }}
-                    />
+                    <Bar data={barData} options={{ responsive: true, maintainAspectRatio: false }} />
                   </div>
                 </CardContent>
               </Card>
 
-              {/* Right side stack */}
               <div className="lg:col-span-4 space-y-6">
-                {/* Top 3 Centers */}
                 <Card className="rounded-2xl border border-slate-200/60 bg-gradient-to-br from-white via-white to-slate-50 shadow-sm">
                   <CardHeader className="flex flex-row items-start justify-between gap-4">
                     <div className="space-y-1">
-                      <CardTitle className="text-base text-slate-900">
-                        Top 3 Centers
-                      </CardTitle>
-                      <p className="text-xs text-slate-600">
-                        Highest revenue centers
-                      </p>
+                      <CardTitle className="text-base text-slate-900">Top 3 Centers</CardTitle>
+                      <p className="text-xs text-slate-600">Highest revenue centers</p>
                     </div>
                     <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-600">
                       Doughnut
@@ -587,27 +544,16 @@ export default function DashboardPage() {
 
                   <CardContent className="h-56 sm:h-64">
                     <div className="h-full rounded-2xl border border-slate-200/60 bg-gradient-to-b from-slate-50 to-white p-3">
-                      <Doughnut
-                        data={topCentersData}
-                        options={{
-                          responsive: true,
-                          maintainAspectRatio: false,
-                        }}
-                      />
+                      <Doughnut data={topCentersData} options={{ responsive: true, maintainAspectRatio: false }} />
                     </div>
                   </CardContent>
                 </Card>
 
-                {/* Bottom 3 Centers */}
                 <Card className="rounded-2xl border border-slate-200/60 bg-gradient-to-br from-white via-white to-slate-50 shadow-sm">
                   <CardHeader className="flex flex-row items-start justify-between gap-4">
                     <div className="space-y-1">
-                      <CardTitle className="text-base text-slate-900">
-                        Bottom 3 Centers
-                      </CardTitle>
-                      <p className="text-xs text-slate-600">
-                        Lowest revenue centers
-                      </p>
+                      <CardTitle className="text-base text-slate-900">Bottom 3 Centers</CardTitle>
+                      <p className="text-xs text-slate-600">Lowest revenue centers</p>
                     </div>
                     <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-600">
                       Doughnut
@@ -618,10 +564,7 @@ export default function DashboardPage() {
                     <div className="h-full rounded-2xl border border-slate-200/60 bg-gradient-to-b from-slate-50 to-white p-3">
                       <Doughnut
                         data={bottomCentersData}
-                        options={{
-                          responsive: true,
-                          maintainAspectRatio: false,
-                        }}
+                        options={{ responsive: true, maintainAspectRatio: false }}
                       />
                     </div>
                   </CardContent>
@@ -637,20 +580,14 @@ export default function DashboardPage() {
           role === "PRINCIPAL") && (
           <section className="space-y-6">
             <div>
-              <h2 className="text-lg font-semibold text-slate-900">
-                Analytics
-              </h2>
-              <p className="text-sm text-slate-600">
-                Summary filtered by your center
-              </p>
+              <h2 className="text-lg font-semibold text-slate-900">Analytics</h2>
+              <p className="text-sm text-slate-600">Summary filtered by your center</p>
             </div>
 
             <Card className="rounded-2xl border border-slate-200/60 bg-gradient-to-br from-white via-white to-slate-50 shadow-sm">
               <CardHeader className="flex flex-row items-start justify-between gap-4">
                 <div className="space-y-1">
-                  <CardTitle className="text-base text-slate-900">
-                    Top Services
-                  </CardTitle>
+                  <CardTitle className="text-base text-slate-900">Top Services</CardTitle>
                   <p className="text-xs text-slate-600">Revenue by service</p>
                 </div>
 
@@ -661,10 +598,7 @@ export default function DashboardPage() {
 
               <CardContent className="h-72 sm:h-80">
                 <div className="h-full rounded-2xl border border-slate-200/60 bg-gradient-to-b from-slate-50 to-white p-3">
-                  <Bar
-                    data={barData}
-                    options={{ responsive: true, maintainAspectRatio: false }}
-                  />
+                  <Bar data={barData} options={{ responsive: true, maintainAspectRatio: false }} />
                 </div>
               </CardContent>
             </Card>
@@ -676,12 +610,8 @@ export default function DashboardPage() {
         {/* Recent Payments */}
         <Card className="rounded-2xl border-slate-200/60 bg-white shadow-sm">
           <CardHeader className="flex flex-col gap-1">
-            <CardTitle className="text-base text-slate-900">
-              Recent Payments
-            </CardTitle>
-            <CardDescription className="text-slate-600">
-              Latest 8 transactions
-            </CardDescription>
+            <CardTitle className="text-base text-slate-900">Recent Payments</CardTitle>
+            <CardDescription className="text-slate-600">Latest 8 transactions</CardDescription>
           </CardHeader>
 
           <CardContent>
@@ -691,10 +621,10 @@ export default function DashboardPage() {
                   <tr className="border-b border-slate-200/70">
                     <th className="p-3 font-medium text-slate-700">Name</th>
                     <th className="p-3 font-medium text-slate-700">Service</th>
+                    <th className="p-3 font-medium text-slate-700">Center</th>
+                    <th className="p-3 font-medium text-slate-700">Zone</th>
                     <th className="p-3 font-medium text-slate-700">Amount</th>
-                    <th className="p-3 font-medium text-slate-700">
-                      Date Paid
-                    </th>
+                    <th className="p-3 font-medium text-slate-700">Date Paid</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -704,9 +634,9 @@ export default function DashboardPage() {
                       className="border-b border-slate-200/60 last:border-b-0 hover:bg-slate-50/70"
                     >
                       <td className="p-3 text-slate-800">{p.name}</td>
-                      <td className="p-3 text-slate-700">
-                        {formatServiceName(p.service)}
-                      </td>
+                      <td className="p-3 text-slate-700">{formatServiceName(p.service)}</td>
+                      <td className="p-3 text-slate-700">{p.center}</td>
+                      <td className="p-3 text-slate-700">{p.zone}</td>
                       <td className="p-3 font-semibold text-slate-900">
                         {p.amountBilled.toLocaleString()}{" "}
                         <span className="font-medium text-slate-500">TZS</span>
@@ -714,6 +644,13 @@ export default function DashboardPage() {
                       <td className="p-3 text-slate-700">{p.date}</td>
                     </tr>
                   ))}
+                  {summary.recentPayments.length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="p-6 text-center text-slate-500">
+                        No recent payments found
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
