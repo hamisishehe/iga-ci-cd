@@ -1,7 +1,7 @@
-// ✅ FULL MODIFIED CODE (CollectionService.java)
 package com.example.iga_veta.Service;
 
 import com.example.iga_veta.Model.*;
+import com.example.iga_veta.Model.Collections;
 import com.example.iga_veta.Repository.*;
 import jakarta.transaction.Transactional;
 import org.slf4j.Logger;
@@ -38,7 +38,7 @@ public class CollectionService {
     private static final String API_URL = "http://41.59.229.41:6092/api/collections/fetch";
     private static final String API_KEY = "Vj7k_Oc7Gm5j2QHqZJ3lJ4UrVzml8GoxT9CwpuG8OqY";
 
-    public List<com.example.iga_veta.Model.Collections> getAllCollections() {
+    public List<Collections> getAllCollections() {
         return collectionsRepository.findAll();
     }
 
@@ -99,7 +99,10 @@ public class CollectionService {
             row.put("description", safeString(item.get("description")));
             row.put("centreName", safeString(item.get("centreName")));
             row.put("paymentType", safeString(item.get("paymentType")));
+
+            // ✅ allow null controlNumber (DON'T force to something)
             row.put("controlNumber", safeString(item.get("controlNumber")));
+
             row.put("paymentDate", safeString(item.get("paymentDate")));
             apiData.add(row);
         }
@@ -121,18 +124,11 @@ public class CollectionService {
         return t.isEmpty() ? null : t;
     }
 
-    /**
-     * ✅ Robust BigDecimal parser:
-     * - handles "250000.0" (Double string)
-     * - handles "250,000" (comma)
-     * - if invalid => returns null (so we can log + skip safely)
-     */
     private BigDecimal parseBigDecimalOrNull(String s) {
         if (s == null) return null;
         String t = s.trim();
         if (t.isEmpty()) return null;
 
-        // remove comma separators: 250,000 -> 250000
         t = t.replace(",", "");
 
         try {
@@ -142,17 +138,12 @@ public class CollectionService {
         }
     }
 
-    /**
-     * ✅ Safe date parsing
-     */
     private LocalDateTime parseDate(String dateStr) {
         if (dateStr == null || dateStr.isBlank()) return null;
         String t = dateStr.trim();
         try {
-            // works for "2026-01-21T05:48:18"
             return LocalDateTime.parse(t);
         } catch (Exception e) {
-            // fallback if needed
             try {
                 DateTimeFormatter f = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss");
                 return LocalDateTime.parse(t, f);
@@ -176,7 +167,7 @@ public class CollectionService {
             String gfsCodeValue = safeTrim(row.get("gfsCode"));
             String centreName = safeTrim(row.get("centreName"));
             String description = safeTrim(row.get("description"));
-            String controlNumber = safeTrim(row.get("controlNumber"));
+            String controlNumber = safeTrim(row.get("controlNumber")); // ✅ can be null
             String paymentType = safeTrim(row.get("paymentType"));
 
             LocalDateTime date = parseDate(row.get("paymentDate"));
@@ -184,15 +175,15 @@ public class CollectionService {
             BigDecimal amountBilled = parseBigDecimalOrNull(row.get("amountBilled"));
             BigDecimal amountPaid = parseBigDecimalOrNull(row.get("amountPaid"));
 
-            // ✅ Key checks
-            if (controlNumber == null || date == null || gfsCodeValue == null || centreName == null) {
+            // ✅ Key checks (controlNumber is NO LONGER required)
+            if (date == null || gfsCodeValue == null || centreName == null) {
                 skippedMissingKey++;
                 log.warn("SKIP(missing key) controlNumber={}, date={}, gfsCode={}, centreName={}, desc={}",
                         controlNumber, row.get("paymentDate"), gfsCodeValue, centreName, description);
                 continue;
             }
 
-            // ✅ Amount checks: if API sends bad format, don’t convert to ZERO silently
+            // ✅ Amount checks
             if (amountBilled == null || amountPaid == null) {
                 skippedBadAmounts++;
                 log.warn("SKIP(bad amount) controlNumber={}, billed={}, paid={}, desc={}",
@@ -244,21 +235,36 @@ public class CollectionService {
                 return gfsCodeRepository.save(newCode);
             });
 
-            // ✅ 4) DEDUPE FIX:
-            // Your API can send multiple line-items with the same:
-            // controlNumber + gfsCode + centre + date + amountBilled
-            // (example: many 5000 items with different description).
-            // So include description in the dedupe key.
+            // ✅ 4) DEDUPE:
+            // - if controlNumber exists, use original strong key
+            // - if controlNumber is null, use a fallback key so you don't insert duplicates every cycle
             String safeDesc = (description != null) ? description : "";
-            boolean exists = collectionsRepository
-                    .existsByControlNumberAndGfsCode_CodeAndCentre_IdAndDateAndDescriptionAndAmountBilled(
-                            controlNumber,
-                            gfsCodeValue,
-                            centre.getId(),
-                            date,
-                            safeDesc,
-                            amountBilled
-                    );
+
+            boolean exists;
+            if (controlNumber != null) {
+                exists = collectionsRepository
+                        .existsByControlNumberAndGfsCode_CodeAndCentre_IdAndDateAndDescriptionAndAmountBilled(
+                                controlNumber,
+                                gfsCodeValue,
+                                centre.getId(),
+                                date,
+                                safeDesc,
+                                amountBilled
+                        );
+            } else {
+                // fallback dedupe when controlNumber is NULL
+                // Using: customer + gfs + centre + date + desc + billed + paid
+                exists = collectionsRepository
+                        .existsByCustomer_NameAndGfsCode_CodeAndCentre_IdAndDateAndDescriptionAndAmountBilledAndAmountPaid(
+                                safeCustomerName,
+                                gfsCodeValue,
+                                centre.getId(),
+                                date,
+                                safeDesc,
+                                amountBilled,
+                                amountPaid
+                        );
+            }
 
             if (exists) {
                 skippedDuplicate++;
@@ -266,13 +272,16 @@ public class CollectionService {
             }
 
             // 5) Save Collection
-            com.example.iga_veta.Model.Collections collection = new com.example.iga_veta.Model.Collections();
+            Collections collection = new Collections();
             collection.setCustomer(customer);
             collection.setCentre(centre);
             collection.setGfsCode(gfsCode);
 
             collection.setPaymentType(paymentType);
+
+            // ✅ keep null in DB (allowed)
             collection.setControlNumber(controlNumber);
+
             collection.setDescription(description);
 
             collection.setAmountBilled(amountBilled);
@@ -315,19 +324,19 @@ public class CollectionService {
         return "HIGHLAND ZONE";
     }
 
-    public List<com.example.iga_veta.Model.Collections> findAll() {
+    public List<Collections> findAll() {
         return collectionsRepository.findAll();
     }
 
-    public List<com.example.iga_veta.Model.Collections> findAllData() {
+    public List<Collections> findAllData() {
         return collectionsRepository.findAll();
     }
 
-    public List<com.example.iga_veta.Model.Collections> findAllByCentre_Name(String centreName) {
+    public List<Collections> findAllByCentre_Name(String centreName) {
         return collectionsRepository.findByCentreName(centreName);
     }
 
-    public List<com.example.iga_veta.Model.Collections> findAllByGfsCode_Name(String gfsCodeName) {
+    public List<Collections> findAllByGfsCode_Name(String gfsCodeName) {
         return collectionsRepository.findCollectionsByGfsCode(gfsCodeName);
     }
 

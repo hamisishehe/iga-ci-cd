@@ -74,7 +74,7 @@ public class Collections {
     @Column(name = "payment_type", length = 120)
     private String paymentType;
 
-    @Column(name = "control_number", nullable = false, length = 60)
+    @Column(name = "control_number", nullable = true, length = 60)
     private String controlNumber;
 
     @Column(name = "last_fetched", columnDefinition = "TIMESTAMP")

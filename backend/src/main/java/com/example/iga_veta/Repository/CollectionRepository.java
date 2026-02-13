@@ -83,6 +83,17 @@ public interface CollectionRepository extends JpaRepository<Collections, Long> {
             BigDecimal amountBilled
     );
 
+    boolean existsByCustomer_NameAndGfsCode_CodeAndCentre_IdAndDateAndDescriptionAndAmountBilledAndAmountPaid(
+            String customerName,
+            String gfsCode,
+            Long centreId,
+            LocalDateTime date,
+            String description,
+            BigDecimal amountBilled,
+            BigDecimal amountPaid
+    );
+
+
     // -------------------- DASHBOARD FAST QUERIES (UPDATED to amountBilled) --------------------
 
     @Query("""
