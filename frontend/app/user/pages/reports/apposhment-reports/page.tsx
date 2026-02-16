@@ -36,12 +36,12 @@ interface ServiceData {
 
 export default function ApportionmentReport() {
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || "/api";
-
   const searchParams = useSearchParams();
 
   const qpStart = searchParams.get("startDate") || "";
   const qpEnd = searchParams.get("endDate") || "";
   const qpCentre = searchParams.get("centre") || "";
+  const qpZone = searchParams.get("zone") || "";
 
   const [mounted, setMounted] = useState(false);
   const [data, setData] = useState<ServiceData[]>([]);
@@ -50,10 +50,13 @@ export default function ApportionmentReport() {
 
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+
+  const [zone, setZone] = useState("all");     // ✅ NEW (HQ filter)
+  const [zones, setZones] = useState<string[]>([]); // ✅ NEW options
+
   const [centre, setCentre] = useState("all");
   const [centres, setCentres] = useState<string[]>([]);
 
- 
   const [userType, setUserType] = useState("");
   const [userCentre, setUserCentre] = useState("");
   const [userZone, setUserZone] = useState("");
@@ -61,6 +64,13 @@ export default function ApportionmentReport() {
   const isCentreUser = userType === "CENTRE" && Boolean(userCentre);
   const isZoneUser = userType === "ZONE" && Boolean(userZone);
   const isHQUser = userType === "HQ";
+
+  // ✅ helper: extract zone name from row (handles both shapes)
+  const getZoneName = (r: any) => {
+    const z1 = r?.centre?.zones?.name;
+    const z2 = r?.centre?.zone;
+    return (z1 || z2 || "").toString().trim();
+  };
 
   useEffect(() => {
     setMounted(true);
@@ -84,11 +94,12 @@ export default function ApportionmentReport() {
     setStartDate(firstDay);
     setEndDate(lastDay);
 
-    // default centre selection by role
+    // default selection by role
     if (ut === "CENTRE" && uc) setCentre(uc);
+    if (ut === "ZONE" && uz) setZone(uz);
 
-    // initial fetch (will re-run after params effect too)
-    fetchData(firstDay, lastDay, ut === "CENTRE" ? uc || "all" : "all");
+    // initial fetch
+    fetchData(firstDay, lastDay, ut, ut === "ZONE" ? uz || "all" : "all", ut === "CENTRE" ? uc || "all" : "all");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -99,17 +110,51 @@ export default function ApportionmentReport() {
     if (qpStart) setStartDate(qpStart);
     if (qpEnd) setEndDate(qpEnd);
 
-    // Centre param only allowed if not centre user
+    // zone param only allowed if HQ (zone users are locked)
+    if (qpZone) {
+      if (isHQUser) setZone(qpZone);
+      if (isZoneUser) setZone(userZone);
+    }
+
+    // centre param only allowed if not centre user
     if (qpCentre) {
       if (!isCentreUser) setCentre(qpCentre);
       if (isCentreUser) setCentre(userCentre);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mounted, qpStart, qpEnd, qpCentre, isCentreUser, userCentre]);
+  }, [mounted, qpStart, qpEnd, qpCentre, qpZone, isCentreUser, userCentre, isZoneUser, userZone, isHQUser]);
 
-  const fetchData = async (start: string, end: string, centreName: string) => {
+  /** ✅ Effective zone/centre (respect role locks) */
+  const effectiveZone = useMemo(() => {
+    if (isZoneUser) return userZone;
+    return zone === "all" ? "all" : zone;
+  }, [isZoneUser, userZone, zone]);
+
+  const effectiveCentre = useMemo(() => {
+    if (isCentreUser) return userCentre;
+    return centre === "all" ? "all" : centre;
+  }, [isCentreUser, userCentre, centre]);
+
+  /** ✅ When zone changes (HQ), reset centre */
+  useEffect(() => {
+    if (!mounted) return;
+    if (!isHQUser) return;
+
+    // when selecting a zone, centre must be reset to "all"
+    setCentre("all");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [zone]);
+
+  const fetchData = async (
+    start: string,
+    end: string,
+    utOverride?: string,
+    zoneName: string = "all",
+    centreName: string = "all"
+  ) => {
     setLoading(true);
     setError("");
+
     try {
       const token = localStorage.getItem("authToken");
       const apiKey = process.env.NEXT_PUBLIC_API_KEY;
@@ -127,28 +172,34 @@ export default function ApportionmentReport() {
         },
       });
 
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
       const rows = await res.json();
       let filteredRows = [...rows];
 
+      const currentUserType = (utOverride || userType || "").toUpperCase();
+
       // ✅ role-based visibility
-      if (isCentreUser && userCentre) {
+      if (currentUserType === "CENTRE" && userCentre) {
         filteredRows = filteredRows.filter(
           (r: any) => (r.centre?.name || "").toLowerCase() === userCentre.toLowerCase()
         );
-        centreName = userCentre; // lock
-      } else if (isZoneUser && userZone) {
-        // handle both possible shapes: centre.zones.name OR centre.zone
-        filteredRows = filteredRows.filter((r: any) => {
-          const z1 = r.centre?.zones?.name;
-          const z2 = r.centre?.zone;
-          const z = (z1 || z2 || "").toString().toLowerCase();
-          return z === userZone.toLowerCase();
-        });
+        centreName = userCentre;
+        zoneName = "all";
+      } else if (currentUserType === "ZONE" && userZone) {
+        filteredRows = filteredRows.filter((r: any) => getZoneName(r).toLowerCase() === userZone.toLowerCase());
+        zoneName = userZone;
+        centreName = "all";
       }
 
-      // centre dropdown filter (HQ / ZONE allowed)
-      if (centreName !== "all" && !isCentreUser) {
-        filteredRows = filteredRows.filter((r: any) => r.centre?.name === centreName);
+      // ✅ HQ zone filter (new)
+      if (currentUserType === "HQ" && zoneName !== "all") {
+        filteredRows = filteredRows.filter((r: any) => getZoneName(r).toLowerCase() === zoneName.toLowerCase());
+      }
+
+      // ✅ centre filter (HQ / ZONE allowed)
+      if (centreName !== "all" && currentUserType !== "CENTRE") {
+        filteredRows = filteredRows.filter((r: any) => (r.centre?.name || "") === centreName);
       }
 
       // date overlap filter
@@ -162,27 +213,45 @@ export default function ApportionmentReport() {
         return rowEnd >= requestedStart && rowStart <= requestedEnd;
       });
 
-      // build centres list:
-      // - HQ: all centres
-      // - ZONE: centres in zone
-      // - CENTRE: only their centre
-      let centreList = [...new Set(rows.map((r: any) => r.centre?.name).filter(Boolean))] as string[];
+      /** ✅ Build Zone -> Centres mapping reliably */
+      const zoneToCentres = new Map<string, Set<string>>();
+      rows.forEach((r: any) => {
+        const z = getZoneName(r);
+        const c = (r?.centre?.name || "").toString().trim();
+        if (!z || !c) return;
+        if (!zoneToCentres.has(z)) zoneToCentres.set(z, new Set());
+        zoneToCentres.get(z)!.add(c);
+      });
 
-      if (isZoneUser && userZone) {
-        centreList = centreList.filter((cName) => {
-          const row = rows.find((r: any) => r.centre?.name === cName);
-          const z1 = row?.centre?.zones?.name;
-          const z2 = row?.centre?.zone;
-          const z = (z1 || z2 || "").toString().toLowerCase();
-          return z === userZone.toLowerCase();
-        });
-      }
+      // zones list (HQ dropdown)
+      const allZones = Array.from(zoneToCentres.keys()).filter(Boolean).sort((a, b) => a.localeCompare(b));
+      setZones(allZones);
 
-      if (isCentreUser && userCentre) {
+      // centres list depends on effective zone + role
+      let centreList: string[] = [];
+
+      if (currentUserType === "CENTRE" && userCentre) {
         centreList = [userCentre];
+      } else if (currentUserType === "ZONE" && userZone) {
+        centreList = Array.from(zoneToCentres.get(userZone) || []).sort((a, b) => a.localeCompare(b));
+      } else {
+        // HQ
+        if (zoneName !== "all") {
+          centreList = Array.from(zoneToCentres.get(zoneName) || []).sort((a, b) => a.localeCompare(b));
+        } else {
+          // all centres
+          centreList = Array.from(
+            new Set(rows.map((r: any) => (r?.centre?.name || "").toString().trim()).filter(Boolean))
+          ).sort((a, b) => a.localeCompare(b));
+        }
       }
 
       setCentres(centreList);
+
+      // ✅ if selected centre not in list, reset
+      if (!isCentreUser && centreName !== "all" && !centreList.includes(centreName)) {
+        setCentre("all");
+      }
 
       // flatten
       const flat: ServiceData[] = [];
@@ -207,14 +276,12 @@ export default function ApportionmentReport() {
       console.error(err);
       setData([]);
       setCentres([]);
+      setZones([]);
       setError(err?.message || "Unable to fetch apportionment data.");
     } finally {
       setLoading(false);
     }
   };
-
-  const formatNumber = (val: number | undefined) =>
-    val != null ? Number(val).toLocaleString() : "-";
 
   const totals = useMemo(
     () =>
@@ -261,155 +328,179 @@ export default function ApportionmentReport() {
   if (!mounted) return null;
 
   return (
-  <div className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-slate-50">
-    <div className="p-4 space-y-6">
-      <div className="flex items-center justify-between">
-        <Breadcrumb>
-          <BreadcrumbList>
-            <BreadcrumbItem>
-              <BreadcrumbLink
-                href="/user/pages/dashboard"
-                className="font-semibold text-slate-800"
-              >
-                Dashboard
-              </BreadcrumbLink>
-            </BreadcrumbItem>
-            <BreadcrumbSeparator />
-            <BreadcrumbItem className="text-slate-600">Apportionment</BreadcrumbItem>
-          </BreadcrumbList>
-        </Breadcrumb>
+    <div className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-slate-50">
+      <div className="p-4 space-y-6">
+        <div className="flex items-center justify-between">
+          <Breadcrumb>
+            <BreadcrumbList>
+              <BreadcrumbItem>
+                <BreadcrumbLink href="/user/pages/dashboard" className="font-semibold text-slate-800">
+                  Dashboard
+                </BreadcrumbLink>
+              </BreadcrumbItem>
+              <BreadcrumbSeparator />
+              <BreadcrumbItem className="text-slate-600">Apportionment</BreadcrumbItem>
+            </BreadcrumbList>
+          </Breadcrumb>
 
-        {(isCentreUser || isZoneUser || isHQUser) && (
-          <div className="hidden sm:inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-700 shadow-sm">
-            <span className="h-2 w-2 rounded-full bg-emerald-500" />
-            {isCentreUser ? userCentre : isZoneUser ? userZone : "HQ"}
-          </div>
-        )}
-      </div>
-
-      {/* Filters */}
-      <Card className="relative overflow-hidden rounded-2xl border-slate-200/60 bg-white shadow-sm">
-        <div className="absolute inset-0 bg-gradient-to-br from-sky-500/8 via-transparent to-indigo-500/8" />
-        <CardHeader className="relative">
-          <CardTitle className="text-lg text-slate-900">Filters</CardTitle>
-          <CardDescription className="text-slate-600">
-            Choose date range (and centre if available), then print or export the report.
-          </CardDescription>
-        </CardHeader>
-
-        <CardContent className="relative">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4 items-end">
-            <div className="space-y-1.5">
-              <label className="block text-xs font-medium text-slate-700">Start Date</label>
-              <Input
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                className="h-10 rounded-xl border-slate-200 bg-white"
-              />
+          {(isCentreUser || isZoneUser || isHQUser) && (
+            <div className="hidden sm:inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-700 shadow-sm">
+              <span className="h-2 w-2 rounded-full bg-emerald-500" />
+              {isCentreUser ? userCentre : isZoneUser ? userZone : "HQ"}
             </div>
+          )}
+        </div>
 
-            <div className="space-y-1.5">
-              <label className="block text-xs font-medium text-slate-700">End Date</label>
-              <Input
-                type="date"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-                className="h-10 rounded-xl border-slate-200 bg-white"
-              />
-            </div>
+        {/* Filters */}
+        <Card className="relative overflow-hidden rounded-2xl border-slate-200/60 bg-white shadow-sm">
+          <div className="absolute inset-0 bg-gradient-to-br from-sky-500/8 via-transparent to-indigo-500/8" />
+          <CardHeader className="relative">
+            <CardTitle className="text-lg text-slate-900">Filters</CardTitle>
+            <CardDescription className="text-slate-600">
+              Choose date range (and zone/centre if available), then print or export the report.
+            </CardDescription>
+          </CardHeader>
 
-            {/* Centre filter only for HQ/ZONE */}
-            {!isCentreUser && (
+          <CardContent className="relative">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4 items-end">
               <div className="space-y-1.5">
-                <label className="block text-xs font-medium text-slate-700">Centre</label>
-                <Select value={centre} onValueChange={(val) => setCentre(val)}>
-                  <SelectTrigger className="h-10 rounded-xl border-slate-200 bg-white">
-                    <SelectValue placeholder="Select Centre" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Centres</SelectItem>
-                    {centres.map((c, i) => (
-                      <SelectItem key={i} value={c}>
-                        {c}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <label className="block text-xs font-medium text-slate-700">Start Date</label>
+                <Input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="h-10 rounded-xl border-slate-200 bg-white"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="block text-xs font-medium text-slate-700">End Date</label>
+                <Input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="h-10 rounded-xl border-slate-200 bg-white"
+                />
+              </div>
+
+              {/* ✅ ZONE filter only for HQ */}
+              {isHQUser && (
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-medium text-slate-700">Zone</label>
+                  <Select
+                    value={zone}
+                    onValueChange={(val) => {
+                      setZone(val);
+                      // centre reset is also handled by effect
+                    }}
+                  >
+                    <SelectTrigger className="h-10 rounded-xl border-slate-200 bg-white">
+                      <SelectValue placeholder="Select Zone" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Zones</SelectItem>
+                      {zones.map((z) => (
+                        <SelectItem key={z} value={z}>
+                          {z}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
+              {/* Centre filter only for HQ/ZONE */}
+              {!isCentreUser && (
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-medium text-slate-700">Centre</label>
+                  <Select value={centre} onValueChange={(val) => setCentre(val)}>
+                    <SelectTrigger className="h-10 rounded-xl border-slate-200 bg-white">
+                      <SelectValue placeholder="Select Centre" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Centres</SelectItem>
+                      {centres.map((c) => (
+                        <SelectItem key={c} value={c}>
+                          {c}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
+              <div className="lg:col-span-1">
+                <Button
+                  className="h-10 w-full rounded-xl bg-slate-900 text-white hover:bg-slate-800 shadow-sm"
+                  onClick={() =>
+                    fetchData(
+                      startDate,
+                      endDate,
+                      userType,
+                      isZoneUser ? userZone : zone,
+                      isCentreUser ? userCentre : centre
+                    )
+                  }
+                >
+                  Load
+                </Button>
+              </div>
+
+              <div className="lg:col-span-2 flex flex-col sm:flex-row gap-2">
+                <Button
+                  className="h-10 w-full rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm disabled:opacity-60"
+                  onClick={() => {
+                    if (!data?.length) return;
+                    window.print();
+                  }}
+                  disabled={!data?.length}
+                >
+                  Print
+                </Button>
+
+                <Button
+                  className="h-10 w-full rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm disabled:opacity-60"
+                  onClick={exportExcel}
+                  disabled={!data?.length}
+                >
+                  Export Excel
+                </Button>
+              </div>
+
+              <div className="sm:col-span-2 lg:col-span-6">
+                <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
+                  Tip: Select <span className="font-semibold text-slate-800">Zone</span> first (HQ), then{" "}
+                  <span className="font-semibold text-slate-800">Centre</span>. Centres will update based on zone.
+                </div>
+              </div>
+            </div>
+
+            {error && (
+              <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {error}
               </div>
             )}
 
-            {/* Actions: only Print + Export (no table preview) */}
-            <div className="lg:col-span-1">
-              <Button
-                className="h-10 w-full rounded-xl bg-slate-900 text-white hover:bg-slate-800 shadow-sm"
-                onClick={() => fetchData(startDate, endDate, isCentreUser ? userCentre : centre)}
-              >
-                Load
-              </Button>
-            </div>
-
-            <div className="lg:col-span-2 flex flex-col sm:flex-row gap-2">
-              <Button
-                className="h-10 w-full rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm disabled:opacity-60"
-                onClick={() => {
-                  // make sure data is loaded, then print
-                  if (!data?.length) return;
-                  window.print();
-                }}
-                disabled={!data?.length}
-              >
-                Print
-              </Button>
-
-              <Button
-                className="h-10 w-full rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm disabled:opacity-60"
-                onClick={exportExcel}
-                disabled={!data?.length}
-              >
-                Export Excel
-              </Button>
-            </div>
-
-            <div className="sm:col-span-2 lg:col-span-6">
-              <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
-                Tip: Click <span className="font-semibold text-slate-800">Load</span> first. When data is ready, the
-                <span className="font-semibold text-slate-800"> Print</span> and{" "}
-                <span className="font-semibold text-slate-800">Export</span> buttons will be enabled.
+            {loading && (
+              <div className="mt-4 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600">
+                Loading...
               </div>
-            </div>
-          </div>
+            )}
 
-          {/* inline status only (no table) */}
-          {error && (
-            <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-              {error}
-            </div>
-          )}
-
-          {loading && (
-            <div className="mt-4 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600">
-              Loading...
-            </div>
-          )}
-
-          {!loading && !error && (
-            <div className="mt-4 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
-              {data?.length ? (
-                <span>
-                  Loaded <span className="font-semibold">{data.length}</span> rows. Ready to print/export.
-                </span>
-              ) : (
-                <span>No data loaded yet. Use filters then click <b>Load</b>.</span>
-              )}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* NOTE: Table removed intentionally */}
+            {!loading && !error && (
+              <div className="mt-4 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+                {data?.length ? (
+                  <span>
+                    Loaded <span className="font-semibold">{data.length}</span> rows. Ready to print/export.
+                  </span>
+                ) : (
+                  <span>No data loaded yet. Use filters then click <b>Load</b>.</span>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
     </div>
-  </div>
-);
-
+  );
 }

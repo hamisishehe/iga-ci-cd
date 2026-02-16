@@ -14,6 +14,7 @@ import {
 import Swal from "sweetalert2";
 import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/card";
 import { toast } from "sonner";
+import { set } from "zod";
 
 export default function DistributionReportPage() {
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || "/api";
@@ -25,6 +26,7 @@ export default function DistributionReportPage() {
   const [description, setDescription] = useState("");
   const [centre, setCentre] = useState("");
   const [zone, setZone] = useState("");
+  const [role, setRole] = useState("");
 
   // Data
   const [data, setData] = useState<any[]>([]);
@@ -50,6 +52,7 @@ export default function DistributionReportPage() {
     setUserType(localStorage.getItem("userType") || "");
     setUserCentre(localStorage.getItem("centre") || "");
     setUserZone(localStorage.getItem("zone") || "");
+    setRole(localStorage.getItem("userRole") || "");
   }, []);
 
   const isCentreUser = userType === "CENTRE";
@@ -864,23 +867,18 @@ export default function DistributionReportPage() {
             {/* Actions */}
             <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex flex-wrap gap-3">
-                <Button
-                  className="h-10 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm"
-                  onClick={exportExcel}
-                  disabled={!hasApplied || filteredData.length === 0}
-                >
-                  Export Excel
-                </Button>
+            
 
-                {isCentreUser ? (
-                  <Button
-                    className="h-10 rounded-xl bg-slate-900 text-white hover:bg-slate-800 shadow-sm disabled:opacity-60"
-                    onClick={saveApportionment}
-                    disabled={apportionmentSaved || !hasApplied || filteredData.length === 0}
-                  >
-                    {apportionmentSaved ? "Saved" : "Save Apportionment"}
-                  </Button>
-                ) : null}
+                {isCentreUser && role !== "PRINCIPAL" && (
+  <Button
+    className="h-10 rounded-xl bg-slate-900 text-white hover:bg-slate-800 shadow-sm disabled:opacity-60"
+    onClick={saveApportionment}
+    disabled={apportionmentSaved || !hasApplied || filteredData.length === 0}
+  >
+    {apportionmentSaved ? "Saved" : "Save Apportionment"}
+  </Button>
+)}
+
               </div>
 
               {/* optional debug */}

@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/breadcrumb";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import { motion } from "framer-motion";
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, Tooltip, Legend);
 
@@ -402,181 +403,362 @@ export default function DashboardPage() {
         </div>
 
         {/* Stats */}
-        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {/* Total Income */}
-          <Card className="relative overflow-hidden rounded-2xl border-slate-200/60 bg-white shadow-sm transition hover:shadow-md">
-            <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/12 via-transparent to-teal-500/12" />
-            <CardContent className="relative pt-6">
-              <div className="mx-auto mb-3 grid h-11 w-11 place-items-center rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-500 text-white shadow-sm">
-                <Banknote size={22} />
-              </div>
+       <motion.div
+  className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3"
+  initial="hidden"
+  animate="show"
+  variants={{
+    hidden: { opacity: 0 },
+    show: {
+      opacity: 1,
+      transition: {
+        staggerChildren: 0.15,
+      },
+    },
+  }}
+>
+  {/* Total Income */}
+  <motion.div
+    variants={{
+      hidden: { opacity: 0, y: 20, scale: 0.97 },
+      show: { opacity: 1, y: 0, scale: 1 },
+    }}
+    whileHover={{ y: -6, scale: 1.02 }}
+    transition={{ duration: 0.5, ease: "easeOut" }}
+  >
+    <Card className="relative overflow-hidden rounded-2xl border-slate-200/60 bg-white shadow-sm transition hover:shadow-md">
+      <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/12 via-transparent to-teal-500/12" />
 
-              <p className="text-sm font-medium text-slate-600 text-center">
-                Billed Amount{" "}
-                <span className="text-slate-500">
-                  (
-                  {filterType === "day"
-                    ? "Today"
-                    : filterType === "yesterday"
-                    ? "Yesterday"
-                    : "This Month"}
-                  )
-                </span>
-              </p>
+      <CardContent className="relative pt-6">
+        <motion.div
+          className="mx-auto mb-3 grid h-11 w-11 place-items-center rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-500 text-white shadow-sm"
+          animate={{ y: [0, -5, 0] }}
+          transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }}
+        >
+          <Banknote size={22} />
+        </motion.div>
 
-              <p className="mt-2 text-center text-2xl font-semibold tracking-tight text-slate-900">
-                {Number(summary?.totalIncome ?? 0).toLocaleString()}{" "}
-                <span className="text-sm font-medium text-slate-500">TZS</span>
-              </p>
+        <p className="text-sm font-medium text-slate-600 text-center">
+          Billed Amount{" "}
+          <span className="text-slate-500">
+            (
+            {filterType === "day"
+              ? "Today"
+              : filterType === "yesterday"
+              ? "Yesterday"
+              : "This Month"}
+            )
+          </span>
+        </p>
 
-              <div className="mt-3 flex items-center justify-center gap-2 text-xs text-slate-600">
-                <span className="inline-flex h-2 w-2 rounded-full bg-emerald-500" />
-                Updated by selected filter
-              </div>
-            </CardContent>
-          </Card>
+        <motion.p
+          className="mt-2 text-center text-2xl font-semibold tracking-tight text-slate-900"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.2 }}
+        >
+          {Number(summary?.totalIncome ?? 0).toLocaleString()}{" "}
+          <span className="text-sm font-medium text-slate-500">TZS</span>
+        </motion.p>
 
-          {/* Total Transactions */}
-          <Card className="relative overflow-hidden rounded-2xl border-slate-200/60 bg-white shadow-sm transition hover:shadow-md">
-            <div className="absolute inset-0 bg-gradient-to-br from-sky-500/12 via-transparent to-indigo-500/12" />
-            <CardContent className="relative pt-6">
-              <div className="mx-auto mb-3 grid h-11 w-11 place-items-center rounded-2xl bg-gradient-to-br from-sky-500 to-indigo-500 text-white shadow-sm">
-                <FileText size={22} />
-              </div>
-
-              <p className="text-sm font-medium text-slate-600 text-center">
-                Total Transactions{" "}
-                <span className="text-slate-500">
-                  (
-                  {filterType === "day"
-                    ? "Today"
-                    : filterType === "yesterday"
-                    ? "Yesterday"
-                    : "This Month"}
-                  )
-                </span>
-              </p>
-
-              <p className="mt-2 text-center text-2xl font-semibold tracking-tight text-slate-900">
-                {Number(summary?.totalTransactions ?? 0)}
-              </p>
-
-              <div className="mt-3 flex items-center justify-center gap-2 text-xs text-slate-600">
-                <span className="inline-flex h-2 w-2 rounded-full bg-sky-500" />
-                Count of completed payments
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Top Service */}
-          <Card className="relative overflow-hidden rounded-2xl border-slate-200/60 bg-white shadow-sm transition hover:shadow-md">
-            <div className="absolute inset-0 bg-gradient-to-br from-amber-500/12 via-transparent to-orange-500/12" />
-            <CardContent className="relative pt-6">
-              <div className="mx-auto mb-3 grid h-11 w-11 place-items-center rounded-2xl bg-gradient-to-br from-amber-500 to-orange-500 text-white shadow-sm">
-                <PieChart size={22} />
-              </div>
-
-              <p className="text-sm font-medium text-slate-600 text-center">Top Service</p>
-
-              <p className="mt-2 text-center text-xl font-semibold tracking-tight text-slate-900">
-                {summary?.topServices?.[0]?.service ? formatServiceName(summary.topServices[0].service) : "-"}
-              </p>
-
-              <div className="mt-3 flex items-center justify-center gap-2 text-xs text-slate-600">
-                <span className="inline-flex h-2 w-2 rounded-full bg-amber-500" />
-                Highest revenue contributor
-              </div>
-            </CardContent>
-          </Card>
+        <div className="mt-3 flex items-center justify-center gap-2 text-xs text-slate-600">
+          <motion.span
+            className="inline-flex h-2 w-2 rounded-full bg-emerald-500"
+            animate={{ scale: [1, 1.4, 1] }}
+            transition={{ duration: 1.2, repeat: Infinity }}
+          />
+          Updated by selected filter
         </div>
+      </CardContent>
+    </Card>
+  </motion.div>
+
+  {/* Total Transactions */}
+  <motion.div
+    variants={{
+      hidden: { opacity: 0, y: 20, scale: 0.97 },
+      show: { opacity: 1, y: 0, scale: 1 },
+    }}
+    whileHover={{ y: -6, scale: 1.02 }}
+    transition={{ duration: 0.5, ease: "easeOut" }}
+  >
+    <Card className="relative overflow-hidden rounded-2xl border-slate-200/60 bg-white shadow-sm transition hover:shadow-md">
+      <div className="absolute inset-0 bg-gradient-to-br from-sky-500/12 via-transparent to-indigo-500/12" />
+
+      <CardContent className="relative pt-6">
+        <motion.div
+          className="mx-auto mb-3 grid h-11 w-11 place-items-center rounded-2xl bg-gradient-to-br from-sky-500 to-indigo-500 text-white shadow-sm"
+          animate={{ y: [0, -5, 0] }}
+          transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }}
+        >
+          <FileText size={22} />
+        </motion.div>
+
+        <p className="text-sm font-medium text-slate-600 text-center">
+          Total Transactions{" "}
+          <span className="text-slate-500">
+            (
+            {filterType === "day"
+              ? "Today"
+              : filterType === "yesterday"
+              ? "Yesterday"
+              : "This Month"}
+            )
+          </span>
+        </p>
+
+        <motion.p
+          className="mt-2 text-center text-2xl font-semibold tracking-tight text-slate-900"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.2 }}
+        >
+          {Number(summary?.totalTransactions ?? 0)}
+        </motion.p>
+
+        <div className="mt-3 flex items-center justify-center gap-2 text-xs text-slate-600">
+          <motion.span
+            className="inline-flex h-2 w-2 rounded-full bg-sky-500"
+            animate={{ scale: [1, 1.4, 1] }}
+            transition={{ duration: 1.2, repeat: Infinity }}
+          />
+          Count of completed payments
+        </div>
+      </CardContent>
+    </Card>
+  </motion.div>
+
+  {/* Top Service */}
+  <motion.div
+    variants={{
+      hidden: { opacity: 0, y: 20, scale: 0.97 },
+      show: { opacity: 1, y: 0, scale: 1 },
+    }}
+    whileHover={{ y: -6, scale: 1.02 }}
+    transition={{ duration: 0.5, ease: "easeOut" }}
+  >
+    <Card className="relative overflow-hidden rounded-2xl border-slate-200/60 bg-white shadow-sm transition hover:shadow-md">
+      <div className="absolute inset-0 bg-gradient-to-br from-amber-500/12 via-transparent to-orange-500/12" />
+
+      <CardContent className="relative pt-6">
+        <motion.div
+          className="mx-auto mb-3 grid h-11 w-11 place-items-center rounded-2xl bg-gradient-to-br from-amber-500 to-orange-500 text-white shadow-sm"
+          animate={{ y: [0, -5, 0] }}
+          transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }}
+        >
+          <PieChart size={22} />
+        </motion.div>
+
+        <p className="text-sm font-medium text-slate-600 text-center">
+          Top Service
+        </p>
+
+        <motion.p
+          className="mt-2 text-center text-xl font-semibold tracking-tight text-slate-900"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.2 }}
+        >
+          {summary?.topServices?.[0]?.service
+            ? formatServiceName(summary.topServices[0].service)
+            : "-"}
+        </motion.p>
+
+        <div className="mt-3 flex items-center justify-center gap-2 text-xs text-slate-600">
+          <motion.span
+            className="inline-flex h-2 w-2 rounded-full bg-amber-500"
+            animate={{ scale: [1, 1.4, 1] }}
+            transition={{ duration: 1.2, repeat: Infinity }}
+          />
+          Highest revenue contributor
+        </div>
+      </CardContent>
+    </Card>
+  </motion.div>
+</motion.div>
+
 
         {/* Charts */}
-        {(role === "DIRECTOR_GENERAL" ||
-          role === "DIRECTOR_OF_FINANCE" ||
-          role === "FINANCE_MANAGER") && (
-          <section className="space-y-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-lg font-semibold text-slate-900">Analytics</h2>
-                <p className="text-sm text-slate-600">Revenue insights across services and centers</p>
-              </div>
+{(role === "DIRECTOR_GENERAL" ||
+  role === "DIRECTOR_OF_FINANCE" ||
+  role === "FINANCE_MANAGER") && (
+  <motion.section
+    className="space-y-6"
+    initial="hidden"
+    whileInView="show"
+    viewport={{ once: true, amount: 0.2 }}
+    variants={{
+      hidden: { opacity: 0 },
+      show: {
+        opacity: 1,
+        transition: { staggerChildren: 0.15 },
+      },
+    }}
+  >
+    {/* Header */}
+    <motion.div
+      className="flex items-center justify-between"
+      variants={{
+        hidden: { opacity: 0, y: 16 },
+        show: { opacity: 1, y: 0 },
+      }}
+      transition={{ duration: 0.5, ease: "easeOut" }}
+    >
+      <div>
+        <h2 className="text-lg font-semibold text-slate-900">Analytics</h2>
+        <p className="text-sm text-slate-600">
+          Revenue insights across services and centers
+        </p>
+      </div>
 
-              <div className="hidden sm:flex items-center gap-2">
-                <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-600 shadow-sm">
-                  Updated: Live
-                </span>
-              </div>
+      <div className="hidden sm:flex items-center gap-2">
+        <motion.span
+          className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-600 shadow-sm"
+          initial={{ opacity: 0, scale: 0.98 }}
+          whileInView={{ opacity: 1, scale: 1 }}
+          viewport={{ once: true }}
+          transition={{ duration: 0.4, delay: 0.1 }}
+        >
+          Updated: Live
+        </motion.span>
+      </div>
+    </motion.div>
+
+    <div className="grid gap-6 lg:grid-cols-12">
+      {/* Bar Chart */}
+      <motion.div
+        className="lg:col-span-8"
+        variants={{
+          hidden: { opacity: 0, y: 18, scale: 0.98 },
+          show: { opacity: 1, y: 0, scale: 1 },
+        }}
+        whileHover={{ y: -4, scale: 1.01 }}
+        transition={{ duration: 0.5, ease: "easeOut" }}
+      >
+        <Card className="rounded-2xl border border-slate-200/60 bg-gradient-to-br from-white via-white to-slate-50 shadow-sm">
+          <CardHeader className="flex flex-row items-start justify-between gap-4">
+            <div className="space-y-1">
+              <CardTitle className="text-base text-slate-900">Top Services</CardTitle>
+              <p className="text-xs text-slate-600">
+                Revenue comparison across services
+              </p>
             </div>
 
-            <div className="grid gap-6 lg:grid-cols-12">
-              <Card className="lg:col-span-8 rounded-2xl border border-slate-200/60 bg-gradient-to-br from-white via-white to-slate-50 shadow-sm">
-                <CardHeader className="flex flex-row items-start justify-between gap-4">
-                  <div className="space-y-1">
-                    <CardTitle className="text-base text-slate-900">Top Services</CardTitle>
-                    <p className="text-xs text-slate-600">Revenue comparison across services</p>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <span className="rounded-full bg-slate-900 px-3 py-1 text-xs font-medium text-white">
-                      Bar
-                    </span>
-                  </div>
-                </CardHeader>
-
-                <CardContent className="h-72 sm:h-80">
-                  <div className="h-full rounded-2xl border border-slate-200/60 bg-gradient-to-b from-slate-50 to-white p-3">
-                    <Bar data={barData} options={{ responsive: true, maintainAspectRatio: false }} />
-                  </div>
-                </CardContent>
-              </Card>
-
-              <div className="lg:col-span-4 space-y-6">
-                <Card className="rounded-2xl border border-slate-200/60 bg-gradient-to-br from-white via-white to-slate-50 shadow-sm">
-                  <CardHeader className="flex flex-row items-start justify-between gap-4">
-                    <div className="space-y-1">
-                      <CardTitle className="text-base text-slate-900">Top 3 Centers</CardTitle>
-                      <p className="text-xs text-slate-600">Highest revenue centers</p>
-                    </div>
-                    <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-600">
-                      Doughnut
-                    </span>
-                  </CardHeader>
-
-                  <CardContent className="h-56 sm:h-64">
-                    <div className="h-full rounded-2xl border border-slate-200/60 bg-gradient-to-b from-slate-50 to-white p-3">
-                      <Doughnut data={topCentersData} options={{ responsive: true, maintainAspectRatio: false }} />
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card className="rounded-2xl border border-slate-200/60 bg-gradient-to-br from-white via-white to-slate-50 shadow-sm">
-                  <CardHeader className="flex flex-row items-start justify-between gap-4">
-                    <div className="space-y-1">
-                      <CardTitle className="text-base text-slate-900">Bottom 3 Centers</CardTitle>
-                      <p className="text-xs text-slate-600">Lowest revenue centers</p>
-                    </div>
-                    <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-600">
-                      Doughnut
-                    </span>
-                  </CardHeader>
-
-                  <CardContent className="h-56 sm:h-64">
-                    <div className="h-full rounded-2xl border border-slate-200/60 bg-gradient-to-b from-slate-50 to-white p-3">
-                      <Doughnut
-                        data={bottomCentersData}
-                        options={{ responsive: true, maintainAspectRatio: false }}
-                      />
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
+            <div className="flex items-center gap-2">
+              <span className="rounded-full bg-slate-900 px-3 py-1 text-xs font-medium text-white">
+                Bar
+              </span>
             </div>
-          </section>
-        )}
+          </CardHeader>
+
+          <CardContent className="h-72 sm:h-80">
+            <motion.div
+              className="h-full rounded-2xl border border-slate-200/60 bg-gradient-to-b from-slate-50 to-white p-3"
+              initial={{ opacity: 0 }}
+              whileInView={{ opacity: 1 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.5 }}
+            >
+              <Bar data={barData} options={{ responsive: true, maintainAspectRatio: false }} />
+            </motion.div>
+          </CardContent>
+        </Card>
+      </motion.div>
+
+      {/* Doughnuts Column */}
+      <motion.div
+        className="lg:col-span-4 space-y-6"
+        variants={{
+          hidden: { opacity: 0, y: 18 },
+          show: { opacity: 1, y: 0 },
+        }}
+        transition={{ duration: 0.5, ease: "easeOut" }}
+      >
+        {/* Top 3 Centers */}
+        <motion.div
+          whileHover={{ y: -4, scale: 1.01 }}
+          transition={{ duration: 0.45, ease: "easeOut" }}
+          variants={{
+            hidden: { opacity: 0, y: 16, scale: 0.98 },
+            show: { opacity: 1, y: 0, scale: 1 },
+          }}
+        >
+          <Card className="rounded-2xl border border-slate-200/60 bg-gradient-to-br from-white via-white to-slate-50 shadow-sm">
+            <CardHeader className="flex flex-row items-start justify-between gap-4">
+              <div className="space-y-1">
+                <CardTitle className="text-base text-slate-900">Top 3 Centers</CardTitle>
+                <p className="text-xs text-slate-600">Highest revenue centers</p>
+              </div>
+              <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-600">
+                Doughnut
+              </span>
+            </CardHeader>
+
+            <CardContent className="h-56 sm:h-64">
+              <motion.div
+                className="h-full rounded-2xl border border-slate-200/60 bg-gradient-to-b from-slate-50 to-white p-3"
+                initial={{ opacity: 0 }}
+                whileInView={{ opacity: 1 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.5 }}
+              >
+                <Doughnut
+                  data={topCentersData}
+                  options={{ responsive: true, maintainAspectRatio: false }}
+                />
+              </motion.div>
+            </CardContent>
+          </Card>
+        </motion.div>
+
+        {/* Bottom 3 Centers */}
+        <motion.div
+          whileHover={{ y: -4, scale: 1.01 }}
+          transition={{ duration: 0.45, ease: "easeOut" }}
+          variants={{
+            hidden: { opacity: 0, y: 16, scale: 0.98 },
+            show: { opacity: 1, y: 0, scale: 1 },
+          }}
+        >
+          <Card className="rounded-2xl border border-slate-200/60 bg-gradient-to-br from-white via-white to-slate-50 shadow-sm">
+            <CardHeader className="flex flex-row items-start justify-between gap-4">
+              <div className="space-y-1">
+                <CardTitle className="text-base text-slate-900">Bottom 3 Centers</CardTitle>
+                <p className="text-xs text-slate-600">Lowest revenue centers</p>
+              </div>
+              <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-600">
+                Doughnut
+              </span>
+            </CardHeader>
+
+            <CardContent className="h-56 sm:h-64">
+              <motion.div
+                className="h-full rounded-2xl border border-slate-200/60 bg-gradient-to-b from-slate-50 to-white p-3"
+                initial={{ opacity: 0 }}
+                whileInView={{ opacity: 1 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.5 }}
+              >
+                <Doughnut
+                  data={bottomCentersData}
+                  options={{ responsive: true, maintainAspectRatio: false }}
+                />
+              </motion.div>
+            </CardContent>
+          </Card>
+        </motion.div>
+      </motion.div>
+    </div>
+  </motion.section>
+)}
+
 
         {(role === "BURSAR" ||
           role === "ACCOUNT_OFFICER" ||
           role === "ASSISTANT_ACCOUNT_OFFICER" ||
+          role === "REGIONAL_FINANCE_MANAGER" ||
+          role === "REGIONAL_DIRECTOR" ||
+          role === "PRODUCTION_CORDINATOR" ||
           role === "PRINCIPAL") && (
           <section className="space-y-6">
             <div>

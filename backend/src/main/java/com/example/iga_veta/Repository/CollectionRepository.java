@@ -19,6 +19,26 @@ public interface CollectionRepository extends JpaRepository<Collections, Long> {
 
     // -------------------- existing queries (UPDATED to amountBilled) --------------------
 
+    @Query("select max(c.date) from Collections c")
+    Optional<LocalDateTime> findMaxPaymentDate();
+
+    // ✅ UPSERT finders (stable keys)
+
+    Optional<Collections> findFirstByControlNumberAndGfsCode_CodeAndCentre_IdAndDateAndDescription(
+            String controlNumber,
+            String gfsCode,
+            Long centreId,
+            LocalDateTime date,
+            String description
+    );
+
+    Optional<Collections> findFirstByCustomer_NameAndGfsCode_CodeAndCentre_IdAndDateAndDescription(
+            String customerName,
+            String gfsCode,
+            Long centreId,
+            LocalDateTime date,
+            String description
+    );
 
     boolean existsByControlNumberAndGfsCode_CodeAndCentre_IdAndDateAndDescriptionAndAmountBilled(
             String controlNumber,
@@ -109,66 +129,87 @@ public interface CollectionRepository extends JpaRepository<Collections, Long> {
     );
 
     @Query("""
-        select
-          coalesce(c.gfsCode.code, 'N/A'),
-          coalesce(c.gfsCode.description, ''),  
-          coalesce(sum(c.amountBilled), 0)
-        from Collections c
-        where c.date >= :start and c.date < :end
-          and (:centreName is null or c.centre.name = :centreName)
-        group by c.gfsCode.code, c.gfsCode.description
-        order by sum(c.amountBilled) desc
-    """)
+    select
+      coalesce(c.gfsCode.code, 'N/A'),
+      coalesce(c.gfsCode.description, ''),
+      coalesce(sum(c.amountBilled), 0)
+    from Collections c
+    where c.date >= :start and c.date < :end
+      and (:centreName is null or c.centre.name = :centreName)
+      and (:zoneName is null or c.centre.zones.name = :zoneName)
+    group by c.gfsCode.code, c.gfsCode.description
+    order by sum(c.amountBilled) desc
+""")
     List<Object[]> topServices(
             @Param("start") LocalDateTime start,
             @Param("end") LocalDateTime end,
             @Param("centreName") String centreName,
+            @Param("zoneName") String zoneName,
             Pageable pageable
     );
 
+
     @Query("""
-        select
-          c.centre.name,
-          coalesce(sum(c.amountBilled), 0)
-        from Collections c
-        where c.date >= :start and c.date < :end
-        group by c.centre.name
-        order by sum(c.amountBilled) desc
-    """)
+    select
+      c.centre.name,
+      coalesce(sum(c.amountBilled), 0)
+    from Collections c
+    where c.date >= :start and c.date < :end
+      and (:centreName is null or c.centre.name = :centreName)
+      and (:zoneName is null or c.centre.zones.name = :zoneName)
+    group by c.centre.name
+    order by sum(c.amountBilled) desc
+""")
     List<Object[]> topCenters(
             @Param("start") LocalDateTime start,
             @Param("end") LocalDateTime end,
+            @Param("centreName") String centreName,
+            @Param("zoneName") String zoneName,
             Pageable pageable
     );
 
     @Query("""
-        select
-          c.centre.name,
-          coalesce(sum(c.amountBilled), 0)
-        from Collections c
-        where c.date >= :start and c.date < :end
-        group by c.centre.name
-        order by sum(c.amountBilled) asc
-    """)
+    select
+      c.centre.name,
+      coalesce(sum(c.amountBilled), 0)
+    from Collections c
+    where c.date >= :start and c.date < :end
+      and (:centreName is null or c.centre.name = :centreName)
+      and (:zoneName is null or c.centre.zones.name = :zoneName)
+    group by c.centre.name
+    order by sum(c.amountBilled) asc
+""")
     List<Object[]> bottomCenters(
             @Param("start") LocalDateTime start,
             @Param("end") LocalDateTime end,
+            @Param("centreName") String centreName,
+            @Param("zoneName") String zoneName,
             Pageable pageable
     );
 
+
     @Query("""
-        select
-          coalesce(c.customer.name, 'Unknown'),
-          coalesce(c.centre.name, 'No Center'),
-          coalesce(c.customer.centre.zones.name, '-'),
-          coalesce(c.gfsCode.code, 'N/A'),
-          coalesce(c.gfsCode.description, ''),
-          c.amountBilled,
-          c.date
-        from Collections c
-        order by c.date desc
-    """)
-    List<Object[]> recentPayments(Pageable pageable);
+    select
+      coalesce(c.customer.name, 'Unknown'),
+      coalesce(c.centre.name, 'No Center'),
+      coalesce(c.centre.zones.name, '-'),
+      coalesce(c.gfsCode.code, 'N/A'),
+      coalesce(c.gfsCode.description, ''),
+      c.amountBilled,
+      c.date
+    from Collections c
+    where c.date >= :start and c.date < :end
+      and (:centreName is null or c.centre.name = :centreName)
+      and (:zoneName is null or c.centre.zones.name = :zoneName)
+    order by c.date desc
+""")
+    List<Object[]> recentPayments(
+            @Param("start") LocalDateTime start,
+            @Param("end") LocalDateTime end,
+            @Param("centreName") String centreName,
+            @Param("zoneName") String zoneName,
+            Pageable pageable
+    );
 
     // -------------------- collection report page (UPDATED filters + amountBilled) --------------------
 
@@ -273,16 +314,33 @@ public interface CollectionRepository extends JpaRepository<Collections, Long> {
             @Param("zoneName") String zoneName
     );
 
+
+
     @Query("""
-      select
-        coalesce(sum(c.amountBilled), 0) as totalIncome,
-        count(c) as totalTransactions
-      from Collections c
-      where c.date >= :start and c.date < :end
-        and (:centreName is null or c.centre.name = :centreName)
-        and (:zoneName is null or c.centre.zones.name = :zoneName)
-    """)
-    TotalsView totals(
+  select coalesce(sum(c.amountBilled), 0)  as totalIncome,
+   count(c) totalTransactions
+  from Collections c
+  where c.date >= :start and c.date < :end
+    and (:centreName is null or c.centre.name = :centreName)
+    and (:zoneName is null or c.centre.zones.name = :zoneName)
+""")
+    List<Object[]> totals(
+            @Param("start") LocalDateTime start,
+            @Param("end") LocalDateTime end,
+            @Param("centreName") String centreName,
+            @Param("zoneName") String zoneName
+    );
+
+    @Query("""
+  select
+    coalesce(sum(c.amountBilled), 0) as totalIncome,
+    count(c) as totalTransactions
+  from Collections c
+  where c.date >= :start and c.date < :end
+    and (:centreName is null or c.centre.name = :centreName)
+    and (:zoneName is null or c.centre.zones.name = :zoneName)
+""")
+    TotalsView totalsViewByCentreAndZone(
             @Param("start") LocalDateTime start,
             @Param("end") LocalDateTime end,
             @Param("centreName") String centreName,

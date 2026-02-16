@@ -3,11 +3,29 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from "@/components/ui/select";
-import { Breadcrumb, BreadcrumbList, BreadcrumbItem, BreadcrumbLink, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
+import {
+  Select,
+  SelectTrigger,
+  SelectContent,
+  SelectItem,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Breadcrumb,
+  BreadcrumbList,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb";
 import { FileSpreadsheet } from "lucide-react";
 import { toast } from "sonner";
 
@@ -25,9 +43,9 @@ interface ReportRow {
   paymentType?: string;
   controlNumber?: string;
 
-  amount: number;        // billed
-  amountPaid?: number;   // ✅ NEW (must come from backend)
-  datePaid: string;      // ISO
+  amount: number; // billed
+  amountPaid?: number; // paid
+  datePaid: string; // ISO
 }
 
 interface ReportFilters {
@@ -40,8 +58,7 @@ interface ReportResponse extends ReportFilters {
   totalIncome: number;
   totalTransactions: number;
   totalAmount: number; // billed total (filtered)
-
-  totalPaid?: number; // ✅ NEW (from backend)
+  totalPaid?: number;
 
   page: number;
   size: number;
@@ -53,19 +70,19 @@ interface ReportResponse extends ReportFilters {
 
 /** -------- helpers -------- */
 const pad2 = (n: number) => String(n).padStart(2, "0");
-const formatDate = (d: Date) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+const formatDate = (d: Date) =>
+  `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 
 const toSafeNumber = (v: any) => {
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
 };
 
-// safe filename timestamp: YYYYMMDD_HHMMSS
 const fileStamp = () => {
   const d = new Date();
-  return `${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}_${pad2(d.getHours())}${pad2(
-    d.getMinutes()
-  )}${pad2(d.getSeconds())}`;
+  return `${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}_${pad2(
+    d.getHours()
+  )}${pad2(d.getMinutes())}${pad2(d.getSeconds())}`;
 };
 
 const sanitizeName = (s: string) =>
@@ -98,25 +115,30 @@ export default function CollectionReport() {
   // options
   const [centreOptions, setCentreOptions] = useState<string[]>([]);
   const [zoneOptions, setZoneOptions] = useState<string[]>([]);
-  const [serviceOptions, setServiceOptions] = useState<Array<{ serviceCode: string; serviceDesc: string }>>([]);
+  const [serviceOptions, setServiceOptions] = useState<
+    Array<{ serviceCode: string; serviceDesc: string }>
+  >([]);
 
-  // paging (big size: you have no table preview; export needs all)
+  // paging (large)
   const [page, setPage] = useState(0);
   const size = 2000;
   const [loading, setLoading] = useState(true);
 
-  // === User Role & Permissions (avoid hydration issues) ===
+  // role & user
   const [userType, setUserType] = useState("");
   const [userCentre, setUserCentre] = useState("");
   const [userZone, setUserZone] = useState("");
-  const [username, setUsername] = useState("user"); // ✅ used in file name
+  const [username, setUsername] = useState("user");
 
   useEffect(() => {
-    setUserType((localStorage.getItem("userType") || "").toUpperCase());
-    setUserCentre(localStorage.getItem("centre") || "");
-    setUserZone(localStorage.getItem("zone") || "");
+    const ut = (localStorage.getItem("userType") || "").toUpperCase();
+    const uc = localStorage.getItem("centre") || "";
+    const uz = localStorage.getItem("zone") || "";
 
-    // try to read some user display name if you store it
+    setUserType(ut);
+    setUserCentre(uc);
+    setUserZone(uz);
+
     setUsername(
       localStorage.getItem("name") ||
         localStorage.getItem("username") ||
@@ -138,25 +160,46 @@ export default function CollectionReport() {
     setToDate(formatDate(lastDay));
   }, []);
 
-  // lock filters based on role
+  // lock based on role
   useEffect(() => {
     if (!userType) return;
     if (isCentreUser) setCentre(userCentre || "ALL");
     if (isZoneUser) setZone(userZone || "ALL");
   }, [userType, isCentreUser, isZoneUser, userCentre, userZone]);
 
+  /** ✅ Effective role-safe values */
+  const effectiveZone = useMemo(() => {
+    return isZoneUser ? userZone : zone;
+  }, [isZoneUser, userZone, zone]);
+
+  const effectiveCentre = useMemo(() => {
+    return isCentreUser ? userCentre : centre;
+  }, [isCentreUser, userCentre, centre]);
+
   /** build request payload */
   const payload = useMemo(() => {
     return {
       fromDate,
       toDate,
-      centre: isCentreUser ? userCentre : centre === "ALL" ? null : centre,
-      zone: isZoneUser ? userZone : zone === "ALL" ? null : zone,
+      centre: isCentreUser ? userCentre : effectiveCentre === "ALL" ? null : effectiveCentre,
+      zone: isZoneUser ? userZone : effectiveZone === "ALL" ? null : effectiveZone,
       serviceCode: serviceCode === "ALL" ? null : serviceCode,
       page,
       size,
     };
-  }, [fromDate, toDate, centre, zone, serviceCode, page, size, isCentreUser, isZoneUser, userCentre, userZone]);
+  }, [
+    fromDate,
+    toDate,
+    effectiveCentre,
+    effectiveZone,
+    serviceCode,
+    page,
+    size,
+    isCentreUser,
+    isZoneUser,
+    userCentre,
+    userZone,
+  ]);
 
   /** debounce fetch */
   const debounceRef = useRef<number | null>(null);
@@ -215,25 +258,39 @@ export default function CollectionReport() {
       // dropdown options
       const serverCentres = (data.centres || []).filter(Boolean);
       const serverZones = (data.zones || []).filter(Boolean);
-      const serverServices = (data.services || []).filter((s) => s?.serviceCode && s?.serviceDesc);
+      const serverServices = (data.services || []).filter(
+        (s) => s?.serviceCode && s?.serviceDesc
+      );
 
-      const fallbackCentres = Array.from(new Set((data.rows || []).map((r) => r.centreName).filter(Boolean)));
-      const fallbackZones = Array.from(new Set((data.rows || []).map((r) => r.zoneName).filter(Boolean)));
-
+      const fallbackCentres = Array.from(
+        new Set((data.rows || []).map((r) => r.centreName).filter(Boolean))
+      );
+      const fallbackZones = Array.from(
+        new Set((data.rows || []).map((r) => r.zoneName).filter(Boolean))
+      );
       const fallbackServices = Array.from(
         new Map(
           (data.rows || [])
             .filter((r) => r?.serviceCode && r?.serviceDesc)
-            .map((r) => [r.serviceCode, { serviceCode: r.serviceCode, serviceDesc: r.serviceDesc }])
+            .map((r) => [
+              r.serviceCode,
+              { serviceCode: r.serviceCode, serviceDesc: r.serviceDesc },
+            ])
         ).values()
       ).sort((a, b) => a.serviceDesc.localeCompare(b.serviceDesc));
 
-      setCentreOptions(isCentreUser ? [userCentre] : serverCentres.length ? serverCentres : fallbackCentres);
-      setZoneOptions(isZoneUser ? [userZone] : serverZones.length ? serverZones : fallbackZones);
+      setCentreOptions(
+        isCentreUser ? [userCentre] : serverCentres.length ? serverCentres : fallbackCentres
+      );
+      setZoneOptions(
+        isZoneUser ? [userZone] : serverZones.length ? serverZones : fallbackZones
+      );
       setServiceOptions(serverServices.length ? serverServices : fallbackServices);
 
       if (serviceCode !== "ALL") {
-        const exists = (serverServices.length ? serverServices : fallbackServices).some((s) => s.serviceCode === serviceCode);
+        const exists = (serverServices.length ? serverServices : fallbackServices).some(
+          (s) => s.serviceCode === serviceCode
+        );
         if (!exists) setServiceCode("ALL");
       }
     } catch (e) {
@@ -254,7 +311,67 @@ export default function CollectionReport() {
     }
   };
 
-  /** ✅ PDF export (includes Amount Paid + totals) */
+  /**
+   * ✅ KEY FIX: when HQ changes zone, fetch centres for that zone (so centre dropdown doesn't show all)
+   * - We request report with zone selected and centre=null, then build centre options from returned rows
+   */
+  const fetchCentresForZone = async (z: string) => {
+    try {
+      const token = localStorage.getItem("authToken");
+      const apiKey = process.env.NEXT_PUBLIC_API_KEY;
+
+      if (!token || !apiKey) return;
+
+      const res = await fetch(`${apiUrl}/collections/report`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+          "X-API-KEY": apiKey,
+        },
+        cache: "no-store",
+        body: JSON.stringify({
+          fromDate,
+          toDate,
+          zone: z === "ALL" ? null : z,
+          centre: null, // IMPORTANT
+          serviceCode: serviceCode === "ALL" ? null : serviceCode,
+          page: 0,
+          size: 2000,
+        }),
+      });
+
+      if (!res.ok) return;
+
+      const data: ReportResponse = await res.json();
+
+      const centresInZone = Array.from(
+        new Set((data.rows || []).map((r) => r.centreName).filter(Boolean))
+      ).sort((a, b) => a.localeCompare(b));
+
+      // if backend provides centres already filtered, prefer it
+      const serverCentres = (data.centres || []).filter(Boolean);
+      const finalCentres = serverCentres.length ? serverCentres : centresInZone;
+
+      setCentreOptions(finalCentres);
+
+      // if selected centre not in new list, reset
+      if (centre !== "ALL" && !finalCentres.includes(centre)) {
+        setCentre("ALL");
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  /** ✅ Filtered centres list for rendering (HQ only; centre users locked) */
+  const filteredCentreOptions = useMemo(() => {
+    if (isCentreUser) return [userCentre].filter(Boolean);
+    // after fetchCentresForZone, centreOptions will already be zone-scoped
+    return centreOptions;
+  }, [isCentreUser, userCentre, centreOptions]);
+
+  /** ✅ PDF export (kept as in your code) */
   const exportPdf = () => {
     if (!rows.length) {
       toast.error("No data to export");
@@ -313,7 +430,6 @@ export default function CollectionReport() {
       r.datePaid ? String(r.datePaid).split("T")[0] : "",
     ]));
 
-    // ✅ totals row must match 8 columns
     body.push([
       "",
       "",
@@ -359,7 +475,7 @@ export default function CollectionReport() {
     doc.save(fname);
   };
 
-  /** ✅ Excel export (includes Amount Paid + totals) */
+  /** ✅ Excel export (kept as in your code) */
   const exportExcel = () => {
     if (!rows.length) {
       toast.error("No data to export");
@@ -393,7 +509,6 @@ export default function CollectionReport() {
       r.datePaid ? String(r.datePaid).split("T")[0] : "",
     ]);
 
-    // ✅ totals row must match header length
     const totalsRow = ["", "", "", "", "TOTALS", toSafeNumber(totalAmount), toSafeNumber(totalPaid), ""];
 
     const wsData: any[][] = [
@@ -408,8 +523,7 @@ export default function CollectionReport() {
 
     const ws = XLSX.utils.aoa_to_sheet(wsData);
 
-    // merges for titles (0..3 rows)
-    const lastCol = header.length - 1; // 7
+    const lastCol = header.length - 1;
     ws["!merges"] = [
       { s: { r: 0, c: 0 }, e: { r: 0, c: lastCol } },
       { s: { r: 1, c: 0 }, e: { r: 1, c: lastCol } },
@@ -417,7 +531,6 @@ export default function CollectionReport() {
       { s: { r: 3, c: 0 }, e: { r: 3, c: lastCol } },
     ];
 
-    // column widths (match 8 cols)
     ws["!cols"] = [
       { wch: 5 },
       { wch: 22 },
@@ -429,21 +542,20 @@ export default function CollectionReport() {
       { wch: 14 },
     ];
 
-    // numeric formats (billed col=5, paid col=6) -> data starts at row index 5 in wsData (0-based)
-    const dataStartRow = 5; // because 0..3 meta, 4 header, 5 first body row
+    const dataStartRow = 5;
     for (let r = 0; r < body.length; r++) {
       const excelRow = dataStartRow + r;
 
       const billedCell = ws[XLSX.utils.encode_cell({ r: excelRow, c: 5 })];
       if (billedCell) {
         billedCell.t = "n";
-        billedCell.z = '#,##0.00';
+        billedCell.z = "#,##0.00";
       }
 
       const paidCell = ws[XLSX.utils.encode_cell({ r: excelRow, c: 6 })];
       if (paidCell) {
         paidCell.t = "n";
-        paidCell.z = '#,##0.00';
+        paidCell.z = "#,##0.00";
       }
     }
 
@@ -493,7 +605,7 @@ export default function CollectionReport() {
             <div>
               <CardTitle className="text-lg sm:text-xl text-slate-900">Collections Report</CardTitle>
               <CardDescription className="text-slate-600">
-                Filters are applied on server. Export uses the filtered result.
+                Zone → Centre dependency is applied (HQ). Export uses the filtered result.
               </CardDescription>
             </div>
 
@@ -562,9 +674,11 @@ export default function CollectionReport() {
                       <SelectTrigger className="h-10 rounded-xl border-slate-200 bg-white">
                         <SelectValue placeholder="All" />
                       </SelectTrigger>
+
+                      {/* ✅ IMPORTANT: use filteredCentreOptions */}
                       <SelectContent>
                         <SelectItem value="ALL">All</SelectItem>
-                        {centreOptions.map((c) => (
+                        {filteredCentreOptions.map((c) => (
                           <SelectItem key={c} value={c}>
                             {c}
                           </SelectItem>
@@ -583,6 +697,10 @@ export default function CollectionReport() {
                       onValueChange={(v) => {
                         setPage(0);
                         setZone(v);
+
+                        // ✅ Reset centre and fetch centres for this zone
+                        setCentre("ALL");
+                        fetchCentresForZone(v);
                       }}
                     >
                       <SelectTrigger className="h-10 rounded-xl border-slate-200 bg-white">
@@ -615,7 +733,9 @@ export default function CollectionReport() {
                   {rows?.length ? (
                     <>
                       Found{" "}
-                      <span className="font-semibold text-slate-900">{rows.length.toLocaleString()}</span>{" "}
+                      <span className="font-semibold text-slate-900">
+                        {rows.length.toLocaleString()}
+                      </span>{" "}
                       records.
                     </>
                   ) : (

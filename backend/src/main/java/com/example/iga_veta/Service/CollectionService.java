@@ -1,3 +1,10 @@
+// ✅ FULL MODIFIED CODE (CollectionService.java)
+// - Fixes missing transactions caused by date parsing (Z/+03:00/milliseconds)
+// - Uses cursor based on MAX(paymentDate) not lastFetched (prevents cursor jumping forward)
+// - Adds overlap window (minusMinutes) to avoid boundary misses
+// - UPSERT behavior (updates existing rows instead of skipping when amountPaid changes)
+// - Safer parsing for amounts like "null", "250,000.00", "250000 TSh" (keeps digits/dot/minus)
+
 package com.example.iga_veta.Service;
 
 import com.example.iga_veta.Model.*;
@@ -14,8 +21,10 @@ import org.springframework.web.client.RestTemplate;
 
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
-import java.time.LocalDateTime;
+import java.time.*;
 import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeFormatterBuilder;
+import java.time.temporal.ChronoField;
 import java.util.*;
 
 @Service
@@ -38,11 +47,27 @@ public class CollectionService {
     private static final String API_URL = "http://41.59.229.41:6092/api/collections/fetch";
     private static final String API_KEY = "Vj7k_Oc7Gm5j2QHqZJ3lJ4UrVzml8GoxT9CwpuG8OqY";
 
+    // ✅ flexible formatter supports:
+    // 2026-01-21T05:48:18
+    // 2026-01-21T05:48:18.123
+    // 2026-01-21T05:48:18Z
+    // 2026-01-21T05:48:18+03:00
+    private static final DateTimeFormatter FLEX =
+            new DateTimeFormatterBuilder()
+                    .appendPattern("yyyy-MM-dd'T'HH:mm:ss")
+                    .optionalStart()
+                    .appendFraction(ChronoField.NANO_OF_SECOND, 1, 9, true)
+                    .optionalEnd()
+                    .optionalStart()
+                    .appendOffsetId()
+                    .optionalEnd()
+                    .toFormatter();
+
     public List<Collections> getAllCollections() {
         return collectionsRepository.findAll();
     }
 
-    @Scheduled(fixedRate = 100000) // ~ every 100 seconds
+    @Scheduled(fixedRate = 100000)
     public void fetchDataPeriodically() {
         fetchDataFromApi();
     }
@@ -50,14 +75,18 @@ public class CollectionService {
     @SuppressWarnings("unchecked")
     public void fetchDataFromApi() {
 
-        LocalDateTime lastFetchedDateFromDb = collectionsRepository
-                .findLastFetchedDate()
+        // ✅ Use payment date cursor (MAX(date)) not lastFetched (prevents cursor jumping forward)
+        LocalDateTime cursor = collectionsRepository
+                .findMaxPaymentDate()
                 .orElse(LocalDateTime.of(2025, 12, 31, 0, 0));
 
-        DateTimeFormatter isoFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss");
+        // ✅ overlap window to avoid missing boundary records (same second / delayed API)
+        cursor = cursor.minusMinutes(5);
+
+        DateTimeFormatter iso = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss");
 
         Map<String, Object> requestBody = new HashMap<>();
-        requestBody.put("lastFetchedDate", lastFetchedDateFromDb.format(isoFormatter));
+        requestBody.put("lastFetchedDate", cursor.format(iso));
         requestBody.put("apiKey", API_KEY);
 
         HttpHeaders headers = new HttpHeaders();
@@ -86,7 +115,18 @@ public class CollectionService {
                 (List<Map<String, Object>>) responseMap.get("collections");
         if (collections == null) collections = java.util.Collections.emptyList();
 
-        log.info("Number of collection items returned by API: {}", collections.size());
+        log.info("CursorSent={}, apiLastFetchedDate={}, API items={}", cursor, apiLastFetchedDate, collections.size());
+
+        // ✅ Optional: show date range returned (helps debug missing rows)
+        LocalDateTime min = null, max = null;
+        int nullDates = 0;
+        for (Map<String, Object> item : collections) {
+            LocalDateTime d = parseDate(safeString(item.get("paymentDate")));
+            if (d == null) { nullDates++; continue; }
+            if (min == null || d.isBefore(min)) min = d;
+            if (max == null || d.isAfter(max)) max = d;
+        }
+        log.info("API paymentDate range: min={}, max={}, nullDates={}", min, max, nullDates);
 
         // Convert API data to list
         List<Map<String, String>> apiData = new ArrayList<>();
@@ -100,36 +140,44 @@ public class CollectionService {
             row.put("centreName", safeString(item.get("centreName")));
             row.put("paymentType", safeString(item.get("paymentType")));
 
-            // ✅ allow null controlNumber (DON'T force to something)
+            // ✅ allow null controlNumber
             row.put("controlNumber", safeString(item.get("controlNumber")));
 
             row.put("paymentDate", safeString(item.get("paymentDate")));
             apiData.add(row);
         }
 
-        log.info("Number of rows prepared for insertion: {}", apiData.size());
-
+        log.info("Rows prepared for processing: {}", apiData.size());
         processApiData(apiData, apiLastFetchedDate);
     }
 
     private String safeString(Object obj) {
         if (obj == null) return null;
         String s = obj.toString().trim();
-        return s.isEmpty() ? null : s;
+        if (s.isEmpty()) return null;
+        if ("null".equalsIgnoreCase(s)) return null; // ✅ handle "null" string
+        return s;
     }
 
     private String safeTrim(String s) {
         if (s == null) return null;
         String t = s.trim();
-        return t.isEmpty() ? null : t;
+        if (t.isEmpty()) return null;
+        if ("null".equalsIgnoreCase(t)) return null;
+        return t;
     }
 
+    // ✅ More tolerant amount parser (keeps digits, dot, minus)
     private BigDecimal parseBigDecimalOrNull(String s) {
         if (s == null) return null;
         String t = s.trim();
-        if (t.isEmpty()) return null;
+        if (t.isEmpty() || "null".equalsIgnoreCase(t)) return null;
 
+        // remove commas & any currency/text
         t = t.replace(",", "");
+        t = t.replaceAll("[^0-9.\\-]", "");
+
+        if (t.isEmpty() || "-".equals(t) || ".".equals(t)) return null;
 
         try {
             return new BigDecimal(t);
@@ -141,15 +189,16 @@ public class CollectionService {
     private LocalDateTime parseDate(String dateStr) {
         if (dateStr == null || dateStr.isBlank()) return null;
         String t = dateStr.trim();
+
         try {
-            return LocalDateTime.parse(t);
-        } catch (Exception e) {
-            try {
-                DateTimeFormatter f = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss");
-                return LocalDateTime.parse(t, f);
-            } catch (Exception ex) {
-                return null;
+            // if has offset or Z
+            if (t.endsWith("Z") || t.matches(".*[+-]\\d\\d:\\d\\d$")) {
+                return OffsetDateTime.parse(t, FLEX).toLocalDateTime();
             }
+            return LocalDateTime.parse(t, FLEX);
+        } catch (Exception e) {
+            log.warn("Failed to parse paymentDate='{}'", t);
+            return null;
         }
     }
 
@@ -157,9 +206,10 @@ public class CollectionService {
     public void processApiData(List<Map<String, String>> apiData, LocalDateTime apiLastFetchedDate) {
 
         int inserted = 0;
+        int updated = 0;
         int skippedMissingKey = 0;
         int skippedBadAmounts = 0;
-        int skippedDuplicate = 0;
+        int skippedNoChange = 0;
 
         for (Map<String, String> row : apiData) {
 
@@ -175,18 +225,18 @@ public class CollectionService {
             BigDecimal amountBilled = parseBigDecimalOrNull(row.get("amountBilled"));
             BigDecimal amountPaid = parseBigDecimalOrNull(row.get("amountPaid"));
 
-            // ✅ Key checks (controlNumber is NO LONGER required)
+            // ✅ key checks (controlNumber not required)
             if (date == null || gfsCodeValue == null || centreName == null) {
                 skippedMissingKey++;
-                log.warn("SKIP(missing key) controlNumber={}, date={}, gfsCode={}, centreName={}, desc={}",
+                log.warn("SKIP(missing key) controlNumber={}, dateRaw={}, gfsCode={}, centreName={}, desc={}",
                         controlNumber, row.get("paymentDate"), gfsCodeValue, centreName, description);
                 continue;
             }
 
-            // ✅ Amount checks
+            // ✅ amount checks
             if (amountBilled == null || amountPaid == null) {
                 skippedBadAmounts++;
-                log.warn("SKIP(bad amount) controlNumber={}, billed={}, paid={}, desc={}",
+                log.warn("SKIP(bad amount) controlNumber={}, billedRaw={}, paidRaw={}, desc={}",
                         controlNumber, row.get("amountBilled"), row.get("amountPaid"), description);
                 continue;
             }
@@ -235,53 +285,68 @@ public class CollectionService {
                 return gfsCodeRepository.save(newCode);
             });
 
-            // ✅ 4) DEDUPE:
-            // - if controlNumber exists, use original strong key
-            // - if controlNumber is null, use a fallback key so you don't insert duplicates every cycle
+            // ✅ 4) UPSERT (update if exists, else insert)
             String safeDesc = (description != null) ? description : "";
 
-            boolean exists;
+            Optional<Collections> existingOpt;
             if (controlNumber != null) {
-                exists = collectionsRepository
-                        .existsByControlNumberAndGfsCode_CodeAndCentre_IdAndDateAndDescriptionAndAmountBilled(
-                                controlNumber,
-                                gfsCodeValue,
-                                centre.getId(),
-                                date,
-                                safeDesc,
-                                amountBilled
+                // ✅ stable key: do NOT include amounts
+                existingOpt = collectionsRepository
+                        .findFirstByControlNumberAndGfsCode_CodeAndCentre_IdAndDateAndDescription(
+                                controlNumber, gfsCodeValue, centre.getId(), date, safeDesc
                         );
             } else {
-                // fallback dedupe when controlNumber is NULL
-                // Using: customer + gfs + centre + date + desc + billed + paid
-                exists = collectionsRepository
-                        .existsByCustomer_NameAndGfsCode_CodeAndCentre_IdAndDateAndDescriptionAndAmountBilledAndAmountPaid(
-                                safeCustomerName,
-                                gfsCodeValue,
-                                centre.getId(),
-                                date,
-                                safeDesc,
-                                amountBilled,
-                                amountPaid
+                existingOpt = collectionsRepository
+                        .findFirstByCustomer_NameAndGfsCode_CodeAndCentre_IdAndDateAndDescription(
+                                safeCustomerName, gfsCodeValue, centre.getId(), date, safeDesc
                         );
             }
 
-            if (exists) {
-                skippedDuplicate++;
+            if (existingOpt.isPresent()) {
+                Collections existing = existingOpt.get();
+
+                boolean changed = false;
+
+                if (existing.getAmountBilled() == null || existing.getAmountBilled().compareTo(amountBilled) != 0) {
+                    existing.setAmountBilled(amountBilled);
+                    changed = true;
+                }
+                if (existing.getAmountPaid() == null || existing.getAmountPaid().compareTo(amountPaid) != 0) {
+                    existing.setAmountPaid(amountPaid);
+                    changed = true;
+                }
+                if (!Objects.equals(existing.getPaymentType(), paymentType)) {
+                    existing.setPaymentType(paymentType);
+                    changed = true;
+                }
+                if (!Objects.equals(existing.getDescription(), description)) {
+                    existing.setDescription(description);
+                    changed = true;
+                }
+                if (!Objects.equals(existing.getControlNumber(), controlNumber)) {
+                    existing.setControlNumber(controlNumber);
+                    changed = true;
+                }
+
+                existing.setLastFetched(apiLastFetchedDate);
+
+                if (changed) {
+                    collectionsRepository.save(existing);
+                    updated++;
+                } else {
+                    skippedNoChange++;
+                }
                 continue;
             }
 
-            // 5) Save Collection
+            // 5) Insert new Collection
             Collections collection = new Collections();
             collection.setCustomer(customer);
             collection.setCentre(centre);
             collection.setGfsCode(gfsCode);
 
             collection.setPaymentType(paymentType);
-
-            // ✅ keep null in DB (allowed)
-            collection.setControlNumber(controlNumber);
-
+            collection.setControlNumber(controlNumber); // ✅ keep null allowed
             collection.setDescription(description);
 
             collection.setAmountBilled(amountBilled);
@@ -294,8 +359,8 @@ public class CollectionService {
             inserted++;
         }
 
-        log.info("Process done. inserted={}, skippedMissingKey={}, skippedBadAmounts={}, skippedDuplicate={}",
-                inserted, skippedMissingKey, skippedBadAmounts, skippedDuplicate);
+        log.info("Process done. inserted={}, updated={}, skippedMissingKey={}, skippedBadAmounts={}, skippedNoChange={}",
+                inserted, updated, skippedMissingKey, skippedBadAmounts, skippedNoChange);
     }
 
     private String getZoneName(String firstName) {
