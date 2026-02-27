@@ -16,28 +16,58 @@ import {
 import { toast } from "sonner";
 import { motion } from "framer-motion";
 
-/** -------- types from backend projections -------- */
-interface ReportRow {
-  id: number;
+/** -------- types from backend (PAYMENTS + GFS MODE) --------
+ * rows are LINE-LEVEL:
+ * - 1 row = 1 collections row (bill line) joined to its parent paymentId
+ * - serviceCode/serviceDesc come from gfs_code
+ */
+interface PaymentRow {
+  id: number; // collections.id (line id)
+  paymentId: number; // payments.payment_id (API)
   customerName: string;
   centreName: string;
   zoneName: string;
-  serviceCode: string;
-  serviceDesc: string;
+
+  // ✅ from gfs_code
+  serviceCode: string; // gfs_code.code
+  serviceDesc: string; // gfs_code.description
+
   paymentType?: string;
-  controlNumber: string;
-  amount: number; // billed
-  amountPaid?: number; // paid
-  datePaid: string; // ISO
+  controlNumber?: string;
+
+  totalBilled: number; // collections.amount_billed
+  totalPaid?: number; // collections.amount_paid (nullable)
+  paymentDate: string; // payments.payment_date (ISO)
 }
 
 interface ServiceSummaryRow {
   serviceCode: string;
   serviceDesc: string;
-  total: number; // billed total per service (as returned by server)
+  totalBilled: number;
+  totalPaid: number;
+  totalTransactions: number;
 }
 
-/** ✅ OPTIONAL: server can return dropdown options */
+/** UI Row (keeps your old table shape) */
+interface ReportRow {
+  id: number;
+  customerName: string;
+  centreName: string;
+  zoneName: string;
+
+  serviceCode: string;
+  serviceDesc: string;
+
+  paymentType?: string;
+  controlNumber: string;
+
+  amount: number; // billed
+  amountPaid?: number; // paid
+  datePaid: string; // ISO
+  paymentId: number;
+}
+
+/** server filters */
 interface ReportFilters {
   centres?: string[];
   zones?: string[];
@@ -45,18 +75,18 @@ interface ReportFilters {
 }
 
 interface ReportResponse extends ReportFilters {
-  totalIncome: number; // billed grand total (server)
+  totalIncome: number; // billed (sum)
   totalTransactions: number;
-  totalPaid: number; // paid grand total (server)
-  totalAmount: number; // some servers use this as "billed filtered" - keep but be consistent
+  totalPaid: number; // paid (sum)
+  totalAmount: number;
 
   page: number;
   size: number;
   totalElements: number;
   totalPages: number;
 
-  rows: ReportRow[];
-  summaryByService: ServiceSummaryRow[];
+  rows: PaymentRow[]; // ✅ line rows from server
+  summaryByService: ServiceSummaryRow[]; // ✅ grouped by gfs service
 }
 
 /** -------- helpers -------- */
@@ -68,6 +98,8 @@ const toSafeNumber = (v: any) => {
   return Number.isFinite(n) ? n : 0;
 };
 
+const safeStr = (v: any) => (v == null ? "" : String(v));
+
 export default function CollectionReport() {
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || "/api";
 
@@ -77,15 +109,17 @@ export default function CollectionReport() {
 
   const [centre, setCentre] = useState("ALL");
   const [zone, setZone] = useState("ALL");
+
+  // ✅ now this is GFS serviceCode filter
   const [serviceCode, setServiceCode] = useState("ALL");
 
-  // server data
+  // server data (UI-shape)
   const [rows, setRows] = useState<ReportRow[]>([]);
   const [summaryByService, setSummaryByService] = useState<ServiceSummaryRow[]>([]);
-  const [totalIncome, setTotalIncome] = useState(0); // server grand billed
+  const [totalIncome, setTotalIncome] = useState(0);
   const [totalTransactions, setTotalTransactions] = useState(0);
-  const [totalPaid, setTotalPaid] = useState(0); // server grand paid
-  const [totalAmount, setTotalAmount] = useState(0); // keep, but we will NOT use it as "Billed" in summary badge
+  const [totalPaid, setTotalPaid] = useState(0);
+  const [totalAmount, setTotalAmount] = useState(0);
 
   // dropdown options
   const [centreOptions, setCentreOptions] = useState<string[]>([]);
@@ -122,12 +156,12 @@ export default function CollectionReport() {
 
   /** ✅ Effective filters (respect role locks) */
   const effectiveZone = useMemo(() => {
-    if (isZoneUser) return userZone; // locked
+    if (isZoneUser) return userZone;
     return zone === "ALL" ? null : zone;
   }, [isZoneUser, userZone, zone]);
 
   const effectiveCentre = useMemo(() => {
-    if (isCentreUser) return userCentre; // locked
+    if (isCentreUser) return userCentre;
     return centre === "ALL" ? null : centre;
   }, [isCentreUser, userCentre, centre]);
 
@@ -138,6 +172,7 @@ export default function CollectionReport() {
       toDate,
       centre: effectiveCentre,
       zone: effectiveZone,
+      // ✅ now this is GFS code
       serviceCode: serviceCode === "ALL" ? null : serviceCode,
       page,
       size,
@@ -165,7 +200,6 @@ export default function CollectionReport() {
   const filteredCentreOptions = useMemo(() => {
     if (!effectiveZone) return centreOptions;
 
-    // NOTE: This mapping from rows is page-limited. If your page has no rows, we fallback.
     const centresInThisZone = Array.from(
       new Set(
         rows
@@ -176,7 +210,6 @@ export default function CollectionReport() {
     );
 
     if (!centresInThisZone.length) return centreOptions;
-
     const set = new Set(centresInThisZone);
     return (centreOptions || []).filter((c) => set.has(String(c).trim()));
   }, [centreOptions, rows, effectiveZone]);
@@ -194,11 +227,11 @@ export default function CollectionReport() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filteredCentreOptions, effectiveZone]);
 
-  /** ✅ Page totals (CLIENT) — this fixes “table totals vs summary totals” confusion */
+  /** ✅ Page totals (CLIENT) */
   const pageBilled = useMemo(() => rows.reduce((sum, r) => sum + toSafeNumber(r.amount), 0), [rows]);
   const pagePaid = useMemo(() => rows.reduce((sum, r) => sum + toSafeNumber(r.amountPaid), 0), [rows]);
 
-  /** ✅ Server totals (GLOBAL filtered dataset) — what cards show */
+  /** ✅ Server totals (GLOBAL filtered dataset) */
   const serverBilled = useMemo(() => toSafeNumber(totalIncome), [totalIncome]);
   const serverPaid = useMemo(() => toSafeNumber(totalPaid), [totalPaid]);
 
@@ -213,6 +246,8 @@ export default function CollectionReport() {
         return;
       }
 
+      // ✅ IMPORTANT: change endpoint to payments if your backend uses /payments/report
+      // If you still expose it as /collections/report, keep it.
       const res = await fetch(`${apiUrl}/collections/report`, {
         method: "POST",
         headers: {
@@ -224,6 +259,8 @@ export default function CollectionReport() {
         body: JSON.stringify(body),
       });
 
+      console.log("Report fetch payload:", body);
+
       if (!res.ok) {
         const txt = await res.text().catch(() => "");
         console.error("Report fetch failed:", res.status, txt);
@@ -232,33 +269,63 @@ export default function CollectionReport() {
 
       const data: ReportResponse = await res.json();
 
-      // normalize rows (important: amountPaid may be null/undefined)
-      const normalizedRows = (data.rows || []).map((r) => ({
-        ...r,
-        amount: toSafeNumber(r.amount),
-        amountPaid: r.amountPaid == null ? undefined : toSafeNumber(r.amountPaid),
-      }));
+      /** ✅ Map PaymentRow(line) -> ReportRow (keep UI stable) */
+      const normalizedRows: ReportRow[] = (data.rows || []).map((p) => {
+        const billed = toSafeNumber((p as any).totalBilled);
+        const paidRaw = (p as any).totalPaid;
+
+        return {
+          id: toSafeNumber(p.id),
+          paymentId: toSafeNumber((p as any).paymentId),
+          customerName: safeStr(p.customerName),
+          centreName: safeStr(p.centreName),
+          zoneName: safeStr(p.zoneName),
+
+          serviceCode: safeStr((p as any).serviceCode),
+          serviceDesc: safeStr((p as any).serviceDesc),
+
+          paymentType: safeStr((p as any).paymentType),
+          controlNumber: safeStr((p as any).controlNumber),
+
+          amount: billed,
+          amountPaid: paidRaw == null ? undefined : toSafeNumber(paidRaw),
+          datePaid: safeStr((p as any).paymentDate),
+        };
+      });
 
       setRows(normalizedRows);
-      setSummaryByService(data.summaryByService || []);
+
+      setSummaryByService(
+        (data.summaryByService || []).map((s: any) => ({
+          serviceCode: safeStr(s.serviceCode),
+          serviceDesc: safeStr(s.serviceDesc),
+          totalBilled: toSafeNumber(s.totalBilled),
+          totalPaid: toSafeNumber(s.totalPaid),
+          totalTransactions: toSafeNumber(s.totalTransactions),
+        }))
+      );
+
       setTotalIncome(toSafeNumber(data.totalIncome));
       setTotalTransactions(toSafeNumber(data.totalTransactions));
       setTotalAmount(toSafeNumber((data as any).totalAmount));
       setTotalPaid(toSafeNumber((data as any).totalPaid));
       setTotalPages(Math.max(1, toSafeNumber(data.totalPages) || 1));
 
+      // options from server or fallback from rows
       const serverCentres = (data.centres || []).filter(Boolean);
       const serverZones = (data.zones || []).filter(Boolean);
+
+      // ✅ services are GFS services (code+desc)
       const serverServices = (data.services || []).filter((s) => s?.serviceCode && s?.serviceDesc);
 
-      const fallbackCentres = Array.from(new Set((normalizedRows || []).map((r) => r.centreName).filter(Boolean)));
-      const fallbackZones = Array.from(new Set((normalizedRows || []).map((r) => r.zoneName).filter(Boolean)));
+      const fallbackCentres = Array.from(new Set(normalizedRows.map((r) => r.centreName).filter(Boolean)));
+      const fallbackZones = Array.from(new Set(normalizedRows.map((r) => r.zoneName).filter(Boolean)));
 
       const fallbackServices = Array.from(
         new Map(
-          (data.summaryByService || [])
-            .filter((s) => s?.serviceCode && s?.serviceDesc)
-            .map((s) => [s.serviceCode, { serviceCode: s.serviceCode, serviceDesc: s.serviceDesc }])
+          normalizedRows
+            .filter((r) => r.serviceCode && r.serviceDesc)
+            .map((r) => [r.serviceCode, { serviceCode: r.serviceCode, serviceDesc: r.serviceDesc }])
         ).values()
       );
 
@@ -267,7 +334,8 @@ export default function CollectionReport() {
       setServiceOptions(serverServices.length ? serverServices : fallbackServices);
 
       if (serviceCode !== "ALL") {
-        const exists = (serverServices.length ? serverServices : fallbackServices).some((s) => s.serviceCode === serviceCode);
+        const list = serverServices.length ? serverServices : fallbackServices;
+        const exists = list.some((s) => s.serviceCode === serviceCode);
         if (!exists) setServiceCode("ALL");
       }
     } catch (e) {
@@ -290,7 +358,7 @@ export default function CollectionReport() {
     }
   };
 
-  /** Optional: export to excel for current page (example kept minimal) */
+  /** Export current page */
   const exportCurrentPageToExcel = () => {
     try {
       const ws = XLSX.utils.json_to_sheet(
@@ -303,13 +371,14 @@ export default function CollectionReport() {
           "Amount Billed": toSafeNumber(r.amount),
           "Amount Paid": r.amountPaid == null ? "" : toSafeNumber(r.amountPaid),
           "Date Paid": r.datePaid ? String(r.datePaid).split("T")[0] : "",
+          "Payment ID": r.paymentId,
           Centre: r.centreName,
           Zone: r.zoneName,
         }))
       );
       const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "Collections");
-      XLSX.writeFile(wb, `collections_${fromDate}_${toDate}_page${page + 1}.xlsx`);
+      XLSX.utils.book_append_sheet(wb, ws, "Payments");
+      XLSX.writeFile(wb, `payments_${fromDate}_${toDate}_page${page + 1}.xlsx`);
     } catch (e) {
       console.error(e);
       toast.error("Export failed");
@@ -334,24 +403,9 @@ export default function CollectionReport() {
       animate={{ opacity: 1 }}
       transition={{ duration: 0.5, ease: "easeOut" }}
     >
-      <motion.div
-        className="p-6 space-y-6"
-        initial="hidden"
-        animate="show"
-        variants={{
-          hidden: { opacity: 0 },
-          show: { opacity: 1, transition: { staggerChildren: 0.12 } },
-        }}
-      >
+      <motion.div className="p-6 space-y-6">
         {/* Breadcrumb */}
-        <motion.div
-          className="flex items-center justify-between"
-          variants={{
-            hidden: { opacity: 0, y: 14 },
-            show: { opacity: 1, y: 0 },
-          }}
-          transition={{ duration: 0.45, ease: "easeOut" }}
-        >
+        <motion.div className="flex items-center justify-between" initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }}>
           <Breadcrumb className="px-1 sm:px-2">
             <BreadcrumbList>
               <BreadcrumbItem>
@@ -360,7 +414,7 @@ export default function CollectionReport() {
                 </BreadcrumbLink>
               </BreadcrumbItem>
               <BreadcrumbSeparator />
-              <BreadcrumbItem className="text-slate-600">Collections</BreadcrumbItem>
+              <BreadcrumbItem className="text-slate-600">Payments</BreadcrumbItem>
             </BreadcrumbList>
           </Breadcrumb>
 
@@ -381,379 +435,291 @@ export default function CollectionReport() {
           )}
         </motion.div>
 
-        {/* Stats (SERVER GLOBAL TOTALS) */}
-        <motion.div
-          className="grid gap-4 sm:grid-cols-4"
-          initial="hidden"
-          whileInView="show"
-          viewport={{ once: true, amount: 0.2 }}
-          variants={{
-            hidden: { opacity: 0 },
-            show: { opacity: 1, transition: { staggerChildren: 0.12 } },
-          }}
-        >
-          <motion.div
-            variants={{
-              hidden: { opacity: 0, y: 16, scale: 0.98 },
-              show: { opacity: 1, y: 0, scale: 1 },
-            }}
-            whileHover={{ y: -4, scale: 1.01 }}
-            transition={{ duration: 0.45, ease: "easeOut" }}
-          >
-            <Card className="rounded-2xl border border-slate-200/60 bg-gradient-to-br from-blue-50 via-white to-blue-100 shadow-sm hover:shadow-md transition">
-              <CardHeader>
-                <CardDescription className="text-slate-600">Total Billed (All Filtered)</CardDescription>
-              </CardHeader>
-              <CardContent className="text-2xl font-semibold text-slate-900">
-                {serverBilled.toLocaleString()} <span className="text-sm text-slate-500">TZS</span>
-              </CardContent>
-            </Card>
-          </motion.div>
+        {/* Stats */}
+        <motion.div className="grid gap-4 sm:grid-cols-3" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+          <Card className="rounded-2xl border border-slate-200/60 bg-gradient-to-br from-blue-50 via-white to-blue-100 shadow-sm">
+            <CardHeader>
+              <CardDescription className="text-slate-600">Total Billed (All Filtered)</CardDescription>
+            </CardHeader>
+            <CardContent className="text-2xl font-semibold text-slate-900">
+              {serverBilled.toLocaleString()} <span className="text-sm text-slate-500">TZS</span>
+            </CardContent>
+          </Card>
 
-          <motion.div
-            variants={{
-              hidden: { opacity: 0, y: 16, scale: 0.98 },
-              show: { opacity: 1, y: 0, scale: 1 },
-            }}
-            whileHover={{ y: -4, scale: 1.01 }}
-            transition={{ duration: 0.45, ease: "easeOut" }}
-          >
-            <Card className="rounded-2xl border border-slate-200/60 bg-gradient-to-br from-green-50 via-white to-green-100 shadow-sm hover:shadow-md transition">
-              <CardHeader>
-                <CardDescription className="text-slate-600">Total Paid (All Filtered)</CardDescription>
-              </CardHeader>
-              <CardContent className="text-2xl font-semibold text-slate-900">
-                {serverPaid.toLocaleString()} <span className="text-sm text-slate-500">TZS</span>
-              </CardContent>
-            </Card>
-          </motion.div>
+          <Card className="rounded-2xl border border-slate-200/60 bg-gradient-to-br from-green-50 via-white to-green-100 shadow-sm">
+            <CardHeader>
+              <CardDescription className="text-slate-600">Total Paid (All Filtered)</CardDescription>
+            </CardHeader>
+            <CardContent className="text-2xl font-semibold text-slate-900">
+              {serverPaid.toLocaleString()} <span className="text-sm text-slate-500">TZS</span>
+            </CardContent>
+          </Card>
 
-          <motion.div
-            variants={{
-              hidden: { opacity: 0, y: 16, scale: 0.98 },
-              show: { opacity: 1, y: 0, scale: 1 },
-            }}
-            whileHover={{ y: -4, scale: 1.01 }}
-            transition={{ duration: 0.45, ease: "easeOut" }}
-          >
-            <Card className="rounded-2xl border border-slate-200/60 bg-gradient-to-br from-purple-50 via-white to-purple-100 shadow-sm hover:shadow-md transition">
-              <CardHeader>
-                <CardDescription className="text-slate-600">Total Transactions (All Filtered)</CardDescription>
-              </CardHeader>
-              <CardContent className="text-2xl font-semibold text-slate-900">
-                {toSafeNumber(totalTransactions).toLocaleString()}
-              </CardContent>
-            </Card>
-          </motion.div>
+          <Card className="rounded-2xl border border-slate-200/60 bg-gradient-to-br from-purple-50 via-white to-purple-100 shadow-sm">
+            <CardHeader>
+              <CardDescription className="text-slate-600">Total Transactions (All Filtered)</CardDescription>
+            </CardHeader>
+            <CardContent className="text-2xl font-semibold text-slate-900">
+              {toSafeNumber(totalTransactions).toLocaleString()}
+            </CardContent>
+          </Card>
 
-          <motion.div
-            variants={{
-              hidden: { opacity: 0, y: 16, scale: 0.98 },
-              show: { opacity: 1, y: 0, scale: 1 },
-            }}
-            whileHover={{ y: -4, scale: 1.01 }}
-            transition={{ duration: 0.45, ease: "easeOut" }}
-          >
-            <Card className="rounded-2xl border border-slate-200/60 bg-gradient-to-br from-orange-50 via-white to-orange-100 shadow-sm hover:shadow-md transition">
-              <CardHeader>
-                <CardDescription className="text-slate-600">This Page Billed</CardDescription>
-              </CardHeader>
-              <CardContent className="text-2xl font-semibold text-slate-900">
-                {pageBilled.toLocaleString()} <span className="text-sm text-slate-500">TZS</span>
-              </CardContent>
-            </Card>
-          </motion.div>
+         
         </motion.div>
 
-        {/* Filter + Table Card */}
-        <motion.div
-          initial={{ opacity: 0, y: 18 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true, amount: 0.2 }}
-          transition={{ duration: 0.5, ease: "easeOut" }}
-        >
-          <Card className="relative overflow-hidden rounded-2xl border-slate-200/60 bg-white shadow-sm">
-            <CardHeader className="relative">
-              <CardDescription className="text-slate-600">
-                Filter by date, service (name), centre and zone
-              </CardDescription>
-            </CardHeader>
+        {/* Filter + Table */}
+        <Card className="relative overflow-hidden rounded-2xl border-slate-200/60 bg-white shadow-sm">
+          <CardHeader>
+            <CardDescription className="text-slate-600">Filter by date, service (GFS), centre and zone</CardDescription>
+          </CardHeader>
 
-            <CardContent className="relative">
-              {/* Filters */}
-              <motion.div
-                className="rounded-2xl border border-slate-200/70 bg-gradient-to-b from-slate-50 to-white p-4 sm:p-5"
-                initial={{ opacity: 0, y: 14 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ duration: 0.45, ease: "easeOut" }}
-              >
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-6 gap-4">
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-slate-700">From</label>
-                    <Input
-                      type="date"
-                      value={fromDate}
-                      onChange={(e) => {
-                        setPage(0);
-                        setFromDate(e.target.value);
-                      }}
-                      className="h-10 rounded-xl border-slate-200 bg-white"
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-slate-700">To</label>
-                    <Input
-                      type="date"
-                      value={toDate}
-                      onChange={(e) => {
-                        setPage(0);
-                        setToDate(e.target.value);
-                      }}
-                      className="h-10 rounded-xl border-slate-200 bg-white"
-                    />
-                  </div>
-
-                  {/* CENTRE */}
-                  {(!isCentreUser || isHQUser) && (
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-medium text-slate-700">Centre</label>
-                      <Select
-                        value={isCentreUser ? userCentre : centre}
-                        onValueChange={(v) => {
-                          setPage(0);
-                          setCentre(v);
-                        }}
-                        disabled={isCentreUser}
-                      >
-                        <SelectTrigger className="h-10 rounded-xl border-slate-200 bg-white">
-                          <SelectValue placeholder="All" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="ALL">All</SelectItem>
-                          {(filteredCentreOptions || []).map((c) => (
-                            <SelectItem key={c} value={c}>
-                              {c}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  )}
-
-                  {/* ZONE */}
-                  {isHQUser && (
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-medium text-slate-700">Zone</label>
-                      <Select
-                        value={zone}
-                        onValueChange={(v) => {
-                          setPage(0);
-                          setZone(v);
-                          setCentre("ALL");
-                        }}
-                      >
-                        <SelectTrigger className="h-10 rounded-xl border-slate-200 bg-white">
-                          <SelectValue placeholder="All" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="ALL">All</SelectItem>
-                          {(zoneOptions || []).map((z) => (
-                            <SelectItem key={z} value={z}>
-                              {z}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  )}
-
-                  <div className="md:col-span-1 flex items-end">
-                    <div className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
-                      Tip: cards show ALL filtered totals. Table shows only this page.
-                    </div>
-                  </div>
+          <CardContent>
+            {/* Filters */}
+            <div className="rounded-2xl border border-slate-200/70 bg-gradient-to-b from-slate-50 to-white p-4 sm:p-5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-6 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-slate-700">From</label>
+                  <Input
+                    type="date"
+                    value={fromDate}
+                    onChange={(e) => {
+                      setPage(0);
+                      setFromDate(e.target.value);
+                    }}
+                    className="h-10 rounded-xl border-slate-200 bg-white"
+                  />
                 </div>
 
-                {/* Page totals chips */}
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <div className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-700 shadow-sm">
-                    This page billed: <span className="font-semibold">{pageBilled.toLocaleString()}</span> TZS
-                  </div>
-                  <div className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-700 shadow-sm">
-                    This page paid: <span className="font-semibold">{pagePaid.toLocaleString()}</span> TZS
-                  </div>
-                  <Button
-                    variant="outline"
-                    onClick={exportCurrentPageToExcel}
-                    className="h-8 rounded-full border-slate-200 bg-white text-xs"
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-slate-700">To</label>
+                  <Input
+                    type="date"
+                    value={toDate}
+                    onChange={(e) => {
+                      setPage(0);
+                      setToDate(e.target.value);
+                    }}
+                    className="h-10 rounded-xl border-slate-200 bg-white"
+                  />
+                </div>
+
+                {/* SERVICE (GFS) */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-slate-700">Service (GFS)</label>
+                  <Select
+                    value={serviceCode}
+                    onValueChange={(v) => {
+                      setPage(0);
+                      setServiceCode(v);
+                    }}
                   >
-                    Export this page
-                  </Button>
+                    <SelectTrigger className="h-10 rounded-xl border-slate-200 bg-white">
+                      <SelectValue placeholder="All" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ALL">All</SelectItem>
+                      {(serviceOptions || []).map((s) => (
+                        <SelectItem key={s.serviceCode} value={s.serviceCode}>
+                          {s.serviceDesc} ({s.serviceCode})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
-              </motion.div>
 
-              {/* Table */}
-              <motion.div
-                className="mt-6 overflow-auto rounded-2xl border border-slate-200/70 bg-white"
-                initial={{ opacity: 0, y: 14 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true, amount: 0.2 }}
-                transition={{ duration: 0.45, ease: "easeOut" }}
+                {/* CENTRE */}
+                {(!isCentreUser || isHQUser) && (
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-slate-700">Centre</label>
+                    <Select
+                      value={isCentreUser ? userCentre : centre}
+                      onValueChange={(v) => {
+                        setPage(0);
+                        setCentre(v);
+                      }}
+                      disabled={isCentreUser}
+                    >
+                      <SelectTrigger className="h-10 rounded-xl border-slate-200 bg-white">
+                        <SelectValue placeholder="All" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="ALL">All</SelectItem>
+                        {(filteredCentreOptions || []).map((c) => (
+                          <SelectItem key={c} value={c}>
+                            {c}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+
+                {/* ZONE */}
+                {isHQUser && (
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-slate-700">Zone</label>
+                    <Select
+                      value={zone}
+                      onValueChange={(v) => {
+                        setPage(0);
+                        setZone(v);
+                        setCentre("ALL");
+                      }}
+                    >
+                      <SelectTrigger className="h-10 rounded-xl border-slate-200 bg-white">
+                        <SelectValue placeholder="All" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="ALL">All</SelectItem>
+                        {(zoneOptions || []).map((z) => (
+                          <SelectItem key={z} value={z}>
+                            {z}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+
+             
+              </div>
+
+           
+            </div>
+
+            {/* Table */}
+            <div className="mt-6 overflow-auto rounded-2xl border border-slate-200/70 bg-white">
+              <table className="min-w-full text-sm text-left">
+                <thead className="sticky top-0 z-10 bg-slate-900 text-white">
+                  <tr>
+                    <th className="p-3 font-medium">#</th>
+                    <th className="p-3 font-medium">Customer</th>
+                    <th className="p-3 font-medium">Payment Type</th>
+                    <th className="p-3 font-medium">Control Number</th>
+                    <th className="p-3 font-medium text-right">Amount Billed (TZS)</th>
+                    <th className="p-3 font-medium text-right">Amount Paid (TZS)</th>
+                    <th className="p-3 font-medium">Date Paid</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {rows.length > 0 ? (
+                    rows.map((row, i) => (
+                      <tr key={`${row.id}-${row.paymentId}`} className="border-t border-slate-200/70 hover:bg-slate-50">
+                        <td className="p-3 text-slate-700">{page * size + i + 1}</td>
+                        <td className="p-3 text-slate-900">{row.customerName}</td>
+                        <td className="p-3 text-slate-700">{row.paymentType || "-"}</td>
+                        <td className="p-3 text-slate-700">{row.controlNumber || "-"}</td>
+                        <td className="p-3 text-right font-semibold text-slate-900">
+                          {toSafeNumber(row.amount).toLocaleString()}
+                        </td>
+                        <td className="p-3 text-right font-semibold text-slate-900">
+                          {row.amountPaid == null ? "-" : toSafeNumber(row.amountPaid).toLocaleString()}
+                        </td>
+                        <td className="p-3 text-slate-700">
+                          {row.datePaid ? String(row.datePaid).split("T")[0] : ""}
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={9} className="p-10 text-center text-slate-500">
+                        No records found.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Pagination */}
+            <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <Button
+                variant="outline"
+                disabled={page === 0}
+                onClick={() => setPage((p) => Math.max(p - 1, 0))}
+                className="h-10 rounded-xl border-slate-200 bg-white"
               >
-                <table className="min-w-full text-sm text-left">
+                Previous
+              </Button>
+
+              <span className="text-sm text-slate-600">
+                Page <span className="font-semibold text-slate-900">{page + 1}</span> of{" "}
+                <span className="font-semibold text-slate-900">{totalPages}</span>
+              </span>
+
+              <Button
+                variant="outline"
+                disabled={page + 1 >= totalPages}
+                onClick={() => setPage((p) => Math.min(p + 1, totalPages - 1))}
+                className="h-10 rounded-xl border-slate-200 bg-white"
+              >
+                Next
+              </Button>
+            </div>
+
+            {/* Summary by GFS Service */}
+            <div className="mt-10">
+              <div className="flex items-end justify-between gap-4">
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-900">Summary Per Service (GFS)</h3>
+                  <p className="text-sm text-slate-600">Totals grouped by service (all filtered records).</p>
+                </div>
+
+                <div className="flex gap-2 flex-wrap justify-end">
+                  <div className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-700 shadow-sm">
+                    Billed (all filtered):{" "}
+                    <span className="font-semibold">{serverBilled.toLocaleString()} TZS</span>
+                  </div>
+                  <div className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-700 shadow-sm">
+                    Paid (all filtered):{" "}
+                    <span className="font-semibold">{serverPaid.toLocaleString()} TZS</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-4 overflow-auto rounded-2xl border border-slate-200/70 bg-white">
+                <table className="min-w-full text-sm">
                   <thead className="sticky top-0 z-10 bg-slate-900 text-white">
                     <tr>
-                      <th className="p-3 font-medium">#</th>
-                      <th className="p-3 font-medium">Customer</th>
                       <th className="p-3 font-medium">Service Code</th>
-                      <th className="p-3 font-medium">Service</th>
-                      <th className="p-3 font-medium">Payment Type</th>
-                      <th className="p-3 font-medium">Control Number</th>
-                      <th className="p-3 font-medium text-right">Amount Billed (TZS)</th>
-                      <th className="p-3 font-medium text-right">Amount Paid (TZS)</th>
-                      <th className="p-3 font-medium">Date Paid</th>
+                      <th className="p-3 font-medium">Service Name</th>
+                      <th className="p-3 font-medium text-right">Total Billed (TZS)</th>
+                      <th className="p-3 font-medium text-right">Total Paid (TZS)</th>
+                      <th className="p-3 font-medium text-right">Transactions</th>
                     </tr>
                   </thead>
-
                   <tbody>
-                    {rows.length > 0 ? (
-                      rows.map((row, i) => (
-                        <tr key={row.id} className="border-t border-slate-200/70 hover:bg-slate-50">
-                          <td className="p-3 text-slate-700">{page * size + i + 1}</td>
-                          <td className="p-3 text-slate-900">{row.customerName}</td>
-                          <td className="p-3 text-slate-700">{row.serviceCode}</td>
-                          <td className="p-3 text-slate-700">{row.serviceDesc}</td>
-                          <td className="p-3 text-slate-700">{row.paymentType || "-"}</td>
-                          <td className="p-3 text-slate-700">{row.controlNumber || "-"}</td>
+                    {summaryByService.length ? (
+                      summaryByService.map((s, idx) => (
+                        <tr key={`${s.serviceCode}-${idx}`} className="border-t border-slate-200/70 hover:bg-slate-50">
+                          <td className="p-3 text-slate-700">{s.serviceCode}</td>
+                          <td className="p-3 text-slate-900">{s.serviceDesc}</td>
                           <td className="p-3 text-right font-semibold text-slate-900">
-                            {toSafeNumber(row.amount).toLocaleString()}
+                            {toSafeNumber(s.totalBilled).toLocaleString()}
                           </td>
                           <td className="p-3 text-right font-semibold text-slate-900">
-                            {/* IMPORTANT: show "-" when paid is missing, do not silently show 0 */}
-                            {row.amountPaid == null ? "-" : toSafeNumber(row.amountPaid).toLocaleString()}
+                            {toSafeNumber(s.totalPaid).toLocaleString()}
                           </td>
-                          <td className="p-3 text-slate-700">
-                            {row.datePaid ? String(row.datePaid).split("T")[0] : ""}
+                          <td className="p-3 text-right text-slate-700">
+                            {toSafeNumber(s.totalTransactions).toLocaleString()}
                           </td>
                         </tr>
                       ))
                     ) : (
                       <tr>
-                        <td colSpan={9} className="p-10 text-center text-slate-500">
-                          No records found.
+                        <td colSpan={5} className="p-10 text-center text-slate-500">
+                          No summary available.
                         </td>
                       </tr>
                     )}
                   </tbody>
                 </table>
-              </motion.div>
+              </div>
 
-              {/* Pagination */}
-              <motion.div
-                className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
-                initial={{ opacity: 0, y: 12 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ duration: 0.4, ease: "easeOut" }}
-              >
-                <Button
-                  variant="outline"
-                  disabled={page === 0}
-                  onClick={() => setPage((p) => Math.max(p - 1, 0))}
-                  className="h-10 rounded-xl border-slate-200 bg-white"
-                >
-                  Previous
-                </Button>
-
-                <span className="text-sm text-slate-600">
-                  Page <span className="font-semibold text-slate-900">{page + 1}</span> of{" "}
-                  <span className="font-semibold text-slate-900">{totalPages}</span>
-                </span>
-
-                <Button
-                  variant="outline"
-                  disabled={page + 1 >= totalPages}
-                  onClick={() => setPage((p) => Math.min(p + 1, totalPages - 1))}
-                  className="h-10 rounded-xl border-slate-200 bg-white"
-                >
-                  Next
-                </Button>
-              </motion.div>
-
-              {/* Summary by Service (SERVER GLOBAL SUMMARY) */}
-              <motion.div
-                className="mt-10"
-                initial={{ opacity: 0, y: 14 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true, amount: 0.2 }}
-                transition={{ duration: 0.45, ease: "easeOut" }}
-              >
-                <div className="flex items-end justify-between gap-4">
-                  <div>
-                    <h3 className="text-lg font-semibold text-slate-900">Summary Per Service</h3>
-                    <p className="text-sm text-slate-600">Totals grouped by service (all filtered records).</p>
-                  </div>
-
-                  <div className="flex gap-2 flex-wrap justify-end">
-                    <div className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-700 shadow-sm">
-                      Billed (all filtered):{" "}
-                      <span className="font-semibold">{serverBilled.toLocaleString()} TZS</span>
-                    </div>
-                    <div className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-700 shadow-sm">
-                      Paid (all filtered):{" "}
-                      <span className="font-semibold">{serverPaid.toLocaleString()} TZS</span>
-                    </div>
-                    <div className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-700 shadow-sm">
-                      This page billed:{" "}
-                      <span className="font-semibold">{pageBilled.toLocaleString()} TZS</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="mt-4 overflow-auto rounded-2xl border border-slate-200/70 bg-white">
-                  <table className="min-w-full text-sm">
-                    <thead className="sticky top-0 z-10 bg-slate-900 text-white">
-                      <tr>
-                        <th className="p-3 font-medium">Service Code</th>
-                        <th className="p-3 font-medium">Service Name</th>
-                        <th className="p-3 font-medium text-right">Total Amount (TZS)</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {summaryByService.length ? (
-                        summaryByService.map((s) => (
-                          <tr
-                            key={s.serviceCode}
-                            className="border-t border-slate-200/70 hover:bg-slate-50"
-                          >
-                            <td className="p-3 text-slate-700">{s.serviceCode}</td>
-                            <td className="p-3 text-slate-900">{s.serviceDesc}</td>
-                            <td className="p-3 text-right font-semibold text-slate-900">
-                              {toSafeNumber(s.total).toLocaleString()}
-                            </td>
-                          </tr>
-                        ))
-                      ) : (
-                        <tr>
-                          <td colSpan={3} className="p-10 text-center text-slate-500">
-                            No summary available.
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-
-                {/* Keep this if you still need it for debugging */}
-                <div className="mt-3 text-xs text-slate-500">
-                  Note: server totalAmount = {toSafeNumber(totalAmount).toLocaleString()} (field kept as-is, but UI uses totalIncome as billed).
-                </div>
-              </motion.div>
-            </CardContent>
-          </Card>
-        </motion.div>
+            </div>
+          </CardContent>
+        </Card>
       </motion.div>
     </motion.div>
   );

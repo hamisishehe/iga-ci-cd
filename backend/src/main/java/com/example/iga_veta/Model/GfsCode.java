@@ -37,6 +37,10 @@ public class GfsCode {
     @JsonIgnore
     private List<Collections> collectionsList;
 
+    @OneToMany(mappedBy = "gfsCode")
+    @JsonIgnore
+    private List<Payment> paymentsList;
+
 
     @OneToMany(mappedBy = "gfsCode")
     @JsonIgnore

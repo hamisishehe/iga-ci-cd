@@ -1,9 +1,6 @@
 package com.example.iga_veta.Service;
 
-import com.example.iga_veta.Model.Allocation;
-import com.example.iga_veta.Model.Centre;
-import com.example.iga_veta.Model.Collections;
-import com.example.iga_veta.Model.GfsCode;
+import com.example.iga_veta.Model.*;
 import com.example.iga_veta.Repository.AllocationRepository;
 import com.example.iga_veta.Repository.CentreRepository;
 import jakarta.transaction.Transactional;
@@ -31,36 +28,37 @@ public class AllocationService {
     // ==========================
 
     /**
-     * Allocate collections between custom date range (view only)
+     * Allocate payments between custom date range (view only)
      *
-     * @param collections List of all collections
-     * @param startDate   Start of range (inclusive)
-     * @param endDate     End of range (inclusive)
+     * @param payments  List of all payments
+     * @param startDate Start of range (inclusive)
+     * @param endDate   End of range (inclusive)
      * @return List of allocations
      */
-    public List<Allocation> allocateAllCentres(List<Collections> collections,
+    public List<Allocation> allocateAllCentres(List<Payment> payments,
                                                LocalDateTime startDate,
                                                LocalDateTime endDate) {
 
         List<Allocation> result = new ArrayList<>();
 
-        // Filter collections by date range
-        List<Collections> filteredCollections = filterCollectionsByRange(collections, startDate, endDate);
+        // Filter payments by date range
+        List<Payment> filteredPayments = filterPaymentsByRange(payments, startDate, endDate);
 
         // Group by centre
-        Map<Centre, List<Collections>> collectionsByCentre = filteredCollections.stream()
-                .collect(Collectors.groupingBy(Collections::getCentre));
+        Map<Centre, List<Payment>> paymentsByCentre = filteredPayments.stream()
+                .filter(p -> p.getCentre() != null)
+                .collect(Collectors.groupingBy(Payment::getCentre));
 
         List<Centre> allCentres = centreRepository.findAll();
 
         for (Centre centre : allCentres) {
-            List<Collections> centreCollections = collectionsByCentre.getOrDefault(centre, new ArrayList<>());
+            List<Payment> centrePayments = paymentsByCentre.getOrDefault(centre, new ArrayList<>());
 
-            if (!centreCollections.isEmpty()) {
+            if (!centrePayments.isEmpty()) {
                 // Allocate by GFS code for this centre
-                result.addAll(allocateByGfsCode(centreCollections));
+                result.addAll(allocateByGfsCode(centrePayments));
             } else {
-                // No collections → add empty allocation for view
+                // No payments → add empty allocation for view
                 result.add(createEmptyAllocation(centre));
             }
         }
@@ -69,39 +67,68 @@ public class AllocationService {
     }
 
     @Transactional
-    public List<Allocation> allocateByGfsCode(List<Collections> collections) {
+    public List<Allocation> allocateByGfsCode(List<Payment> payments) {
         List<Allocation> result = new ArrayList<>();
 
-        // Group collections by GFS code
-        Map<GfsCode, List<Collections>> grouped = collections.stream()
-                .collect(Collectors.groupingBy(Collections::getGfsCode));
+        if (payments == null || payments.isEmpty()) return result;
 
-        for (Map.Entry<GfsCode, List<Collections>> entry : grouped.entrySet()) {
+        // Group payments by GFS code
+        Map<GfsCode, List<Payment>> grouped = payments.stream()
+                .collect(Collectors.groupingBy(Payment::getGfsCode));
+
+        for (Map.Entry<GfsCode, List<Payment>> entry : grouped.entrySet()) {
             GfsCode gfs = entry.getKey();
-            List<Collections> groupCollections = entry.getValue();
+            List<Payment> groupPayments = entry.getValue();
+
+            if (gfs == null) {
+                // If some payments have null GFS code, you can skip or handle separately.
+                // For now: skip null-gfs bucket.
+                continue;
+            }
 
             // Special case: 142301600001 → split DRIVING vs SHORT COURSES
             if ("142301600001".equals(gfs.getCode())) {
-                Map<Boolean, List<Collections>> split = groupCollections.stream()
-                        .collect(Collectors.partitioningBy(c -> isDriving(safeStr(c.getDescription()))));
+                Map<Boolean, List<Payment>> split = groupPayments.stream()
+                        .collect(Collectors.partitioningBy(p -> isDriving(safeStr(p.getDescription()))));
 
                 // DRIVING
-                List<Collections> drvItems = split.get(true);
+                List<Payment> drvItems = split.get(true);
                 if (drvItems != null && !drvItems.isEmpty()) {
                     BigDecimal markupPercent = parseMarkup(gfs.getMarkupPercent());
-                    result.add(createSpecialAllocation(drvItems, gfs, markupPercent, "BASIC DRIVING", gfs.getCode() + "-DRIVING"));
+                    Allocation a = createSpecialAllocation(
+                            drvItems,
+                            gfs,
+                            markupPercent,
+                            "BASIC DRIVING",
+                            gfs.getCode() + "-DRIVING"
+                    );
+                    if (a != null) result.add(a);
                 }
 
                 // SHORT COURSES
-                List<Collections> othItems = split.get(false);
+                List<Payment> othItems = split.get(false);
                 if (othItems != null && !othItems.isEmpty()) {
                     BigDecimal markupPercent = new BigDecimal("0.30");
-                    result.add(createSpecialAllocation(othItems, gfs, markupPercent, "SHORT COURSES", gfs.getCode() + "-SHORT COURSES"));
+                    Allocation a = createSpecialAllocation(
+                            othItems,
+                            gfs,
+                            markupPercent,
+                            "SHORT COURSES",
+                            gfs.getCode() + "-SHORT COURSES"
+                    );
+                    if (a != null) result.add(a);
                 }
 
             } else {
                 // Normal GFS codes
-                result.add(createSpecialAllocation(groupCollections, gfs, parseMarkup(gfs.getMarkupPercent()), gfs.getDescription(), gfs.getCode()));
+                Allocation a = createSpecialAllocation(
+                        groupPayments,
+                        gfs,
+                        parseMarkup(gfs.getMarkupPercent()),
+                        gfs.getDescription(),
+                        gfs.getCode()
+                );
+                if (a != null) result.add(a);
             }
         }
 
@@ -112,12 +139,14 @@ public class AllocationService {
     // HELPER METHODS
     // ==========================
 
-    private List<Collections> filterCollectionsByRange(List<Collections> collections,
-                                                       LocalDateTime startDate,
-                                                       LocalDateTime endDate) {
-        return collections.stream()
-                .filter(c -> c.getDate() != null)
-                .filter(c -> !c.getDate().isBefore(startDate) && !c.getDate().isAfter(endDate))
+    private List<Payment> filterPaymentsByRange(List<Payment> payments,
+                                                LocalDateTime startDate,
+                                                LocalDateTime endDate) {
+        if (payments == null) return List.of();
+
+        return payments.stream()
+                .filter(p -> p.getPaymentDate() != null)
+                .filter(p -> !p.getPaymentDate().isBefore(startDate) && !p.getPaymentDate().isAfter(endDate))
                 .collect(Collectors.toList());
     }
 
@@ -125,8 +154,8 @@ public class AllocationService {
         return s == null ? "" : s.trim();
     }
 
-    private static boolean isDriving(String colDesc) {
-        String d = safeStr(colDesc).toUpperCase();
+    private static boolean isDriving(String desc) {
+        String d = safeStr(desc).toUpperCase();
         return d.contains("DRIVING") || d.contains("PSV") || d.contains("PVS");
     }
 
@@ -151,20 +180,20 @@ public class AllocationService {
         allocation.setDepreciationIncentiveToFacilitators(BigDecimal.ZERO);
         allocation.setRemittedToCentre(BigDecimal.ZERO);
         allocation.setGfs_code("N/A");
-        allocation.setGfs_code_description("No Collections (Custom Range)");
+        allocation.setGfs_code_description("No Payments (Custom Range)");
         return allocation;
     }
 
-    private Allocation createSpecialAllocation(List<Collections> collections,
+    private Allocation createSpecialAllocation(List<Payment> payments,
                                                GfsCode gfs,
                                                BigDecimal markupPercent,
                                                String allocationDescLabel,
                                                String overrideCode) {
 
-        if (collections.isEmpty()) return null;
+        if (payments == null || payments.isEmpty()) return null;
 
-        BigDecimal totalAmount = collections.stream()
-                .map(Collections::getAmountBilled)
+        BigDecimal totalAmount = payments.stream()
+                .map(p -> p.getTotalBilled() == null ? BigDecimal.ZERO : p.getTotalBilled())
                 .reduce(BigDecimal.ZERO, BigDecimal::add)
                 .setScale(2, RoundingMode.HALF_UP);
 
@@ -190,7 +219,10 @@ public class AllocationService {
         allocation.setOriginalAmount(totalAmount);
         allocation.setDifferenceOnMarkup(differenceOnMarkup);
         allocation.setExpenditureAmount(expenditure);
-        allocation.setDate(collections.get(0).getDate());
+
+        // set date from first payment
+        allocation.setDate(payments.get(0).getPaymentDate());
+
         allocation.setProfitAmountPerCentreReport(profitMarkupPerCentre);
 
         // Contributions
@@ -207,7 +239,7 @@ public class AllocationService {
             allocation.setDepreciationIncentiveToFacilitators(BigDecimal.ZERO);
             allocation.setRemittedToCentre(BigDecimal.ZERO);
         } else if (!"Receipts from Application Fee".equalsIgnoreCase(allocationDescLabel)) {
-            // Normal contributions for other collections
+            // Normal contributions for other payments
             allocation.setContributionToCentralIGA(calc(profitMarkupPerCentre, 0.30));
             allocation.setFacilitationOfIGAForCentralActivities(calc(profitMarkupPerCentre, 0.04));
             allocation.setFacilitationZonalActivities(calc(profitMarkupPerCentre, 0.04));
@@ -228,7 +260,7 @@ public class AllocationService {
             allocation.setRemittedToCentre(calc(profitMarkupPerCentre, 0.62));
         }
 
-        allocation.setCentre(collections.get(0).getCentre());
+        allocation.setCentre(payments.get(0).getCentre());
         allocation.setGfs_code(overrideCode);
         allocation.setGfs_code_description(safeStr(allocationDescLabel));
 
@@ -247,5 +279,4 @@ public class AllocationService {
             return BigDecimal.ZERO;
         }
     }
-
 }

@@ -32,14 +32,50 @@ import { toast } from "sonner";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
-/** -------- types from backend projections -------- */
-interface ReportRow {
-  id: number;
+/** -------- types from backend (PAYMENTS + GFS MODE) --------
+ * rows are LINE-LEVEL:
+ * - 1 row = 1 collections row (bill line) joined to its parent paymentId
+ * - serviceCode/serviceDesc come from gfs_code
+ */
+interface PaymentRow {
+  id: number; // collections.id (line id)
+  paymentId: number; // payments.payment_id (API)
   customerName: string;
   centreName: string;
   zoneName: string;
+
+  // ✅ from gfs_code
+  serviceCode: string; // gfs_code.code
+  serviceDesc: string; // gfs_code.description
+
+  paymentType?: string;
+  controlNumber?: string;
+
+  totalBilled: number; // collections.amount_billed
+  totalPaid?: number; // collections.amount_paid (nullable)
+  paymentDate: string; // payments.payment_date (ISO)
+}
+
+interface ServiceSummaryRow {
   serviceCode: string;
   serviceDesc: string;
+  totalBilled: number;
+  totalPaid: number;
+  totalTransactions: number;
+}
+
+/** UI Row (export/status shape) */
+interface ReportRow {
+  id: number;
+  paymentId: number;
+
+  customerName: string;
+  centreName: string;
+  zoneName: string;
+
+  serviceCode: string;
+  serviceDesc: string;
+
   paymentType?: string;
   controlNumber?: string;
 
@@ -55,17 +91,18 @@ interface ReportFilters {
 }
 
 interface ReportResponse extends ReportFilters {
-  totalIncome: number;
+  totalIncome: number; // billed (sum)
   totalTransactions: number;
-  totalAmount: number; // billed total (filtered)
-  totalPaid?: number;
+  totalPaid: number; // paid (sum)
+  totalAmount: number;
 
   page: number;
   size: number;
   totalElements: number;
   totalPages: number;
 
-  rows: ReportRow[];
+  rows: PaymentRow[]; // ✅ line rows from server
+  summaryByService: ServiceSummaryRow[]; // ✅ grouped by gfs service
 }
 
 /** -------- helpers -------- */
@@ -77,6 +114,8 @@ const toSafeNumber = (v: any) => {
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
 };
+
+const safeStr = (v: any) => (v == null ? "" : String(v));
 
 const fileStamp = () => {
   const d = new Date();
@@ -103,14 +142,20 @@ export default function CollectionReport() {
   // filters
   const [centre, setCentre] = useState("ALL");
   const [zone, setZone] = useState("ALL");
+
+  // ✅ GFS serviceCode filter
   const [serviceCode, setServiceCode] = useState("ALL");
 
-  // server data
+  // server data (UI-shape)
   const [rows, setRows] = useState<ReportRow[]>([]);
+  const [summaryByService, setSummaryByService] = useState<ServiceSummaryRow[]>(
+    []
+  );
+
   const [totalIncome, setTotalIncome] = useState(0);
   const [totalTransactions, setTotalTransactions] = useState(0);
-  const [totalAmount, setTotalAmount] = useState(0);
   const [totalPaid, setTotalPaid] = useState(0);
+  const [totalAmount, setTotalAmount] = useState(0);
 
   // options
   const [centreOptions, setCentreOptions] = useState<string[]>([]);
@@ -119,9 +164,10 @@ export default function CollectionReport() {
     Array<{ serviceCode: string; serviceDesc: string }>
   >([]);
 
-  // paging (large)
+  // paging (large export fetch)
   const [page, setPage] = useState(0);
   const size = 2000;
+  const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(true);
 
   // role & user
@@ -167,39 +213,29 @@ export default function CollectionReport() {
     if (isZoneUser) setZone(userZone || "ALL");
   }, [userType, isCentreUser, isZoneUser, userCentre, userZone]);
 
-  /** ✅ Effective role-safe values */
+  /** ✅ Effective role-safe values (match ya juu) */
   const effectiveZone = useMemo(() => {
-    return isZoneUser ? userZone : zone;
+    if (isZoneUser) return userZone;
+    return zone === "ALL" ? null : zone;
   }, [isZoneUser, userZone, zone]);
 
   const effectiveCentre = useMemo(() => {
-    return isCentreUser ? userCentre : centre;
+    if (isCentreUser) return userCentre;
+    return centre === "ALL" ? null : centre;
   }, [isCentreUser, userCentre, centre]);
 
-  /** build request payload */
+  /** build request payload (match ya juu) */
   const payload = useMemo(() => {
     return {
       fromDate,
       toDate,
-      centre: isCentreUser ? userCentre : effectiveCentre === "ALL" ? null : effectiveCentre,
-      zone: isZoneUser ? userZone : effectiveZone === "ALL" ? null : effectiveZone,
+      centre: effectiveCentre,
+      zone: effectiveZone,
       serviceCode: serviceCode === "ALL" ? null : serviceCode,
       page,
       size,
     };
-  }, [
-    fromDate,
-    toDate,
-    effectiveCentre,
-    effectiveZone,
-    serviceCode,
-    page,
-    size,
-    isCentreUser,
-    isZoneUser,
-    userCentre,
-    userZone,
-  ]);
+  }, [fromDate, toDate, effectiveCentre, effectiveZone, serviceCode, page, size]);
 
   /** debounce fetch */
   const debounceRef = useRef<number | null>(null);
@@ -218,6 +254,43 @@ export default function CollectionReport() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [payload, userType]);
+
+  /** ✅ centres filtered by zone (UI dependency) - same logic as ya juu */
+  const filteredCentreOptions = useMemo(() => {
+    if (isCentreUser) return [userCentre].filter(Boolean);
+
+    if (!effectiveZone) return centreOptions;
+
+    const centresInThisZone = Array.from(
+      new Set(
+        rows
+          .filter(
+            (r) =>
+              (r.zoneName || "").trim() === String(effectiveZone).trim()
+          )
+          .map((r) => (r.centreName || "").trim())
+          .filter(Boolean)
+      )
+    );
+
+    if (!centresInThisZone.length) return centreOptions;
+
+    const set = new Set(centresInThisZone.map((x) => String(x).trim()));
+    return (centreOptions || []).filter((c) => set.has(String(c).trim()));
+  }, [isCentreUser, userCentre, centreOptions, rows, effectiveZone]);
+
+  /** ✅ If zone changes and selected centre is not valid, reset */
+  useEffect(() => {
+    if (isCentreUser) return;
+    if (centre === "ALL") return;
+
+    const exists = filteredCentreOptions.includes(centre);
+    if (!exists) {
+      setCentre("ALL");
+      setPage(0);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filteredCentreOptions, effectiveZone]);
 
   const fetchReport = async (body: any) => {
     setLoading(true);
@@ -241,6 +314,8 @@ export default function CollectionReport() {
         body: JSON.stringify(body),
       });
 
+      console.log("Report fetch payload:", body);
+
       if (!res.ok) {
         const txt = await res.text().catch(() => "");
         console.error("Report fetch failed:", res.status, txt);
@@ -249,29 +324,68 @@ export default function CollectionReport() {
 
       const data: ReportResponse = await res.json();
 
-      setRows(data.rows || []);
+      /** ✅ Map PaymentRow(line) -> ReportRow (same as ya juu) */
+      const normalizedRows: ReportRow[] = (data.rows || []).map((p) => {
+        const billed = toSafeNumber((p as any).totalBilled);
+        const paidRaw = (p as any).totalPaid;
+
+        return {
+          id: toSafeNumber(p.id),
+          paymentId: toSafeNumber((p as any).paymentId),
+
+          customerName: safeStr(p.customerName),
+          centreName: safeStr(p.centreName),
+          zoneName: safeStr(p.zoneName),
+
+          serviceCode: safeStr((p as any).serviceCode),
+          serviceDesc: safeStr((p as any).serviceDesc),
+
+          paymentType: safeStr((p as any).paymentType),
+          controlNumber: safeStr((p as any).controlNumber),
+
+          amount: billed,
+          amountPaid: paidRaw == null ? undefined : toSafeNumber(paidRaw),
+          datePaid: safeStr((p as any).paymentDate),
+        };
+      });
+
+      setRows(normalizedRows);
+
+      setSummaryByService(
+        (data.summaryByService || []).map((s: any) => ({
+          serviceCode: safeStr(s.serviceCode),
+          serviceDesc: safeStr(s.serviceDesc),
+          totalBilled: toSafeNumber(s.totalBilled),
+          totalPaid: toSafeNumber(s.totalPaid),
+          totalTransactions: toSafeNumber(s.totalTransactions),
+        }))
+      );
+
       setTotalIncome(toSafeNumber(data.totalIncome));
       setTotalTransactions(toSafeNumber(data.totalTransactions));
-      setTotalAmount(toSafeNumber(data.totalAmount));
+      setTotalAmount(toSafeNumber((data as any).totalAmount));
       setTotalPaid(toSafeNumber((data as any).totalPaid));
+      setTotalPages(Math.max(1, toSafeNumber(data.totalPages) || 1));
 
-      // dropdown options
+      // dropdown options from server or fallback from rows
       const serverCentres = (data.centres || []).filter(Boolean);
       const serverZones = (data.zones || []).filter(Boolean);
+
       const serverServices = (data.services || []).filter(
         (s) => s?.serviceCode && s?.serviceDesc
       );
 
       const fallbackCentres = Array.from(
-        new Set((data.rows || []).map((r) => r.centreName).filter(Boolean))
+        new Set(normalizedRows.map((r) => r.centreName).filter(Boolean))
       );
       const fallbackZones = Array.from(
-        new Set((data.rows || []).map((r) => r.zoneName).filter(Boolean))
+        new Set(normalizedRows.map((r) => r.zoneName).filter(Boolean))
       );
+
       const fallbackServices = Array.from(
         new Map(
-          (data.rows || [])
-            .filter((r) => r?.serviceCode && r?.serviceDesc)
+          normalizedRows
+            .filter((r) => r.serviceCode && r.serviceDesc)
             .map((r) => [
               r.serviceCode,
               { serviceCode: r.serviceCode, serviceDesc: r.serviceDesc },
@@ -280,17 +394,21 @@ export default function CollectionReport() {
       ).sort((a, b) => a.serviceDesc.localeCompare(b.serviceDesc));
 
       setCentreOptions(
-        isCentreUser ? [userCentre] : serverCentres.length ? serverCentres : fallbackCentres
+        isCentreUser
+          ? [userCentre]
+          : serverCentres.length
+          ? serverCentres
+          : fallbackCentres
       );
       setZoneOptions(
         isZoneUser ? [userZone] : serverZones.length ? serverZones : fallbackZones
       );
       setServiceOptions(serverServices.length ? serverServices : fallbackServices);
 
+      // if selected service not available, reset
       if (serviceCode !== "ALL") {
-        const exists = (serverServices.length ? serverServices : fallbackServices).some(
-          (s) => s.serviceCode === serviceCode
-        );
+        const list = serverServices.length ? serverServices : fallbackServices;
+        const exists = list.some((s) => s.serviceCode === serviceCode);
         if (!exists) setServiceCode("ALL");
       }
     } catch (e) {
@@ -298,10 +416,12 @@ export default function CollectionReport() {
       toast.error("Failed to load report");
 
       setRows([]);
+      setSummaryByService([]);
       setTotalIncome(0);
       setTotalTransactions(0);
       setTotalAmount(0);
       setTotalPaid(0);
+      setTotalPages(1);
 
       setCentreOptions(isCentreUser ? [userCentre] : []);
       setZoneOptions(isZoneUser ? [userZone] : []);
@@ -311,67 +431,7 @@ export default function CollectionReport() {
     }
   };
 
-  /**
-   * ✅ KEY FIX: when HQ changes zone, fetch centres for that zone (so centre dropdown doesn't show all)
-   * - We request report with zone selected and centre=null, then build centre options from returned rows
-   */
-  const fetchCentresForZone = async (z: string) => {
-    try {
-      const token = localStorage.getItem("authToken");
-      const apiKey = process.env.NEXT_PUBLIC_API_KEY;
-
-      if (!token || !apiKey) return;
-
-      const res = await fetch(`${apiUrl}/collections/report`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-          "X-API-KEY": apiKey,
-        },
-        cache: "no-store",
-        body: JSON.stringify({
-          fromDate,
-          toDate,
-          zone: z === "ALL" ? null : z,
-          centre: null, // IMPORTANT
-          serviceCode: serviceCode === "ALL" ? null : serviceCode,
-          page: 0,
-          size: 2000,
-        }),
-      });
-
-      if (!res.ok) return;
-
-      const data: ReportResponse = await res.json();
-
-      const centresInZone = Array.from(
-        new Set((data.rows || []).map((r) => r.centreName).filter(Boolean))
-      ).sort((a, b) => a.localeCompare(b));
-
-      // if backend provides centres already filtered, prefer it
-      const serverCentres = (data.centres || []).filter(Boolean);
-      const finalCentres = serverCentres.length ? serverCentres : centresInZone;
-
-      setCentreOptions(finalCentres);
-
-      // if selected centre not in new list, reset
-      if (centre !== "ALL" && !finalCentres.includes(centre)) {
-        setCentre("ALL");
-      }
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-  /** ✅ Filtered centres list for rendering (HQ only; centre users locked) */
-  const filteredCentreOptions = useMemo(() => {
-    if (isCentreUser) return [userCentre].filter(Boolean);
-    // after fetchCentresForZone, centreOptions will already be zone-scoped
-    return centreOptions;
-  }, [isCentreUser, userCentre, centreOptions]);
-
-  /** ✅ PDF export (kept as in your code) */
+  /** ✅ PDF export (uses same normalized rows) */
   const exportPdf = () => {
     if (!rows.length) {
       toast.error("No data to export");
@@ -383,11 +443,14 @@ export default function CollectionReport() {
     const titleMain = "VETA";
     const titleSub = "COLLECTIONS REPORT";
     const dateRange = `From ${fromDate || "-"}  To ${toDate || "-"}`;
+    const meta = `Centre: ${effectiveCentre ?? "ALL"} | Zone: ${
+      effectiveZone ?? "ALL"
+    } | Service: ${serviceCode === "ALL" ? "ALL" : serviceCode}`;
 
     doc.setFillColor(15, 23, 42);
-    doc.rect(10, 10, 190, 26, "F");
+    doc.rect(10, 10, 190, 30, "F");
     doc.setDrawColor(203, 213, 225);
-    doc.rect(10, 10, 190, 26);
+    doc.rect(10, 10, 190, 30);
 
     const img = new Image();
     img.src = "/veta.png";
@@ -408,30 +471,33 @@ export default function CollectionReport() {
     doc.setFontSize(9);
     doc.text(dateRange, 105, 31, { align: "center" });
 
-    const head = [[
-      "#",
-      "Customer",
-      "Control No",
-      "Service",
-      "Payment Type",
-      "Billed (TZS)",
-      "Paid (TZS)",
-      "Date Paid",
-    ]];
+    doc.setFontSize(8.5);
+    doc.text(meta, 105, 37, { align: "center" });
 
-    const body = rows.map((r, i) => ([
+    const head = [
+      [
+        "#",
+        "Customer",
+        "Control No",
+        "Payment Type",
+        "Billed (TZS)",
+        "Paid (TZS)",
+        "Date Paid",
+      ],
+    ];
+
+    const body = rows.map((r, i) => [
       i + 1,
       r.customerName || "N/A",
       r.controlNumber || "N/A",
-      r.serviceDesc || "N/A",
       r.paymentType || "-",
       toSafeNumber(r.amount).toLocaleString(),
-      toSafeNumber(r.amountPaid).toLocaleString(),
+      r.amountPaid == null ? "-" : toSafeNumber(r.amountPaid).toLocaleString(),
       r.datePaid ? String(r.datePaid).split("T")[0] : "",
-    ]));
+      r.paymentId ? String(r.paymentId) : "",
+    ]);
 
     body.push([
-      "",
       "",
       "",
       "",
@@ -439,19 +505,31 @@ export default function CollectionReport() {
       toSafeNumber(totalAmount).toLocaleString(),
       toSafeNumber(totalPaid).toLocaleString(),
       "",
+      "",
     ]);
 
     autoTable(doc, {
-      startY: 42,
+      startY: 45,
       head,
       body,
-      styles: { fontSize: 8.2, cellPadding: 2.2, lineWidth: 0.2, lineColor: [203, 213, 225] },
-      headStyles: { fillColor: [37, 99, 235], textColor: 255, fontStyle: "bold", halign: "center" },
+      styles: {
+        fontSize: 8.2,
+        cellPadding: 2.2,
+        lineWidth: 0.2,
+        lineColor: [203, 213, 225],
+      },
+      headStyles: {
+        fillColor: [37, 99, 235],
+        textColor: 255,
+        fontStyle: "bold",
+        halign: "center",
+      },
       alternateRowStyles: { fillColor: [248, 250, 252] },
       columnStyles: {
         0: { halign: "center", cellWidth: 8 },
         5: { halign: "right", cellWidth: 22 },
         6: { halign: "right", cellWidth: 22 },
+        8: { halign: "center", cellWidth: 18 },
       },
       didParseCell: (d) => {
         if (d.row.index === body.length - 1) {
@@ -471,11 +549,11 @@ export default function CollectionReport() {
       doc.text(`Page ${i} of ${pages}`, 200, 290, { align: "right" });
     }
 
-    const fname = `collection_report_${sanitizeName(username)}_${fileStamp()}.pdf`;
+    const fname = `collection_report_${effectiveCentre}_${fileStamp()}.pdf`;
     doc.save(fname);
   };
 
-  /** ✅ Excel export (kept as in your code) */
+  /** ✅ Excel export */
   const exportExcel = () => {
     if (!rows.length) {
       toast.error("No data to export");
@@ -485,14 +563,15 @@ export default function CollectionReport() {
     const title1 = "VETA";
     const title2 = "COLLECTIONS REPORT";
     const rangeLabel = `Date Range: ${fromDate || "-"}  to  ${toDate || "-"}`;
-    const metaLabel = `Centre: ${centre || "ALL"}   |   Zone: ${zone || "ALL"}   |   Service: ${serviceCode || "ALL"}`;
+    const metaLabel = `Centre: ${effectiveCentre ?? "ALL"} | Zone: ${
+      effectiveZone ?? "ALL"
+    } | Service: ${serviceCode === "ALL" ? "ALL" : serviceCode}`;
 
     const header = [
       "#",
       "Customer",
-      "Control Number",
-      "Service",
       "Payment Type",
+      "Control Number",
       "Amount Billed (TZS)",
       "Amount Paid (TZS)",
       "Date Paid",
@@ -501,15 +580,27 @@ export default function CollectionReport() {
     const body = rows.map((r, i) => [
       i + 1,
       r.customerName || "N/A",
-      r.controlNumber || "N/A",
-      r.serviceDesc || "N/A",
       r.paymentType || "-",
+      r.controlNumber || "N/A",
       toSafeNumber(r.amount),
-      toSafeNumber(r.amountPaid),
+      r.amountPaid == null ? "" : toSafeNumber(r.amountPaid),
       r.datePaid ? String(r.datePaid).split("T")[0] : "",
     ]);
 
-    const totalsRow = ["", "", "", "", "TOTALS", toSafeNumber(totalAmount), toSafeNumber(totalPaid), ""];
+    const totalsRow: any[] = [
+      "",
+      "",
+      "",
+      "TOTALS",
+      toSafeNumber(totalAmount),
+      toSafeNumber(totalPaid),
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+    ];
 
     const wsData: any[][] = [
       [title1],
@@ -532,27 +623,27 @@ export default function CollectionReport() {
     ];
 
     ws["!cols"] = [
-      { wch: 5 },
-      { wch: 22 },
-      { wch: 18 },
-      { wch: 28 },
-      { wch: 18 },
-      { wch: 18 },
-      { wch: 18 },
-      { wch: 14 },
+      { wch: 5 },  // #
+      { wch: 24 }, // Customer
+      { wch: 18 }, // Payment Type
+      { wch: 18 }, // Control
+      { wch: 18 }, // Billed
+      { wch: 18 }, // Paid
+      { wch: 14 }, // Date
     ];
 
+    // format numeric columns (Billed/Paid)
     const dataStartRow = 5;
     for (let r = 0; r < body.length; r++) {
       const excelRow = dataStartRow + r;
 
-      const billedCell = ws[XLSX.utils.encode_cell({ r: excelRow, c: 5 })];
+      const billedCell = ws[XLSX.utils.encode_cell({ r: excelRow, c: 6 })];
       if (billedCell) {
         billedCell.t = "n";
         billedCell.z = "#,##0.00";
       }
 
-      const paidCell = ws[XLSX.utils.encode_cell({ r: excelRow, c: 6 })];
+      const paidCell = ws[XLSX.utils.encode_cell({ r: excelRow, c: 7 })];
       if (paidCell) {
         paidCell.t = "n";
         paidCell.z = "#,##0.00";
@@ -562,7 +653,7 @@ export default function CollectionReport() {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Collections");
 
-    const fname = `collection_report_${sanitizeName(username)}_${fileStamp()}.xlsx`;
+    const fname = `collection_report_${effectiveCentre}_${fileStamp()}.xlsx`;
     XLSX.writeFile(wb, fname);
   };
 
@@ -581,12 +672,17 @@ export default function CollectionReport() {
           <Breadcrumb className="px-1 sm:px-2">
             <BreadcrumbList>
               <BreadcrumbItem>
-                <BreadcrumbLink href="/user/pages/dashboard" className="font-semibold text-slate-800">
+                <BreadcrumbLink
+                  href="/user/pages/dashboard"
+                  className="font-semibold text-slate-800"
+                >
                   Dashboard
                 </BreadcrumbLink>
               </BreadcrumbItem>
               <BreadcrumbSeparator />
-              <BreadcrumbItem className="text-slate-600">Collections</BreadcrumbItem>
+              <BreadcrumbItem className="text-slate-600">
+                Collections
+              </BreadcrumbItem>
             </BreadcrumbList>
           </Breadcrumb>
 
@@ -603,9 +699,12 @@ export default function CollectionReport() {
 
           <CardHeader className="relative flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <CardTitle className="text-lg sm:text-xl text-slate-900">Collections Report</CardTitle>
+              <CardTitle className="text-lg sm:text-xl text-slate-900">
+                Collections Report
+              </CardTitle>
               <CardDescription className="text-slate-600">
-                Zone → Centre dependency is applied (HQ). Export uses the filtered result.
+                Same report logic as dashboard report (line-level payments + GFS),
+                exports use filtered result.
               </CardDescription>
             </div>
 
@@ -634,7 +733,9 @@ export default function CollectionReport() {
             <div className="rounded-2xl border border-slate-200/70 bg-gradient-to-b from-slate-50 to-white p-4 sm:p-5">
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-6 gap-4 items-end">
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-slate-700">From</label>
+                  <label className="text-xs font-medium text-slate-700">
+                    From
+                  </label>
                   <Input
                     type="date"
                     value={fromDate}
@@ -647,7 +748,9 @@ export default function CollectionReport() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-slate-700">To</label>
+                  <label className="text-xs font-medium text-slate-700">
+                    To
+                  </label>
                   <Input
                     type="date"
                     value={toDate}
@@ -659,10 +762,38 @@ export default function CollectionReport() {
                   />
                 </div>
 
+                {/* SERVICE (GFS) */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-slate-700">
+                    Service (GFS)
+                  </label>
+                  <Select
+                    value={serviceCode}
+                    onValueChange={(v) => {
+                      setPage(0);
+                      setServiceCode(v);
+                    }}
+                  >
+                    <SelectTrigger className="h-10 rounded-xl border-slate-200 bg-white">
+                      <SelectValue placeholder="All" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ALL">All</SelectItem>
+                      {(serviceOptions || []).map((s) => (
+                        <SelectItem key={s.serviceCode} value={s.serviceCode}>
+                          {s.serviceDesc} ({s.serviceCode})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
                 {/* Centre */}
                 {(!isCentreUser || isHQUser) && (
                   <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-slate-700">Centre</label>
+                    <label className="text-xs font-medium text-slate-700">
+                      Centre
+                    </label>
                     <Select
                       value={isCentreUser ? userCentre : centre}
                       onValueChange={(v) => {
@@ -675,10 +806,9 @@ export default function CollectionReport() {
                         <SelectValue placeholder="All" />
                       </SelectTrigger>
 
-                      {/* ✅ IMPORTANT: use filteredCentreOptions */}
                       <SelectContent>
                         <SelectItem value="ALL">All</SelectItem>
-                        {filteredCentreOptions.map((c) => (
+                        {(filteredCentreOptions || []).map((c) => (
                           <SelectItem key={c} value={c}>
                             {c}
                           </SelectItem>
@@ -691,16 +821,15 @@ export default function CollectionReport() {
                 {/* Zone */}
                 {isHQUser && (
                   <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-slate-700">Zone</label>
+                    <label className="text-xs font-medium text-slate-700">
+                      Zone
+                    </label>
                     <Select
                       value={zone}
                       onValueChange={(v) => {
                         setPage(0);
                         setZone(v);
-
-                        // ✅ Reset centre and fetch centres for this zone
-                        setCentre("ALL");
-                        fetchCentresForZone(v);
+                        setCentre("ALL"); // same behavior as ya juu
                       }}
                     >
                       <SelectTrigger className="h-10 rounded-xl border-slate-200 bg-white">
@@ -708,7 +837,7 @@ export default function CollectionReport() {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="ALL">All</SelectItem>
-                        {zoneOptions.map((z) => (
+                        {(zoneOptions || []).map((z) => (
                           <SelectItem key={z} value={z}>
                             {z}
                           </SelectItem>
@@ -720,7 +849,7 @@ export default function CollectionReport() {
 
                 <div className="md:col-span-1">
                   <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
-                    {loading ? "Loading..." : "Tip: Export uses filtered result."}
+                    {loading ? "Loading..." : `Page ${page + 1} / ${totalPages}`}
                   </div>
                 </div>
               </div>
@@ -745,20 +874,30 @@ export default function CollectionReport() {
 
                 <div className="flex flex-wrap gap-2">
                   <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-700">
-                    Billed:{" "}
+                    Billed (all filtered):{" "}
                     <span className="font-semibold text-slate-900">
-                      {toSafeNumber(totalAmount).toLocaleString()} TZS
+                      {toSafeNumber(totalIncome).toLocaleString()} TZS
                     </span>
                   </div>
 
                   <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-700">
-                    Paid:{" "}
+                    Paid (all filtered):{" "}
                     <span className="font-semibold text-slate-900">
                       {toSafeNumber(totalPaid).toLocaleString()} TZS
                     </span>
                   </div>
+
+                  <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-700">
+                    Transactions:{" "}
+                    <span className="font-semibold text-slate-900">
+                      {toSafeNumber(totalTransactions).toLocaleString()}
+                    </span>
+                  </div>
                 </div>
               </div>
+
+              {/* (optional) summaryByService exists now (same as ya juu) but UI not shown */}
+              {/* You can show it later if you want */}
             </div>
 
             {/* NOTE: Table intentionally removed */}

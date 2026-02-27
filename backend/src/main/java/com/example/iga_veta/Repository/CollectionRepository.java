@@ -19,9 +19,14 @@ public interface CollectionRepository extends JpaRepository<Collections, Long> {
 
     // -------------------- existing queries (UPDATED to amountBilled) --------------------
 
+
+
+    Optional<Collections> findByPaymentIdAndBillId(Long paymentId, Long billId);
+
+    // Cursor (max payment date)
     @Query("select max(c.date) from Collections c")
     Optional<LocalDateTime> findMaxPaymentDate();
-
+    Optional<Collections> findByBillId(Long billId);
     // ✅ UPSERT finders (stable keys)
 
     Optional<Collections> findFirstByControlNumberAndGfsCode_CodeAndCentre_IdAndDateAndDescription(

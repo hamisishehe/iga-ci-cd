@@ -19,24 +19,14 @@ import java.time.LocalDateTime;
                 @Index(name = "idx_collections_control_number", columnList = "control_number"),
                 @Index(name = "idx_collections_control_date", columnList = "control_number, date"),
 
-                // ✅ Helpful for faster dedupe lookups after adding description
+                @Index(name = "idx_collections_payment_id", columnList = "payment_id"),
+
+                // helpful for dedupe lookups (optional)
                 @Index(name = "idx_collections_dedupe_lookup",
                         columnList = "control_number, gfs_code_id, centre_id, date, amount_billed, description")
         },
         uniqueConstraints = {
-                // ✅ FIX: include description (and payment_type if you want it even stricter)
-                @UniqueConstraint(
-                        name = "uk_collections_dedupe",
-                        columnNames = {
-                                "control_number",
-                                "gfs_code_id",
-                                "centre_id",
-                                "date",
-                                "amount_billed",
-                                "description"
-                                // If you want even stricter, add "payment_type" too
-                        }
-                )
+                @UniqueConstraint(name = "uq_collections_payment_bill", columnNames = {"payment_id", "bill_id"})
         }
 )
 public class Collections {
@@ -63,11 +53,6 @@ public class Collections {
     @Column(name = "amount_paid", precision = 12, scale = 2)
     private BigDecimal amountPaid;
 
-    /**
-     * ✅ IMPORTANT:
-     * description is now part of the unique key, so avoid nulls.
-     * Keep it nullable=false with default "" so unique constraint works reliably.
-     */
     @Column(name = "description", nullable = false, length = 255)
     private String description = "";
 
@@ -83,6 +68,12 @@ public class Collections {
     @Column(nullable = false)
     private LocalDateTime date;
 
+    @Column(name = "bill_id")
+    private Long billId;
+
+    @Column(name = "payment_id")
+    private Long paymentId;
+
     @Column(updatable = false)
     private LocalDateTime createdAt;
 
@@ -90,14 +81,14 @@ public class Collections {
 
     @PrePersist
     protected void onCreate() {
-        if (description == null) description = ""; // ✅ ensure non-null before insert
+        if (description == null) description = "";
         createdAt = LocalDateTime.now();
         updatedAt = createdAt;
     }
 
     @PreUpdate
     protected void onUpdate() {
-        if (description == null) description = ""; // ✅ ensure non-null before update
+        if (description == null) description = "";
         updatedAt = LocalDateTime.now();
     }
 }

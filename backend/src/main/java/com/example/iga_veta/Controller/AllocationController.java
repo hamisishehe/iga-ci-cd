@@ -4,9 +4,11 @@ package com.example.iga_veta.Controller;
 import com.example.iga_veta.Model.Allocation;
 import com.example.iga_veta.Model.ApiUsage;
 import com.example.iga_veta.Model.Collections;
+import com.example.iga_veta.Model.Payment;
 import com.example.iga_veta.Repository.AllocationRepository;
 import com.example.iga_veta.Repository.ApiUsageRepository;
 import com.example.iga_veta.Repository.CollectionRepository;
+import com.example.iga_veta.Repository.PaymentRepository;
 import com.example.iga_veta.Service.AllocationService;
 import lombok.Data;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -28,7 +30,8 @@ public class AllocationController {
     private AllocationService allocationService;
 
     @Autowired
-    private CollectionRepository collectionsRepository;
+    private PaymentRepository paymentRepository;
+
 
     @Autowired
     private AllocationRepository allocationRepository;
@@ -48,7 +51,7 @@ public class AllocationController {
 
         LocalDateTime start = request.getStartDate().atStartOfDay();
         LocalDateTime end = request.getEndDate().atTime(23, 59, 59);
-        List<Collections> allCollections = collectionsRepository.findAll();
+        List<Payment> allCollections = paymentRepository.findAll();
         return allocationService.allocateAllCentres(allCollections,start,end);
     }
 

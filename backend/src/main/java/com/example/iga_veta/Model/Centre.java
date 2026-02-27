@@ -46,6 +46,10 @@ public class Centre {
     @JsonIgnore
     private List<Apposhment> apposhments;
 
+    @OneToMany(mappedBy = "centre")
+    @JsonIgnore
+    private List<Payment> payments;
+
     @ManyToOne
     @JoinColumn(name = "zone_id", nullable = false)
     private Zone zones;

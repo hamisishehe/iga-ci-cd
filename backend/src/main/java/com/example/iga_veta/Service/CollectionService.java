@@ -1,19 +1,13 @@
-// ✅ FULL MODIFIED CODE (CollectionService.java)
-// - Fixes missing transactions caused by date parsing (Z/+03:00/milliseconds)
-// - Uses cursor based on MAX(paymentDate) not lastFetched (prevents cursor jumping forward)
-// - Adds overlap window (minusMinutes) to avoid boundary misses
-// - UPSERT behavior (updates existing rows instead of skipping when amountPaid changes)
-// - Safer parsing for amounts like "null", "250,000.00", "250000 TSh" (keeps digits/dot/minus)
-
 package com.example.iga_veta.Service;
 
 import com.example.iga_veta.Model.*;
 import com.example.iga_veta.Model.Collections;
 import com.example.iga_veta.Repository.*;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import jakarta.transaction.Transactional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.*;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -32,26 +26,43 @@ public class CollectionService {
 
     private static final Logger log = LoggerFactory.getLogger(CollectionService.class);
 
-    @Autowired private CustomerRepository customerRepository;
-    @Autowired private CentreRepository centreRepository;
-    @Autowired private Gfs_codeRepository gfsCodeRepository;
-    @Autowired private CollectionRepository collectionsRepository;
-    @Autowired private ZoneRepository zoneRepository;
-
+    private final CustomerRepository customerRepository;
+    private final CentreRepository centreRepository;
+    private final Gfs_codeRepository gfsCodeRepository;
+    private final CollectionRepository collectionsRepository;
+    private final PaymentRepository paymentRepository;
+    private final ZoneRepository zoneRepository;
     private final RestTemplate restTemplate;
 
-    public CollectionService(RestTemplate restTemplate) {
+    @PersistenceContext
+    private EntityManager em;
+
+    public CollectionService(
+            CustomerRepository customerRepository,
+            CentreRepository centreRepository,
+            Gfs_codeRepository gfsCodeRepository,
+            CollectionRepository collectionsRepository,
+            PaymentRepository paymentRepository,
+            ZoneRepository zoneRepository,
+            RestTemplate restTemplate
+    ) {
+        this.customerRepository = customerRepository;
+        this.centreRepository = centreRepository;
+        this.gfsCodeRepository = gfsCodeRepository;
+        this.collectionsRepository = collectionsRepository;
+        this.paymentRepository = paymentRepository;
+        this.zoneRepository = zoneRepository;
         this.restTemplate = restTemplate;
     }
 
     private static final String API_URL = "http://41.59.229.41:6092/api/collections/fetch";
     private static final String API_KEY = "Vj7k_Oc7Gm5j2QHqZJ3lJ4UrVzml8GoxT9CwpuG8OqY";
 
-    // ✅ flexible formatter supports:
-    // 2026-01-21T05:48:18
-    // 2026-01-21T05:48:18.123
-    // 2026-01-21T05:48:18Z
-    // 2026-01-21T05:48:18+03:00
+    private static final Set<String> SPLIT_GFS = Set.of(
+            "142202540053",
+            "142301600001"
+    );
+
     private static final DateTimeFormatter FLEX =
             new DateTimeFormatterBuilder()
                     .appendPattern("yyyy-MM-dd'T'HH:mm:ss")
@@ -63,10 +74,6 @@ public class CollectionService {
                     .optionalEnd()
                     .toFormatter();
 
-    public List<Collections> getAllCollections() {
-        return collectionsRepository.findAll();
-    }
-
     @Scheduled(fixedRate = 100000)
     public void fetchDataPeriodically() {
         fetchDataFromApi();
@@ -75,13 +82,10 @@ public class CollectionService {
     @SuppressWarnings("unchecked")
     public void fetchDataFromApi() {
 
-        // ✅ Use payment date cursor (MAX(date)) not lastFetched (prevents cursor jumping forward)
-        LocalDateTime cursor = collectionsRepository
+        LocalDateTime cursor = paymentRepository
                 .findMaxPaymentDate()
-                .orElse(LocalDateTime.of(2025, 12, 31, 0, 0));
-
-        // ✅ overlap window to avoid missing boundary records (same second / delayed API)
-        cursor = cursor.minusMinutes(5);
+                .orElse(LocalDateTime.of(2025, 12, 31, 0, 0))
+                .minusMinutes(5);
 
         DateTimeFormatter iso = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss");
 
@@ -93,7 +97,6 @@ public class CollectionService {
         headers.setContentType(MediaType.APPLICATION_JSON);
 
         HttpEntity<Map<String, Object>> entity = new HttpEntity<>(requestBody, headers);
-
         ResponseEntity<Map> response = restTemplate.postForEntity(API_URL, entity, Map.class);
 
         if (response.getBody() != null) {
@@ -108,8 +111,8 @@ public class CollectionService {
 
         Map<String, Object> responseMap = response.getBody();
 
-        String lastFetchedDateStr = safeString(responseMap.get("lastFetchedDate"));
-        LocalDateTime apiLastFetchedDate = parseDate(lastFetchedDateStr);
+        LocalDateTime apiLastFetchedDate = parseDate(safeString(responseMap.get("lastFetchedDate")));
+        if (apiLastFetchedDate == null) apiLastFetchedDate = LocalDateTime.now();
 
         List<Map<String, Object>> collections =
                 (List<Map<String, Object>>) responseMap.get("collections");
@@ -117,21 +120,11 @@ public class CollectionService {
 
         log.info("CursorSent={}, apiLastFetchedDate={}, API items={}", cursor, apiLastFetchedDate, collections.size());
 
-        // ✅ Optional: show date range returned (helps debug missing rows)
-        LocalDateTime min = null, max = null;
-        int nullDates = 0;
-        for (Map<String, Object> item : collections) {
-            LocalDateTime d = parseDate(safeString(item.get("paymentDate")));
-            if (d == null) { nullDates++; continue; }
-            if (min == null || d.isBefore(min)) min = d;
-            if (max == null || d.isAfter(max)) max = d;
-        }
-        log.info("API paymentDate range: min={}, max={}, nullDates={}", min, max, nullDates);
-
-        // Convert API data to list
-        List<Map<String, String>> apiData = new ArrayList<>();
+        List<Map<String, String>> apiData = new ArrayList<>(collections.size());
         for (Map<String, Object> item : collections) {
             Map<String, String> row = new HashMap<>();
+            row.put("paymentId", safeString(item.get("paymentId")));
+            row.put("billId", safeString(item.get("billId")));
             row.put("customerName", safeString(item.get("customerName")));
             row.put("gfsCode", safeString(item.get("gfsCode")));
             row.put("amountBilled", safeString(item.get("amountBilled")));
@@ -139,23 +132,19 @@ public class CollectionService {
             row.put("description", safeString(item.get("description")));
             row.put("centreName", safeString(item.get("centreName")));
             row.put("paymentType", safeString(item.get("paymentType")));
-
-            // ✅ allow null controlNumber
             row.put("controlNumber", safeString(item.get("controlNumber")));
-
             row.put("paymentDate", safeString(item.get("paymentDate")));
             apiData.add(row);
         }
 
-        log.info("Rows prepared for processing: {}", apiData.size());
-        processApiData(apiData, apiLastFetchedDate);
+        processApiData_GroupByPaymentId(apiData, apiLastFetchedDate);
     }
 
     private String safeString(Object obj) {
         if (obj == null) return null;
         String s = obj.toString().trim();
         if (s.isEmpty()) return null;
-        if ("null".equalsIgnoreCase(s)) return null; // ✅ handle "null" string
+        if ("null".equalsIgnoreCase(s)) return null;
         return s;
     }
 
@@ -167,31 +156,28 @@ public class CollectionService {
         return t;
     }
 
-    // ✅ More tolerant amount parser (keeps digits, dot, minus)
-    private BigDecimal parseBigDecimalOrNull(String s) {
+    private BigDecimal parseBigDecimalOrZero(String s) {
+        if (s == null) return BigDecimal.ZERO;
+        String t = s.trim();
+        if (t.isEmpty() || "null".equalsIgnoreCase(t)) return BigDecimal.ZERO;
+        t = t.replace(",", "");
+        t = t.replaceAll("[^0-9.\\-]", "");
+        if (t.isEmpty() || "-".equals(t) || ".".equals(t)) return BigDecimal.ZERO;
+        try { return new BigDecimal(t); } catch (Exception e) { return BigDecimal.ZERO; }
+    }
+
+    private Long parseLongOrNull(String s) {
         if (s == null) return null;
         String t = s.trim();
         if (t.isEmpty() || "null".equalsIgnoreCase(t)) return null;
-
-        // remove commas & any currency/text
-        t = t.replace(",", "");
-        t = t.replaceAll("[^0-9.\\-]", "");
-
-        if (t.isEmpty() || "-".equals(t) || ".".equals(t)) return null;
-
-        try {
-            return new BigDecimal(t);
-        } catch (Exception e) {
-            return null;
-        }
+        try { return Long.parseLong(t); }
+        catch (Exception e) { return null; }
     }
 
     private LocalDateTime parseDate(String dateStr) {
         if (dateStr == null || dateStr.isBlank()) return null;
         String t = dateStr.trim();
-
         try {
-            // if has offset or Z
             if (t.endsWith("Z") || t.matches(".*[+-]\\d\\d:\\d\\d$")) {
                 return OffsetDateTime.parse(t, FLEX).toLocalDateTime();
             }
@@ -203,169 +189,179 @@ public class CollectionService {
     }
 
     @Transactional
-    public void processApiData(List<Map<String, String>> apiData, LocalDateTime apiLastFetchedDate) {
+    public void processApiData_GroupByPaymentId(List<Map<String, String>> apiData, LocalDateTime apiLastFetchedDate) {
 
-        int inserted = 0;
-        int updated = 0;
-        int skippedMissingKey = 0;
-        int skippedBadAmounts = 0;
-        int skippedNoChange = 0;
+        Map<String, Centre> centreCache = new HashMap<>();
+        Map<String, GfsCode> gfsCache = new HashMap<>();
+        Map<String, Customer> customerCache = new HashMap<>();
+
+        Map<String, List<Map<String, String>>> grouped = new LinkedHashMap<>();
+        List<Map<String, String>> noPaymentId = new ArrayList<>();
 
         for (Map<String, String> row : apiData) {
+            Long paymentId = parseLongOrNull(row.get("paymentId"));
+            if (paymentId == null) {
+                noPaymentId.add(row);
+                continue;
+            }
 
-            String fullName = safeTrim(row.get("customerName"));
             String gfsCodeValue = safeTrim(row.get("gfsCode"));
-            String centreName = safeTrim(row.get("centreName"));
-            String description = safeTrim(row.get("description"));
-            String controlNumber = safeTrim(row.get("controlNumber")); // ✅ can be null
-            String paymentType = safeTrim(row.get("paymentType"));
+            boolean mustSplit = (gfsCodeValue != null && SPLIT_GFS.contains(gfsCodeValue));
 
-            LocalDateTime date = parseDate(row.get("paymentDate"));
+            String groupKey = mustSplit
+                    ? (paymentId + "|" + gfsCodeValue)
+                    : String.valueOf(paymentId);
 
-            BigDecimal amountBilled = parseBigDecimalOrNull(row.get("amountBilled"));
-            BigDecimal amountPaid = parseBigDecimalOrNull(row.get("amountPaid"));
-
-            // ✅ key checks (controlNumber not required)
-            if (date == null || gfsCodeValue == null || centreName == null) {
-                skippedMissingKey++;
-                log.warn("SKIP(missing key) controlNumber={}, dateRaw={}, gfsCode={}, centreName={}, desc={}",
-                        controlNumber, row.get("paymentDate"), gfsCodeValue, centreName, description);
-                continue;
-            }
-
-            // ✅ amount checks
-            if (amountBilled == null || amountPaid == null) {
-                skippedBadAmounts++;
-                log.warn("SKIP(bad amount) controlNumber={}, billedRaw={}, paidRaw={}, desc={}",
-                        controlNumber, row.get("amountBilled"), row.get("amountPaid"), description);
-                continue;
-            }
-
-            // 1) Find or create Centre
-            Centre centre = centreRepository.getCentreByName(centreName).orElseGet(() -> {
-                Centre newCentre = new Centre();
-                newCentre.setName(centreName);
-                newCentre.setCode(UUID.randomUUID().toString().substring(0, 8));
-                newCentre.setRank(Centre.Rank.A);
-
-                String firstToken = (!centreName.isBlank()) ? centreName.split("\\s+")[0] : "";
-                String zoneName = getZoneName(firstToken);
-
-                Zone zone = zoneRepository.findOneByName(zoneName).orElseGet(() -> {
-                    Zone newZone = new Zone();
-                    newZone.setName(zoneName);
-                    newZone.setCode(UUID.randomUUID().toString().substring(0, 8));
-                    return zoneRepository.save(newZone);
-                });
-
-                newCentre.setZones(zone);
-                return centreRepository.save(newCentre);
-            });
-
-            // 2) Find or create Customer
-            String safeCustomerName = (fullName != null) ? fullName : "UNKNOWN";
-            Customer customer = customerRepository
-                    .findByNameAndCentre_Id(safeCustomerName, centre.getId())
-                    .orElseGet(() -> {
-                        Customer c = new Customer();
-                        c.setName(safeCustomerName);
-
-                        String emailName = (!safeCustomerName.isBlank())
-                                ? safeCustomerName.replace(" ", ".").toLowerCase()
-                                : "unknown";
-                        c.setEmail(emailName + "@example.com");
-                        c.setCentre(centre);
-                        return customerRepository.save(c);
-                    });
-
-            // 3) Find or create GFS Code
-            GfsCode gfsCode = gfsCodeRepository.findByCode(gfsCodeValue).orElseGet(() -> {
-                GfsCode newCode = new GfsCode();
-                newCode.setCode(gfsCodeValue);
-                return gfsCodeRepository.save(newCode);
-            });
-
-            // ✅ 4) UPSERT (update if exists, else insert)
-            String safeDesc = (description != null) ? description : "";
-
-            Optional<Collections> existingOpt;
-            if (controlNumber != null) {
-                // ✅ stable key: do NOT include amounts
-                existingOpt = collectionsRepository
-                        .findFirstByControlNumberAndGfsCode_CodeAndCentre_IdAndDateAndDescription(
-                                controlNumber, gfsCodeValue, centre.getId(), date, safeDesc
-                        );
-            } else {
-                existingOpt = collectionsRepository
-                        .findFirstByCustomer_NameAndGfsCode_CodeAndCentre_IdAndDateAndDescription(
-                                safeCustomerName, gfsCodeValue, centre.getId(), date, safeDesc
-                        );
-            }
-
-            if (existingOpt.isPresent()) {
-                Collections existing = existingOpt.get();
-
-                boolean changed = false;
-
-                if (existing.getAmountBilled() == null || existing.getAmountBilled().compareTo(amountBilled) != 0) {
-                    existing.setAmountBilled(amountBilled);
-                    changed = true;
-                }
-                if (existing.getAmountPaid() == null || existing.getAmountPaid().compareTo(amountPaid) != 0) {
-                    existing.setAmountPaid(amountPaid);
-                    changed = true;
-                }
-                if (!Objects.equals(existing.getPaymentType(), paymentType)) {
-                    existing.setPaymentType(paymentType);
-                    changed = true;
-                }
-                if (!Objects.equals(existing.getDescription(), description)) {
-                    existing.setDescription(description);
-                    changed = true;
-                }
-                if (!Objects.equals(existing.getControlNumber(), controlNumber)) {
-                    existing.setControlNumber(controlNumber);
-                    changed = true;
-                }
-
-                existing.setLastFetched(apiLastFetchedDate);
-
-                if (changed) {
-                    collectionsRepository.save(existing);
-                    updated++;
-                } else {
-                    skippedNoChange++;
-                }
-                continue;
-            }
-
-            // 5) Insert new Collection
-            Collections collection = new Collections();
-            collection.setCustomer(customer);
-            collection.setCentre(centre);
-            collection.setGfsCode(gfsCode);
-
-            collection.setPaymentType(paymentType);
-            collection.setControlNumber(controlNumber); // ✅ keep null allowed
-            collection.setDescription(description);
-
-            collection.setAmountBilled(amountBilled);
-            collection.setAmountPaid(amountPaid);
-
-            collection.setLastFetched(apiLastFetchedDate);
-            collection.setDate(date);
-
-            collectionsRepository.save(collection);
-            inserted++;
+            grouped.computeIfAbsent(groupKey, k -> new ArrayList<>()).add(row);
         }
 
-        log.info("Process done. inserted={}, updated={}, skippedMissingKey={}, skippedBadAmounts={}, skippedNoChange={}",
-                inserted, updated, skippedMissingKey, skippedBadAmounts, skippedNoChange);
+        int inserted = 0, updated = 0;
+        final int BATCH = 200;
+
+        for (Map.Entry<String, List<Map<String, String>>> entry : grouped.entrySet()) {
+            List<Map<String, String>> lines = entry.getValue();
+            if (lines == null || lines.isEmpty()) continue;
+
+            Map<String, String> first = lines.get(0);
+
+            Long paymentId = parseLongOrNull(first.get("paymentId"));
+            if (paymentId == null) continue;
+
+            String centreName = safeTrim(first.get("centreName"));
+            String customerName = safeTrim(first.get("customerName"));
+            String controlNumber = safeTrim(first.get("controlNumber"));
+            String paymentType = safeTrim(first.get("paymentType"));
+            String description = safeTrim(first.get("description"));
+            String gfsCodeValue = safeTrim(first.get("gfsCode"));
+            LocalDateTime paymentDate = parseDate(first.get("paymentDate"));
+
+            if (centreName == null) centreName = "UNKNOWN CENTRE";
+            if (customerName == null) customerName = "UNKNOWN";
+            if (description == null) description = "";
+            if (paymentDate == null) paymentDate = apiLastFetchedDate;
+
+            String centreKey = centreName.toLowerCase(Locale.ROOT);
+            Centre centre = centreCache.get(centreKey);
+            if (centre == null) {
+                String finalCentreName = centreName;
+                centre = centreRepository.getCentreByName(finalCentreName).orElseGet(() -> {
+                    Centre newCentre = new Centre();
+                    newCentre.setName(finalCentreName);
+                    newCentre.setCode(UUID.randomUUID().toString().substring(0, 8));
+                    newCentre.setRank(Centre.Rank.A);
+
+                    String firstToken = (!finalCentreName.isBlank()) ? finalCentreName.split("\\s+")[0] : "";
+                    String zoneName = getZoneName(firstToken);
+
+                    Zone zone = zoneRepository.findOneByName(zoneName).orElseGet(() -> {
+                        Zone z = new Zone();
+                        z.setName(zoneName);
+                        z.setCode(UUID.randomUUID().toString().substring(0, 8));
+                        return zoneRepository.save(z);
+                    });
+
+                    newCentre.setZones(zone);
+                    return centreRepository.save(newCentre);
+                });
+                centreCache.put(centreKey, centre);
+            }
+
+            String customerKey = centre.getId() + "|" + customerName.toLowerCase(Locale.ROOT);
+            Customer customer = customerCache.get(customerKey);
+            if (customer == null) {
+                String finalCustomerName = customerName;
+                Centre finalCentre = centre;
+                customer = customerRepository
+                        .findByNameAndCentre_Id(finalCustomerName, centre.getId())
+                        .orElseGet(() -> {
+                            Customer c = new Customer();
+                            c.setName(finalCustomerName);
+                            String emailName = (!finalCustomerName.isBlank())
+                                    ? finalCustomerName.replace(" ", ".").toLowerCase(Locale.ROOT)
+                                    : "unknown";
+                            c.setEmail(emailName + "@example.com");
+                            c.setCentre(finalCentre);
+                            return customerRepository.save(c);
+                        });
+                customerCache.put(customerKey, customer);
+            }
+
+            GfsCode gfs = null;
+            if (gfsCodeValue != null) {
+                gfs = gfsCache.get(gfsCodeValue);
+                if (gfs == null) {
+                    String finalCode = gfsCodeValue;
+                    gfs = gfsCodeRepository.findByCode(finalCode).orElseGet(() -> {
+                        GfsCode g = new GfsCode();
+                        g.setCode(finalCode);
+                        return gfsCodeRepository.save(g);
+                    });
+                    gfsCache.put(gfsCodeValue, gfs);
+                }
+            }
+
+            BigDecimal totalBilled = BigDecimal.ZERO;
+            BigDecimal totalPaid = BigDecimal.ZERO;
+            for (Map<String, String> line : lines) {
+                totalBilled = totalBilled.add(parseBigDecimalOrZero(line.get("amountBilled")));
+                totalPaid = totalPaid.add(parseBigDecimalOrZero(line.get("amountPaid")));
+            }
+
+            // ✅ FIX: do NOT use getResultStream() (ResultSet closes)
+            Payment pay;
+            if (gfs != null) {
+                List<Payment> found = em.createQuery(
+                                "select p from Payment p where p.paymentId = :pid and p.gfsCode = :gfs",
+                                Payment.class
+                        )
+                        .setParameter("pid", paymentId)
+                        .setParameter("gfs", gfs)
+                        .setMaxResults(1)
+                        .getResultList();
+
+                pay = found.isEmpty() ? null : found.get(0);
+            } else {
+                pay = paymentRepository.findByPaymentId(paymentId).orElse(null);
+            }
+
+            if (pay == null) {
+                pay = new Payment();
+                pay.setPaymentId(paymentId);
+                inserted++;
+            } else {
+                updated++;
+            }
+
+            pay.setCentre(centre);
+            pay.setCustomer(customer);
+            pay.setGfsCode(gfs);
+            pay.setControlNumber(controlNumber);
+            pay.setPaymentType(paymentType);
+            pay.setDescription(description);
+            pay.setPaymentDate(paymentDate);
+            pay.setTotalBilled(totalBilled);
+            pay.setTotalPaid(totalPaid);
+            pay.setLastFetched(apiLastFetchedDate);
+
+            paymentRepository.save(pay);
+
+            if ((inserted + updated) % BATCH == 0) {
+                paymentRepository.flush();
+                em.clear();
+                log.info("Progress payments: inserted={}, updated={}, groups={}", inserted, updated, grouped.size());
+            }
+        }
+
+        paymentRepository.flush();
+        em.clear();
+
+        log.info("DONE payments: inserted={}, updated={}, noPaymentIdRows={}",
+                inserted, updated, noPaymentId.size());
     }
 
     private String getZoneName(String firstName) {
         if (firstName == null) return "HIGHLAND ZONE";
-        String name = firstName.trim().toUpperCase();
+        String name = firstName.trim().toUpperCase(Locale.ROOT);
 
         if (name.equals("DODOMA") || name.equals("SINDIDA") || name.equals("MANYARA"))
             return "CENTRAL ZONE";
@@ -389,26 +385,11 @@ public class CollectionService {
         return "HIGHLAND ZONE";
     }
 
-    public List<Collections> findAll() {
-        return collectionsRepository.findAll();
-    }
-
-    public List<Collections> findAllData() {
-        return collectionsRepository.findAll();
-    }
-
-    public List<Collections> findAllByCentre_Name(String centreName) {
-        return collectionsRepository.findByCentreName(centreName);
-    }
-
-    public List<Collections> findAllByGfsCode_Name(String gfsCodeName) {
-        return collectionsRepository.findCollectionsByGfsCode(gfsCodeName);
-    }
-
-    public BigDecimal findTotalAmountByGfsCode_Name(String gfsCodeName) {
-        return collectionsRepository.getTotalAmountByGfsCode(gfsCodeName);
-    }
-
+    public List<Collections> findAll() { return collectionsRepository.findAll(); }
+    public List<Collections> findAllData() { return collectionsRepository.findAll(); }
+    public List<Collections> findAllByCentre_Name(String centreName) { return collectionsRepository.findByCentreName(centreName); }
+    public List<Collections> findAllByGfsCode_Name(String gfsCodeName) { return collectionsRepository.findCollectionsByGfsCode(gfsCodeName); }
+    public BigDecimal findTotalAmountByGfsCode_Name(String gfsCodeName) { return collectionsRepository.getTotalAmountByGfsCode(gfsCodeName); }
     public BigDecimal getTotalAmountByCentreAndGfsCode(String gfsCodeName, String centreName) {
         return collectionsRepository.getTotalAmountByCentreAndGfsCode(centreName, gfsCodeName);
     }

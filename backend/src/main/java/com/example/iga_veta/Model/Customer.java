@@ -49,10 +49,15 @@ public class Customer {
     @JoinColumn(name = "centre_id", nullable = false)
     private Centre centre;
 
+
     // ✅ safer: don't cascade ALL (avoid accidental deletes/updates)
     @OneToMany(mappedBy = "customer")
     @JsonIgnore
     private List<Collections> collectionsList;
+
+    @OneToMany(mappedBy = "customer")
+    @JsonIgnore
+    private List<Payment> paymentsList;
 
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
