@@ -130,7 +130,12 @@ export default function CollectionReport() {
 
   // paging
   const [page, setPage] = useState(0);
-  const size = 10;
+
+  // ✅ user can choose 10/20/30/ALL
+  // -1 means ALL
+  const [pageSize, setPageSize] = useState<number>(10);
+  const size = pageSize === -1 ? 100000 : pageSize;
+
   const [totalPages, setTotalPages] = useState(1);
 
   // === User Role & Permissions ===
@@ -246,8 +251,6 @@ export default function CollectionReport() {
         return;
       }
 
-      // ✅ IMPORTANT: change endpoint to payments if your backend uses /payments/report
-      // If you still expose it as /collections/report, keep it.
       const res = await fetch(`${apiUrl}/collections/report`, {
         method: "POST",
         headers: {
@@ -358,7 +361,7 @@ export default function CollectionReport() {
     }
   };
 
-  /** Export current page */
+  /** Export current page (or ALL if selected) */
   const exportCurrentPageToExcel = () => {
     try {
       const ws = XLSX.utils.json_to_sheet(
@@ -378,7 +381,9 @@ export default function CollectionReport() {
       );
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Payments");
-      XLSX.writeFile(wb, `payments_${fromDate}_${toDate}_page${page + 1}.xlsx`);
+
+      const sizeLabel = pageSize === -1 ? "ALL" : `size${pageSize}`;
+      XLSX.writeFile(wb, `payments_${fromDate}_${toDate}_${sizeLabel}_page${page + 1}.xlsx`);
     } catch (e) {
       console.error(e);
       toast.error("Export failed");
@@ -463,8 +468,6 @@ export default function CollectionReport() {
               {toSafeNumber(totalTransactions).toLocaleString()}
             </CardContent>
           </Card>
-
-         
         </motion.div>
 
         {/* Filter + Table */}
@@ -581,10 +584,30 @@ export default function CollectionReport() {
                   </div>
                 )}
 
-             
-              </div>
+                {/* ✅ ROWS: 10 / 20 / 30 / ALL */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-slate-700">Rows</label>
+                  <Select
+                    value={String(pageSize)}
+                    onValueChange={(v) => {
+                      setPage(0);
+                      setPageSize(Number(v));
+                    }}
+                  >
+                    <SelectTrigger className="h-10 rounded-xl border-slate-200 bg-white">
+                      <SelectValue placeholder="10" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="10">10</SelectItem>
+                      <SelectItem value="20">20</SelectItem>
+                      <SelectItem value="30">30</SelectItem>
+                      <SelectItem value="-1">All</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
 
-           
+              
+              </div>
             </div>
 
             {/* Table */}
@@ -632,31 +655,33 @@ export default function CollectionReport() {
               </table>
             </div>
 
-            {/* Pagination */}
-            <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <Button
-                variant="outline"
-                disabled={page === 0}
-                onClick={() => setPage((p) => Math.max(p - 1, 0))}
-                className="h-10 rounded-xl border-slate-200 bg-white"
-              >
-                Previous
-              </Button>
+            {/* Pagination (hide when ALL) */}
+            {pageSize !== -1 && (
+              <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <Button
+                  variant="outline"
+                  disabled={page === 0}
+                  onClick={() => setPage((p) => Math.max(p - 1, 0))}
+                  className="h-10 rounded-xl border-slate-200 bg-white"
+                >
+                  Previous
+                </Button>
 
-              <span className="text-sm text-slate-600">
-                Page <span className="font-semibold text-slate-900">{page + 1}</span> of{" "}
-                <span className="font-semibold text-slate-900">{totalPages}</span>
-              </span>
+                <span className="text-sm text-slate-600">
+                  Page <span className="font-semibold text-slate-900">{page + 1}</span> of{" "}
+                  <span className="font-semibold text-slate-900">{totalPages}</span>
+                </span>
 
-              <Button
-                variant="outline"
-                disabled={page + 1 >= totalPages}
-                onClick={() => setPage((p) => Math.min(p + 1, totalPages - 1))}
-                className="h-10 rounded-xl border-slate-200 bg-white"
-              >
-                Next
-              </Button>
-            </div>
+                <Button
+                  variant="outline"
+                  disabled={page + 1 >= totalPages}
+                  onClick={() => setPage((p) => Math.min(p + 1, totalPages - 1))}
+                  className="h-10 rounded-xl border-slate-200 bg-white"
+                >
+                  Next
+                </Button>
+              </div>
+            )}
 
             {/* Summary by GFS Service */}
             <div className="mt-10">
@@ -716,7 +741,22 @@ export default function CollectionReport() {
                   </tbody>
                 </table>
               </div>
+            </div>
 
+            {/* Optional: small footer showing current page totals */}
+            <div className="mt-6 text-sm text-slate-600 flex flex-wrap gap-3">
+              <div className="rounded-full border border-slate-200 bg-white px-3 py-1">
+                Page billed: <span className="font-semibold text-slate-900">{pageBilled.toLocaleString()} TZS</span>
+              </div>
+              <div className="rounded-full border border-slate-200 bg-white px-3 py-1">
+                Page paid: <span className="font-semibold text-slate-900">{pagePaid.toLocaleString()} TZS</span>
+              </div>
+              <div className="rounded-full border border-slate-200 bg-white px-3 py-1">
+                Showing:{" "}
+                <span className="font-semibold text-slate-900">
+                  {pageSize === -1 ? "All" : pageSize}
+                </span>
+              </div>
             </div>
           </CardContent>
         </Card>

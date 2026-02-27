@@ -158,12 +158,23 @@ public class CollectionService {
 
     private BigDecimal parseBigDecimalOrZero(String s) {
         if (s == null) return BigDecimal.ZERO;
+
         String t = s.trim();
         if (t.isEmpty() || "null".equalsIgnoreCase(t)) return BigDecimal.ZERO;
-        t = t.replace(",", "");
-        t = t.replaceAll("[^0-9.\\-]", "");
-        if (t.isEmpty() || "-".equals(t) || ".".equals(t)) return BigDecimal.ZERO;
-        try { return new BigDecimal(t); } catch (Exception e) { return BigDecimal.ZERO; }
+
+        try {
+            // Handle scientific notation correctly
+            return new BigDecimal(t);
+        } catch (NumberFormatException e) {
+            try {
+                // Remove commas ONLY (not other characters)
+                t = t.replace(",", "");
+                return new BigDecimal(t);
+            } catch (Exception ex) {
+                log.warn("Failed to parse amount: {}", s);
+                return BigDecimal.ZERO;
+            }
+        }
     }
 
     private Long parseLongOrNull(String s) {
