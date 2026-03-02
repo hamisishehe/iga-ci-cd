@@ -791,9 +791,7 @@ export default function DistributionReportPage() {
                 <p className="text-sm text-slate-600">Totals based on your current filters.</p>
               </div>
 
-              <div className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-700 shadow-sm">
-                Grand Total: <span className="font-semibold">{formatNumber(grandTotal)}</span>
-              </div>
+              
             </div>
 
             <div className="mt-4 overflow-auto rounded-2xl border border-slate-200/70 bg-white">
@@ -854,12 +852,7 @@ export default function DistributionReportPage() {
                     </td>
                   </tr>
 
-                  <tr className="bg-slate-50 font-semibold text-base">
-                    <td className="px-3 py-3 text-slate-900">Grand Total</td>
-                    <td className="px-3 py-3 text-right text-slate-900">
-                      {formatNumber(grandTotal)}
-                    </td>
-                  </tr>
+            
                 </tbody>
               </table>
             </div>

@@ -50,7 +50,7 @@ const handlePasswordChange = async () => {
   try {
 
     
-           const token = localStorage.getItem("authToken");
+     const token = localStorage.getItem("authToken");
     const apiKey = process.env.NEXT_PUBLIC_API_KEY;
 
     if (!token || !apiKey) {

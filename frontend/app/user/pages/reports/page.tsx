@@ -53,8 +53,8 @@ const REPORTS: Array<{
   },
   {
     id: "apposhment",
-    title: "Apposhment Report",
-    description: "Generate apposhment reports for approvals, posting, or allocations.",
+    title: "Apportionment Report",
+    description: "Generate Apportionment reports for approvals, posting, or allocations.",
     href: "/user/pages/reports/apposhment-reports",
     icon: IconArrowsShuffle,
   },
@@ -186,7 +186,7 @@ export default function ReportsHubPage() {
                     <SelectItem value="apposhment">
                       <div className="flex items-center gap-2">
                         <IconArrowsShuffle className="h-4 w-4" />
-                        Apposhment
+                        Apportionment
                       </div>
                     </SelectItem>
                   </SelectContent>

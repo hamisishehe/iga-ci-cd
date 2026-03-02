@@ -86,7 +86,7 @@ const NAV_ITEMS = [
   "CHIEF_ACCOUNTANT", 
   "DEVELOPER", 
   "TESTER"] },
-  { title: "Apposhment", url: "/user/pages/apposhment", icon: IconArrowsShuffle, roles: [
+  { title: "Apportionment", url: "/user/pages/apposhment", icon: IconArrowsShuffle, roles: [
   "BURSAR", 
   "ACCOUNT_OFFICER", 
   "ASSISTANT_ACCOUNT",
