@@ -62,21 +62,51 @@ export default function DistributionReportPage() {
   const isHQUser = userType === "HQ";
 
   const formatNumber = (val: any) =>
-    val !== null && val !== undefined ? Number(val).toLocaleString() : "-";
+    val !== null && val !== undefined && !Number.isNaN(Number(val))
+      ? Number(val).toLocaleString()
+      : "-";
 
+  // ✅ UPDATED: labels now include your new rows
   const getCourseLabel = (desc: string) => {
-    if (desc === "Receipts from Application Fee") return "APPLICATION FEE";
-    if (desc === "OTH") return "SHORT COURSES, TAILOR MADE, CONTINUOUS LEARNING WORKSHOPS";
-    if (desc === "Miscellaneous receipts") return "SEPARATE PRODUCTION UNIT";
-    return desc || "N/A";
+    const d = (desc || "").trim();
+
+    if (d === "Receipts from Application Fee") return "APPLICATION FEE";
+
+    // keep old rules
+    if (d === "OTH") return "SHORT COURSES, TAILOR MADE, CONTINUOUS LEARNING WORKSHOPS";
+    if (d === "Miscellaneous receipts") return "SEPARATE PRODUCTION UNIT";
+
+    // ✅ new rows from backend
+    if (d === "BASIC DRIVING") return "BASIC DRIVING";
+    if (d === "Short Course Tuition Fee") return "SHORT COURSE TUITION FEE";
+    if (d === "OTHER CONTRIBUTION") return "OTHER CONTRIBUTION";
+
+    // keep legacy label if backend still returns it sometimes
+    if (d === "SHORT COURSES") return "SHORT COURSES";
+
+    return d || "N/A";
   };
 
+  // ✅ UPDATED: description shown on reports/export/filters
   const getDescriptionLabel = (desc: string) => {
-    if (desc === "Receipts from Application Fee") return "LONG AND SHORT COURSE APPLICATION FEE";
-    if (desc === "OTH") return "SHORT COURSES";
-    if (desc === "Miscellaneous receipts")
+    const d = (desc || "").trim();
+
+    if (d === "Receipts from Application Fee") return "LONG AND SHORT COURSE APPLICATION FEE";
+
+    // keep old rules
+    if (d === "OTH") return "SHORT COURSES";
+    if (d === "Miscellaneous receipts")
       return "HOTEL, CCC, BUILDING BRIGADES, FURNITURE PRODUCTION UNIT, MEAT INDUSTRY TRAINING COURSE, PRINTING UNIT AND HEAVY-DUTY PLANT OPERATIONS";
-    return desc || "N/A";
+
+    // ✅ new rows descriptions
+    if (d === "BASIC DRIVING") return "BASIC DRIVING";
+    if (d === "Short Course Tuition Fee") return "SHORT COURSE TUITION FEE ";
+    if (d === "OTHER CONTRIBUTION") return "SHORT COURSES - OTHER CONTRIBUTION";
+
+    // legacy fallback
+    if (d === "SHORT COURSES") return "SHORT COURSES";
+
+    return d || "N/A";
   };
 
   // default current month
@@ -123,13 +153,21 @@ export default function DistributionReportPage() {
         body: JSON.stringify({ startDate: start, endDate: end }),
       });
 
+      // robust shapes
       const json = await res.json();
+      const list: any[] = Array.isArray(json)
+        ? json
+        : Array.isArray(json?.data)
+        ? json.data
+        : Array.isArray(json?.content)
+        ? json.content
+        : [];
 
-      const mappedData = (json || []).map((item: any, index: number) => ({
+      const mappedData = (list || []).map((item: any, index: number) => ({
         id: item.id || `row-${index}`,
-        centre: item.centres?.name || "",
-        zone: item.centres?.zones?.name || "",
-        date: item.date ? item.date.split("T")[0] : "",
+        centre: item.centres?.name || item.centre?.name || "",
+        zone: item.centres?.zones?.name || item.centre?.zones?.name || "",
+        date: item.date ? String(item.date).split("T")[0] : "",
         gfs_code_description: item.gfs_code_description || "",
         originalAmount: item.originalAmount || 0,
         expenditureAmount: item.expenditureAmount || 0,
@@ -142,21 +180,21 @@ export default function DistributionReportPage() {
         contributionToCentreIGAFund: item.contributionToCentreIGAFund || 0,
         depreciationIncentiveToFacilitators: item.depreciationIncentiveToFacilitators || 0,
         remittedToCentre: item.remittedToCentre || 0,
-        centre_id: item.centres?.id || item.id || `centre-${index}`,
+        centre_id: item.centres?.id || item.centre?.id || item.id || `centre-${index}`,
       }));
 
       let userFilteredData = mappedData;
 
       if (isCentreUser) {
         userFilteredData = mappedData.filter(
-          (d: any) => d.centre.toLowerCase() === userCentre.toLowerCase()
+          (d: any) => d.centre?.toLowerCase() === userCentre.toLowerCase()
         );
-        setCentre(userCentre); // lock feeling
+        setCentre(userCentre);
       } else if (isZoneUser) {
         userFilteredData = mappedData.filter(
-          (d: any) => d.zone.toLowerCase() === userZone.toLowerCase()
+          (d: any) => d.zone?.toLowerCase() === userZone.toLowerCase()
         );
-        setZone(userZone); // lock feeling
+        setZone(userZone);
       }
 
       setData(userFilteredData);
@@ -229,7 +267,7 @@ export default function DistributionReportPage() {
     setCurrentPage(1);
   }, [data, startDate, endDate, course, description, centre, zone, isCentreUser, isHQUser]);
 
-  // pagination
+  // pagination (kept)
   const indexOfLastRow = currentPage * rowsPerPage;
   const indexOfFirstRow = indexOfLastRow - rowsPerPage;
   const currentRows = filteredData.slice(indexOfFirstRow, indexOfLastRow);
@@ -337,216 +375,197 @@ export default function DistributionReportPage() {
     XLSX.writeFile(wb, "distribution_report.xlsx");
   };
 
+  const exportPDF = () => {
+    const doc = new jsPDF({
+      orientation: "landscape",
+      unit: "mm",
+      format: "a4",
+    });
 
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const marginX = 10;
 
-const exportPDF = () => {
-  const doc = new jsPDF({
-    orientation: "landscape",
-    unit: "mm",
-    format: "a4",
-  });
+    const drawHeader = () => {
+      doc.setFillColor(245, 247, 250);
+      doc.roundedRect(marginX, 8, pageWidth - marginX * 2, 22, 3, 3, "F");
 
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const marginX = 10;
+      doc.setDrawColor(220);
+      doc.roundedRect(marginX, 8, pageWidth - marginX * 2, 22, 3, 3, "S");
 
-  // ===== Header Helper =====
-  const drawHeader = () => {
-    // Header background
-    doc.setFillColor(245, 247, 250);
-    doc.roundedRect(marginX, 8, pageWidth - marginX * 2, 22, 3, 3, "F");
+      const img = new Image();
+      img.src = "/veta.png";
 
-    // Border
-    doc.setDrawColor(220);
-    doc.roundedRect(marginX, 8, pageWidth - marginX * 2, 22, 3, 3, "S");
+      try {
+        doc.addImage(img, "PNG", 14, 13, 18, 18);
+      } catch {}
 
-   const img = new Image();
-  img.src = "/veta.png";
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(14);
+      doc.text("VETA", pageWidth / 2, 15, { align: "center" });
 
+      doc.setFontSize(12);
+      doc.text("DISTRIBUTION REPORT", pageWidth / 2, 21, { align: "center" });
 
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10);
+      const rangeText = `From: ${startDate || "-"}   To: ${endDate || "-"}`;
+      doc.text(rangeText, pageWidth / 2, 27, { align: "center" });
+    };
 
-  // ===== Logos =====
-  doc.addImage(img, "PNG", 14, 13, 18, 18);     // left
-//   doc.addImage(img, "PNG", 178, 13, 18, 18);  // right
+    drawHeader();
 
-    // Title
+    const tableHead = [[
+      "#",
+      "Course",
+      "Description",
+      "Collections",
+      "Expenditure",
+      "Profit Markup",
+      "Contribution Central IGA",
+      "Facilitation Central",
+      "Facilitation Zonal",
+      "Facilitation Centre",
+      "Support Production",
+      "Contribution Centre IGA",
+      "Depreciation/Incentive",
+      "Remitted To Centre",
+    ]];
+
+    const tableBody = filteredData.map((row, index) => [
+      index + 1,
+      getCourseLabel(row.gfs_code_description),
+      getDescriptionLabel(row.gfs_code_description),
+      Number(row.originalAmount || 0).toLocaleString(),
+      Number(row.expenditureAmount || 0).toLocaleString(),
+      Number(row.profitAmountPerCentreReport || 0).toLocaleString(),
+      Number(row.contributionToCentralIGA || 0).toLocaleString(),
+      Number(row.facilitationOfIGAForCentralActivities || 0).toLocaleString(),
+      Number(row.facilitationZonalActivities || 0).toLocaleString(),
+      Number(row.facilitationOfIGAForCentreActivities || 0).toLocaleString(),
+      Number(row.supportToProductionUnit || 0).toLocaleString(),
+      Number(row.contributionToCentreIGAFund || 0).toLocaleString(),
+      Number(row.depreciationIncentiveToFacilitators || 0).toLocaleString(),
+      Number(row.remittedToCentre || 0).toLocaleString(),
+    ]);
+
+    tableBody.push([
+      "TOTAL",
+      "",
+      "",
+      "",
+      "",
+      Number(totalOriginalAmount || 0).toLocaleString(),
+      Number(totalExpenditureAmount || 0).toLocaleString(),
+      Number(totalProfitAmountPerCentreReport || 0).toLocaleString(),
+      Number(totalContributionToCentralIGA || 0).toLocaleString(),
+      Number(totalFacilitationOfIGAForCentralActivities || 0).toLocaleString(),
+      Number(totalFacilitationZonalActivities || 0).toLocaleString(),
+      Number(totalFacilitationOfIGAForCentreActivities || 0).toLocaleString(),
+      Number(totalSupportToProductionUnit || 0).toLocaleString(),
+      Number(totalContributionToCentreIGAFund || 0).toLocaleString(),
+      Number(totalDepreciationIncentiveToFacilitators || 0).toLocaleString(),
+      Number(totalRemittedToCentre || 0).toLocaleString(),
+    ]);
+
+    autoTable(doc, {
+      head: tableHead,
+      body: tableBody,
+      startY: 34,
+      theme: "grid",
+      styles: {
+        fontSize: 7,
+        cellPadding: 1.8,
+        overflow: "linebreak",
+        valign: "middle",
+      },
+      headStyles: {
+        fillColor: [15, 23, 42],
+        textColor: 255,
+        halign: "center",
+        fontStyle: "bold",
+      },
+      columnStyles: {
+        0: { cellWidth: 8 },
+        1: { cellWidth: 24 },
+        2: { cellWidth: 20 },
+        3: { cellWidth: 26 },
+        4: { cellWidth: 42 },
+        5: { halign: "right" },
+        6: { halign: "right" },
+        7: { halign: "right" },
+        8: { halign: "right" },
+        9: { halign: "right" },
+        10: { halign: "right" },
+        11: { halign: "right" },
+        12: { halign: "right" },
+        13: { halign: "right" },
+        14: { halign: "right" },
+        15: { halign: "right" },
+      },
+      didParseCell: (data) => {
+        const isTotalRow = data.row.index === tableBody.length - 1;
+        if (isTotalRow) {
+          data.cell.styles.fontStyle = "bold";
+          data.cell.styles.fillColor = [219, 234, 254];
+        }
+      },
+      margin: { left: marginX, right: marginX },
+    });
+
+    const lastY = (doc as any).lastAutoTable.finalY || 34;
+    let y = lastY + 8;
+
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(14);
-    doc.text("VETA", pageWidth / 2, 15, { align: "center" });
+    doc.setFontSize(11);
+    doc.text("SUMMARY", marginX, y);
+    y += 3;
 
-    doc.setFontSize(12);
-    doc.text("DISTRIBUTION REPORT", pageWidth / 2, 21, { align: "center" });
+    const summaryRows: any[] = [
+      ["Expenditure as per GIGA", Number(totalExpenditureAmount || 0).toLocaleString()],
+      ...summaryPerCourse.map((s) => [
+        `Amount to be Remitted to Centre - ${s.course}`,
+        Number(s.total || 0).toLocaleString(),
+      ]),
+      ["Total Funds to be Remitted to Centre as per Apportionment", Number(totalRemittedToCentre || 0).toLocaleString()],
+      ["Amount to be Remitted to Zone Offices", Number(totalFacilitationZonalActivities || 0).toLocaleString()],
+      ["Amount for Central IGA Committee & Secretariat", Number(totalFacilitationOfIGAForCentralActivities || 0).toLocaleString()],
+      ["Amount Remained at Central IGA Fund", Number(totalContributionToCentralIGA || 0).toLocaleString()],
+      ["Grand Total", Number(grandTotal || 0).toLocaleString()],
+    ];
 
-    // Date range
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(10);
-    const rangeText = `From: ${startDate || "-"}   To: ${endDate || "-"}`;
-    doc.text(rangeText, pageWidth / 2, 27, { align: "center" });
+    autoTable(doc, {
+      startY: y + 2,
+      head: [["Description", "Amount (TZS)"]],
+      body: summaryRows,
+      theme: "grid",
+      styles: { fontSize: 9, cellPadding: 2 },
+      headStyles: {
+        fillColor: [15, 23, 42],
+        textColor: 255,
+        fontStyle: "bold",
+      },
+      columnStyles: {
+        0: { cellWidth: 140 },
+        1: { halign: "right", cellWidth: 40 },
+      },
+      margin: { left: marginX, right: marginX },
+    });
+
+    const pageCount = doc.internal.getNumberOfPages();
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i);
+      doc.setFontSize(9);
+      doc.setTextColor(120);
+      doc.text(
+        `Page ${i} of ${pageCount}`,
+        pageWidth - marginX,
+        doc.internal.pageSize.getHeight() - 6,
+        { align: "right" }
+      );
+    }
+
+    doc.save("distribution_report.pdf");
   };
-
-  drawHeader();
-
-  // ===== Main Table =====
-  const tableHead = [[
-    "#",
-    "Centre",
-    "Zone",
-    "Course",
-    "Description",
-    "Collections",
-    "Expenditure",
-    "Profit Markup",
-    "Contribution Central IGA",
-    "Facilitation Central",
-    "Facilitation Zonal",
-    "Facilitation Centre",
-    "Support Production",
-    "Contribution Centre IGA",
-    "Depreciation/Incentive",
-    "Remitted To Centre",
-  ]];
-
-  const tableBody = filteredData.map((row, index) => [
-    index + 1,
-    row.centre || "N/A",
-    row.zone || "N/A",
-    getCourseLabel(row.gfs_code_description),
-    getDescriptionLabel(row.gfs_code_description),
-    Number(row.originalAmount || 0).toLocaleString(),
-    Number(row.expenditureAmount || 0).toLocaleString(),
-    Number(row.profitAmountPerCentreReport || 0).toLocaleString(),
-    Number(row.contributionToCentralIGA || 0).toLocaleString(),
-    Number(row.facilitationOfIGAForCentralActivities || 0).toLocaleString(),
-    Number(row.facilitationZonalActivities || 0).toLocaleString(),
-    Number(row.facilitationOfIGAForCentreActivities || 0).toLocaleString(),
-    Number(row.supportToProductionUnit || 0).toLocaleString(),
-    Number(row.contributionToCentreIGAFund || 0).toLocaleString(),
-    Number(row.depreciationIncentiveToFacilitators || 0).toLocaleString(),
-    Number(row.remittedToCentre || 0).toLocaleString(),
-  ]);
-
-  // Total row
-  tableBody.push([
-    "TOTAL",
-    "",
-    "",
-    "",
-    "",
-    Number(totalOriginalAmount || 0).toLocaleString(),
-    Number(totalExpenditureAmount || 0).toLocaleString(),
-    Number(totalProfitAmountPerCentreReport || 0).toLocaleString(),
-    Number(totalContributionToCentralIGA || 0).toLocaleString(),
-    Number(totalFacilitationOfIGAForCentralActivities || 0).toLocaleString(),
-    Number(totalFacilitationZonalActivities || 0).toLocaleString(),
-    Number(totalFacilitationOfIGAForCentreActivities || 0).toLocaleString(),
-    Number(totalSupportToProductionUnit || 0).toLocaleString(),
-    Number(totalContributionToCentreIGAFund || 0).toLocaleString(),
-    Number(totalDepreciationIncentiveToFacilitators || 0).toLocaleString(),
-    Number(totalRemittedToCentre || 0).toLocaleString(),
-  ]);
-
-  autoTable(doc, {
-    head: tableHead,
-    body: tableBody,
-    startY: 34,
-    theme: "grid",
-    styles: {
-      fontSize: 7,
-      cellPadding: 1.8,
-      overflow: "linebreak",
-      valign: "middle",
-    },
-    headStyles: {
-      fillColor: [15, 23, 42], // slate-900
-      textColor: 255,
-      halign: "center",
-      fontStyle: "bold",
-    },
-    columnStyles: {
-      0: { cellWidth: 8 },
-      1: { cellWidth: 24 },
-      2: { cellWidth: 20 },
-      3: { cellWidth: 26 },
-      4: { cellWidth: 42 },
-      5: { halign: "right" },
-      6: { halign: "right" },
-      7: { halign: "right" },
-      8: { halign: "right" },
-      9: { halign: "right" },
-      10: { halign: "right" },
-      11: { halign: "right" },
-      12: { halign: "right" },
-      13: { halign: "right" },
-      14: { halign: "right" },
-      15: { halign: "right" },
-    },
-    didParseCell: (data) => {
-      // Style TOTAL row
-      const isTotalRow = data.row.index === tableBody.length - 1;
-      if (isTotalRow) {
-        data.cell.styles.fontStyle = "bold";
-        data.cell.styles.fillColor = [219, 234, 254]; // light blue
-      }
-    },
-    margin: { left: marginX, right: marginX },
-  });
-
-  // ===== Summary Section =====
-  const lastY = (doc as any).lastAutoTable.finalY || 34;
-  let y = lastY + 8;
-
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(11);
-  doc.text("SUMMARY", marginX, y);
-  y += 3;
-
-  const summaryRows: any[] = [
-    ["Expenditure as per GIGA", Number(totalExpenditureAmount || 0).toLocaleString()],
-    ...summaryPerCourse.map((s) => [
-      `Amount to be Remitted to Centre - ${s.course}`,
-      Number(s.total || 0).toLocaleString(),
-    ]),
-    ["Total Funds to be Remitted to Centre as per Apportionment", Number(totalRemittedToCentre || 0).toLocaleString()],
-    ["Amount to be Remitted to Zone Offices", Number(totalFacilitationZonalActivities || 0).toLocaleString()],
-    ["Amount for Central IGA Committee & Secretariat", Number(totalFacilitationOfIGAForCentralActivities || 0).toLocaleString()],
-    ["Amount Remained at Central IGA Fund", Number(totalContributionToCentralIGA || 0).toLocaleString()],
-    ["Grand Total", Number(grandTotal || 0).toLocaleString()],
-  ];
-
-  autoTable(doc, {
-    startY: y + 2,
-    head: [["Description", "Amount (TZS)"]],
-    body: summaryRows,
-    theme: "grid",
-    styles: { fontSize: 9, cellPadding: 2 },
-    headStyles: {
-      fillColor: [15, 23, 42],
-      textColor: 255,
-      fontStyle: "bold",
-    },
-    columnStyles: {
-      0: { cellWidth: 140 },
-      1: { halign: "right", cellWidth: 40 },
-    },
-    margin: { left: marginX, right: marginX },
-  });
-
-  // ===== Page numbers (fix for getNumberOfPages error) =====
-  const pageCount = doc.internal.getNumberOfPages(); // ✅ correct method
-  for (let i = 1; i <= pageCount; i++) {
-    doc.setPage(i);
-    doc.setFontSize(9);
-    doc.setTextColor(120);
-    doc.text(
-      `Page ${i} of ${pageCount}`,
-      pageWidth - marginX,
-      doc.internal.pageSize.getHeight() - 6,
-      { align: "right" }
-    );
-  }
-
-  doc.save("distribution_report.pdf");
-};
-
 
   if (loading) {
     return (
@@ -557,222 +576,218 @@ const exportPDF = () => {
   }
 
   return (
-  <div className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-slate-50">
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <Breadcrumb>
-          <BreadcrumbList>
-            <BreadcrumbItem>
-              <BreadcrumbLink
-                href="/user/pages/dashboard"
-                className="font-semibold text-slate-800"
+    <div className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-slate-50">
+      <div className="p-6 space-y-6">
+        <div className="flex items-center justify-between">
+          <Breadcrumb>
+            <BreadcrumbList>
+              <BreadcrumbItem>
+                <BreadcrumbLink href="/user/pages/dashboard" className="font-semibold text-slate-800">
+                  Dashboard
+                </BreadcrumbLink>
+              </BreadcrumbItem>
+              <BreadcrumbSeparator />
+              <BreadcrumbItem className="text-slate-600">Distribution</BreadcrumbItem>
+            </BreadcrumbList>
+          </Breadcrumb>
+
+          {isCentreUser && (
+            <div className="hidden sm:inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-700 shadow-sm">
+              <span className="h-2 w-2 rounded-full bg-emerald-500" />
+              {userCentre}
+            </div>
+          )}
+        </div>
+
+        <Card className="relative overflow-hidden rounded-2xl border-slate-200/60 bg-white shadow-sm">
+          <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/8 via-transparent to-sky-500/8" />
+
+          <CardHeader className="relative flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <CardTitle className="text-lg sm:text-xl text-slate-900">
+                {isCentreUser && <span className="text-slate-500">{userCentre} — </span>}
+                Distribution Report
+              </CardTitle>
+              <CardDescription className="text-slate-600">
+                Choose filters, then print or export. (Table preview is hidden.)
+              </CardDescription>
+            </div>
+
+            <div className="flex gap-2">
+              <Button
+                className="h-10 rounded-xl bg-slate-900 text-white hover:bg-slate-800 shadow-sm"
+                onClick={() => fetchData(startDate, endDate)}
               >
-                Dashboard
-              </BreadcrumbLink>
-            </BreadcrumbItem>
-            <BreadcrumbSeparator />
-            <BreadcrumbItem className="text-slate-600">Distribution</BreadcrumbItem>
-          </BreadcrumbList>
-        </Breadcrumb>
+                Apply
+              </Button>
 
-        {isCentreUser && (
-          <div className="hidden sm:inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-700 shadow-sm">
-            <span className="h-2 w-2 rounded-full bg-emerald-500" />
-            {userCentre}
-          </div>
-        )}
-      </div>
+              <Button
+                className="h-10 rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm disabled:opacity-60"
+                onClick={() => {
+                  if (!filteredData?.length) return;
+                  window.print();
+                }}
+                disabled={!filteredData?.length}
+              >
+                Print
+              </Button>
 
-      <Card className="relative overflow-hidden rounded-2xl border-slate-200/60 bg-white shadow-sm">
-        <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/8 via-transparent to-sky-500/8" />
+              <Button
+                onClick={exportPDF}
+                className="h-10 rounded-xl bg-slate-900 text-white hover:bg-slate-800 shadow-sm disabled:opacity-60"
+                disabled={!filteredData?.length}
+              >
+                Print PDF
+              </Button>
 
-        <CardHeader className="relative flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <CardTitle className="text-lg sm:text-xl text-slate-900">
-              {isCentreUser && <span className="text-slate-500">{userCentre} — </span>}
-              Distribution Report
-            </CardTitle>
-            <CardDescription className="text-slate-600">
-              Choose filters, then print or export. (Table preview is hidden.)
-            </CardDescription>
-          </div>
+              <Button
+                className="h-10 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm disabled:opacity-60"
+                onClick={exportExcel}
+                disabled={!filteredData?.length}
+              >
+                Export Excel
+              </Button>
+            </div>
+          </CardHeader>
 
-          <div className="flex gap-2">
+          <CardContent className="relative">
+            {/* Filters */}
+            <div className="rounded-2xl border border-slate-200/70 bg-gradient-to-b from-slate-50 to-white p-4 sm:p-5">
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
+                <div className="md:col-span-2 space-y-1.5">
+                  <label className="block text-xs font-medium text-slate-700">From</label>
+                  <Input
+                    type="date"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                    className="h-10 rounded-xl border-slate-200 bg-white"
+                  />
+                </div>
 
-            <Button
-              className="h-10 rounded-xl bg-slate-900 text-white hover:bg-slate-800 shadow-sm"
-              onClick={() => fetchData(startDate, endDate)}
-            >
-              Apply
-            </Button>
+                <div className="md:col-span-2 space-y-1.5">
+                  <label className="block text-xs font-medium text-slate-700">To</label>
+                  <Input
+                    type="date"
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                    className="h-10 rounded-xl border-slate-200 bg-white"
+                  />
+                </div>
 
-            <Button
-              className="h-10 rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm disabled:opacity-60"
-              onClick={() => {
-                if (!filteredData?.length) return;
-                window.print();
-              }}
-              disabled={!filteredData?.length}
-            >
-              Print
-            </Button>
-
-                     <Button
-  onClick={exportPDF}
-  className="h-10 rounded-xl bg-slate-900 text-white hover:bg-slate-800 shadow-sm"
->
-  Print PDF
-</Button>
-
-            <Button
-              className="h-10 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm disabled:opacity-60"
-              onClick={exportExcel}
-              disabled={!filteredData?.length}
-            >
-              Export Excel
-            </Button>
-          </div>
-        </CardHeader>
-
-        <CardContent className="relative">
-          {/* Filters */}
-          <div className="rounded-2xl border border-slate-200/70 bg-gradient-to-b from-slate-50 to-white p-4 sm:p-5">
-            <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
-              <div className="md:col-span-2 space-y-1.5">
-                <label className="block text-xs font-medium text-slate-700">From</label>
-                <Input
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                  className="h-10 rounded-xl border-slate-200 bg-white"
-                />
-              </div>
-
-              <div className="md:col-span-2 space-y-1.5">
-                <label className="block text-xs font-medium text-slate-700">To</label>
-                <Input
-                  type="date"
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                  className="h-10 rounded-xl border-slate-200 bg-white"
-                />
-              </div>
-
-              <div className="md:col-span-2 space-y-1.5">
-                <label className="block text-xs font-medium text-slate-700">Course</label>
-                <select
-                  className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none focus:ring-2 focus:ring-slate-900/10"
-                  value={course}
-                  onChange={(e) => setCourse(e.target.value)}
-                >
-                  <option value="">All</option>
-                  {uniqueCourses.map((c, i) => (
-                    <option key={`course-${i}`} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="md:col-span-3 space-y-1.5">
-                <label className="block text-xs font-medium text-slate-700">Description</label>
-                <select
-                  className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none focus:ring-2 focus:ring-slate-900/10"
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                >
-                  <option value="">All</option>
-                  {uniqueDescriptions.map((d, i) => (
-                    <option key={`desc-${i}`} value={d}>
-                      {d}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {(isZoneUser || isHQUser) && (
-                <div className="md:col-span-1 space-y-1.5">
-                  <label className="block text-xs font-medium text-slate-700">Centre</label>
+                <div className="md:col-span-2 space-y-1.5">
+                  <label className="block text-xs font-medium text-slate-700">Course</label>
                   <select
                     className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none focus:ring-2 focus:ring-slate-900/10"
-                    value={centre}
-                    onChange={(e) => setCentre(e.target.value)}
-                    disabled={isCentreUser}
+                    value={course}
+                    onChange={(e) => setCourse(e.target.value)}
                   >
                     <option value="">All</option>
-                    {uniqueCentres.map((c, i) => (
-                      <option key={`centre-${i}`} value={c}>
+                    {uniqueCourses.map((c, i) => (
+                      <option key={`course-${i}`} value={c}>
                         {c}
                       </option>
                     ))}
                   </select>
                 </div>
-              )}
 
-              {isHQUser && (
-                <div className="md:col-span-1 space-y-1.5">
-                  <label className="block text-xs font-medium text-slate-700">Zone</label>
+                <div className="md:col-span-3 space-y-1.5">
+                  <label className="block text-xs font-medium text-slate-700">Description</label>
                   <select
                     className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none focus:ring-2 focus:ring-slate-900/10"
-                    value={zone}
-                    onChange={(e) => setZone(e.target.value)}
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
                   >
                     <option value="">All</option>
-                    {uniqueZones.map((z, i) => (
-                      <option key={`zone-${i}`} value={z}>
-                        {z}
+                    {uniqueDescriptions.map((d, i) => (
+                      <option key={`desc-${i}`} value={d}>
+                        {d}
                       </option>
                     ))}
                   </select>
                 </div>
-              )}
 
-              <div className="md:col-span-1">
-                <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
-                  Tip: keep “All” for full report.
+                {(isZoneUser || isHQUser) && (
+                  <div className="md:col-span-1 space-y-1.5">
+                    <label className="block text-xs font-medium text-slate-700">Centre</label>
+                    <select
+                      className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none focus:ring-2 focus:ring-slate-900/10"
+                      value={centre}
+                      onChange={(e) => setCentre(e.target.value)}
+                      disabled={isCentreUser}
+                    >
+                      <option value="">All</option>
+                      {uniqueCentres.map((c, i) => (
+                        <option key={`centre-${i}`} value={c}>
+                          {c}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {isHQUser && (
+                  <div className="md:col-span-1 space-y-1.5">
+                    <label className="block text-xs font-medium text-slate-700">Zone</label>
+                    <select
+                      className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none focus:ring-2 focus:ring-slate-900/10"
+                      value={zone}
+                      onChange={(e) => setZone(e.target.value)}
+                    >
+                      <option value="">All</option>
+                      {uniqueZones.map((z, i) => (
+                        <option key={`zone-${i}`} value={z}>
+                          {z}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                <div className="md:col-span-1">
+                  <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
+                    Tip: keep “All” for full report.
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
 
-          {/* Status (no tables) */}
-          <div className="mt-4 rounded-2xl border border-slate-200/70 bg-white p-4">
-            {loading ? (
-              <div className="text-sm text-slate-600 flex items-center gap-3">
-                <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-slate-800" />
-                Loading...
-              </div>
-            ) : (
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                <div className="text-sm text-slate-700">
-                  {filteredData?.length ? (
-                    <>
-                      Found{" "}
-                      <span className="font-semibold text-slate-900">
-                        {filteredData.length.toLocaleString()}
-                      </span>{" "}
-                      records.
-                    </>
-                  ) : (
-                    "No data available for selected filters."
-                  )}
+            {/* Status (no tables) */}
+            <div className="mt-4 rounded-2xl border border-slate-200/70 bg-white p-4">
+              {loading ? (
+                <div className="text-sm text-slate-600 flex items-center gap-3">
+                  <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-slate-800" />
+                  Loading...
                 </div>
+              ) : (
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                  <div className="text-sm text-slate-700">
+                    {filteredData?.length ? (
+                      <>
+                        Found{" "}
+                        <span className="font-semibold text-slate-900">
+                          {filteredData.length.toLocaleString()}
+                        </span>{" "}
+                        records.
+                      </>
+                    ) : (
+                      "No data available for selected filters."
+                    )}
+                  </div>
 
-                <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-700 shadow-sm">
-                  Grand Total:{" "}
-                  <span className="font-semibold text-slate-900">
-                    {formatNumber(grandTotal)}
-                  </span>
+                  <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-700 shadow-sm">
+                    Grand Total:{" "}
+                    <span className="font-semibold text-slate-900">
+                      {formatNumber(grandTotal)}
+                    </span>
+                  </div>
                 </div>
-              </div>
-            )}
-          </div>
+              )}
+            </div>
 
-          {/* NOTE: Table + pagination + summary tables intentionally removed */}
-        </CardContent>
-      </Card>
+            {/* NOTE: Table + pagination + summary tables intentionally removed */}
+          </CardContent>
+        </Card>
+      </div>
     </div>
-  </div>
-);
-
+  );
 }
