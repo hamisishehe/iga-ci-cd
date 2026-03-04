@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useMemo } from "react";
 import { Bar, Doughnut } from "react-chartjs-2";
 import {
   Chart as ChartJS,
@@ -31,6 +31,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
+import { Input } from "@/components/ui/input";
 
 ChartJS.register(
   CategoryScale,
@@ -49,10 +50,7 @@ interface Payment {
   service: string;
   course: string;
   amountBilled: number;
-
-  // ✅ ADDED: paid per recent row
   amountPaid: number;
-
   date: string; // YYYY-MM-DD (from backend datePaid)
   ts: number;
 }
@@ -70,10 +68,7 @@ interface CenterSummary {
 
 interface Summary {
   totalIncome: number;
-
-  // ✅ ADDED: total paid
   totalPaid: number;
-
   totalTransactions: number;
   topServices: ServiceSummary[];
   topCenters: CenterSummary[];
@@ -81,13 +76,9 @@ interface Summary {
   recentPayments: Payment[];
 }
 
-// Backend response (flexible)
 type DashboardSummaryResponse = {
   totalIncome?: number | string;
-
-  // ✅ ADDED: totalPaid from backend
   totalPaid?: number | string;
-
   totalTransactions?: number | string;
   topServices?: Array<{
     serviceCode?: string;
@@ -103,13 +94,10 @@ type DashboardSummaryResponse = {
     serviceCode?: string;
     service?: string;
     amountBilled?: number | string;
-    amount?: number | string; // accept both
-
-    // ✅ ADDED: paid per recent row (backend uses "paid")
+    amount?: number | string;
     paid?: number | string;
-
     datePaid?: string;
-    date?: string; // accept both
+    date?: string;
   }>;
 };
 
@@ -130,6 +118,11 @@ const toInclusiveDate = (endExclusiveYmd: string) => {
   return toYMD(d);
 };
 
+const currentMonthValue = () => {
+  const now = new Date();
+  return `${now.getFullYear()}-${pad2(now.getMonth() + 1)}`; // YYYY-MM
+};
+
 export default function DashboardPage() {
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || "/api";
 
@@ -138,7 +131,7 @@ export default function DashboardPage() {
   // Role for UI permissions
   const [role, setRole] = useState<string>("");
 
-  // ✅ userType controls filtering: CENTRE | ZONE | HQ
+  // userType controls filtering: CENTRE | ZONE | HQ
   const [userType, setUserType] = useState<string>("");
   const [userCentre, setUserCentre] = useState<string>("");
   const [userZone, setUserZone] = useState<string>("");
@@ -147,12 +140,12 @@ export default function DashboardPage() {
     "month",
   );
 
+  // ✅ NEW: selected month (YYYY-MM)
+  const [selectedMonth, setSelectedMonth] = useState<string>(currentMonthValue());
+
   const [summary, setSummary] = useState<Summary>({
     totalIncome: 0,
-
-    // ✅ ADDED
     totalPaid: 0,
-
     totalTransactions: 0,
     topServices: [],
     topCenters: [],
@@ -179,8 +172,12 @@ export default function DashboardPage() {
     return service.toUpperCase();
   };
 
+  // ✅ FIXED: correct month handling (JS months are 0-based)
   // returns { start, endExclusive } in YYYY-MM-DD
-  const getRange = (type: "day" | "yesterday" | "month") => {
+  const getRange = (
+    type: "day" | "yesterday" | "month",
+    monthValue?: string,
+  ) => {
     const now = new Date();
 
     if (type === "day") {
@@ -188,22 +185,39 @@ export default function DashboardPage() {
       const end = toYMD(
         new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1),
       );
-      return { start, end };
+      return { start, end, label: "Today" };
     }
 
     if (type === "yesterday") {
       const y = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
       const start = toYMD(y);
       const end = toYMD(now);
-      return { start, end };
+      return { start, end, label: "Yesterday" };
     }
 
-    // month
-    const start = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-01`;
-    const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-    const end = toYMD(nextMonth);
-    return { start, end };
+    // month (selected)
+    const m =
+      monthValue && /^\d{4}-\d{2}$/.test(monthValue)
+        ? monthValue
+        : `${now.getFullYear()}-${pad2(now.getMonth() + 1)}`;
+
+    const [yy, mm] = m.split("-").map(Number);
+
+    // ✅ IMPORTANT: month is 1-12, Date expects 0-11
+    const startDate = new Date(yy, mm - 1, 1);
+    const endExclusiveDate = new Date(yy, mm, 1); // first day of next month
+
+    const start = toYMD(startDate);
+    const end = toYMD(endExclusiveDate);
+
+    return { start, end, label: m };
   };
+
+  // For UI label
+  const activeRangeLabel = useMemo(() => {
+    if (filterType === "month") return selectedMonth; // YYYY-MM
+    return filterType === "day" ? "Today" : "Yesterday";
+  }, [filterType, selectedMonth]);
 
   const fetchData = useCallback(async () => {
     try {
@@ -217,7 +231,7 @@ export default function DashboardPage() {
 
       setLoading(true);
 
-      // ✅ read from storage
+      // read from storage
       const storedRole = localStorage.getItem("userRole") || "";
       const storedType = localStorage.getItem("userType") || ""; // CENTRE | ZONE | HQ
       const storedCentre = localStorage.getItem("centre") || "";
@@ -228,7 +242,10 @@ export default function DashboardPage() {
       setUserCentre(storedCentre);
       setUserZone(storedZone);
 
-      const { start: uiStart, end: uiEndExclusive } = getRange(filterType);
+      const { start: uiStart, end: uiEndExclusive } = getRange(
+        filterType,
+        selectedMonth,
+      );
 
       // ✅ body with correct inclusive toDate
       const body: any = {
@@ -236,13 +253,15 @@ export default function DashboardPage() {
         toDate: toInclusiveDate(uiEndExclusive),
       };
 
-      // ✅ IMPORTANT: apply filtering by userType
+      // ✅ apply filtering by userType
       if (storedType === "CENTRE" && storedCentre) {
         body.centre = storedCentre;
       } else if (storedType === "ZONE" && storedZone) {
-        body.zone = storedZone; // ✅ requires backend support for zone
+        body.zone = storedZone;
       }
-      // HQ: send no centre/zone => global summary
+
+      // Optional debug
+      // console.log("SUMMARY BODY:", body);
 
       const res = await fetch(`${apiUrl}/collections/summary`, {
         method: "POST",
@@ -263,15 +282,11 @@ export default function DashboardPage() {
 
       const data: DashboardSummaryResponse = await res.json();
 
-      console.log("DASHBOARD SUMMARY RAW:", data);
-
-      const topServices: ServiceSummary[] = (data.topServices ?? []).map(
-        (s) => ({
-          serviceCode: s.serviceCode ?? "N/A",
-          service: s.service ?? "",
-          total: safeNumber(s.total),
-        }),
-      );
+      const topServices: ServiceSummary[] = (data.topServices ?? []).map((s) => ({
+        serviceCode: s.serviceCode ?? "N/A",
+        service: s.service ?? "",
+        total: safeNumber(s.total),
+      }));
 
       const topCenters: CenterSummary[] = (data.topCenters ?? []).map((c) => ({
         center: c.center ?? "No Center",
@@ -290,8 +305,6 @@ export default function DashboardPage() {
         const datePart = iso.includes("T") ? iso.split("T")[0] : iso;
 
         const amount = p.amountBilled ?? p.amount ?? 0;
-
-        // ✅ ADDED: paid from backend (p.paid)
         const paid = p.paid ?? 0;
 
         return {
@@ -302,10 +315,7 @@ export default function DashboardPage() {
           service: p.service ?? "",
           course: formatCourseName(p.service ?? ""),
           amountBilled: safeNumber(amount),
-
-          // ✅ ADDED
           amountPaid: safeNumber(paid),
-
           date: datePart || "-",
           ts: datePart ? Date.parse(`${datePart}T00:00:00`) : 0,
         };
@@ -313,10 +323,7 @@ export default function DashboardPage() {
 
       setSummary({
         totalIncome: safeNumber(data.totalIncome),
-
-        // ✅ ADDED
         totalPaid: safeNumber((data as any).totalPaid),
-
         totalTransactions: safeNumber(data.totalTransactions),
         topServices,
         topCenters,
@@ -331,7 +338,7 @@ export default function DashboardPage() {
     } finally {
       setLoading(false);
     }
-  }, [apiUrl, filterType]);
+  }, [apiUrl, filterType, selectedMonth]);
 
   useEffect(() => {
     fetchData();
@@ -344,7 +351,6 @@ export default function DashboardPage() {
       {
         label: "Amount Collected (TZS)",
         data: summary.topServices.map((s) => s.total),
-        // keep your colors if you want
         backgroundColor: ["#0d6efd", "#198754", "#ffc107"],
       },
     ],
@@ -372,7 +378,6 @@ export default function DashboardPage() {
     ],
   };
 
-  // Small badge text to confirm which filter is active
   const scopeLabel =
     userType === "CENTRE"
       ? `CENTRE: ${userCentre || "-"}`
@@ -426,16 +431,20 @@ export default function DashboardPage() {
                 <span className="text-xs text-slate-500">
                   Last updated: {lastUpdated}
                 </span>
+
+                <span className="text-xs text-slate-500">
+                  Range: <span className="font-medium">{activeRangeLabel}</span>
+                </span>
               </div>
             </div>
           </div>
 
           {/* Filters */}
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {[
               { id: "yesterday", label: "Yesterday" },
               { id: "day", label: "Today" },
-              { id: "month", label: "This Month" },
+              { id: "month", label: "Month" },
             ].map((f) => {
               const active = filterType === (f.id as any);
               return (
@@ -452,11 +461,23 @@ export default function DashboardPage() {
                 </Button>
               );
             })}
+
+            {/* ✅ Month picker only when Month is active */}
+            {filterType === "month" && (
+              <div className="min-w-[175px]">
+                <Input
+                  type="month"
+                  value={selectedMonth}
+                  onChange={(e) => {
+                    setSelectedMonth(e.target.value);
+                    setFilterType("month"); // ensure active
+                  }}
+                  className="h-10 rounded-xl border border-slate-200 bg-white text-slate-700"
+                />
+              </div>
+            )}
           </div>
         </div>
-
-        {/* ✅ ADDED: Paid badge (no removal of existing stats) */}
-       
 
         {/* Stats */}
         <motion.div
@@ -484,7 +505,6 @@ export default function DashboardPage() {
           >
             <Card className="relative overflow-hidden rounded-2xl border-slate-200/60 bg-white shadow-sm transition hover:shadow-md">
               <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/12 via-transparent to-teal-500/12" />
-
               <CardContent className="relative pt-6">
                 <motion.div
                   className="mx-auto mb-3 grid h-11 w-11 place-items-center rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-500 text-white shadow-sm"
@@ -501,13 +521,7 @@ export default function DashboardPage() {
                 <p className="text-sm font-medium text-slate-600 text-center">
                   Billed Amount{" "}
                   <span className="text-slate-500">
-                    (
-                    {filterType === "day"
-                      ? "Today"
-                      : filterType === "yesterday"
-                        ? "Yesterday"
-                        : "This Month"}
-                    )
+                    ({filterType === "month" ? selectedMonth : activeRangeLabel})
                   </span>
                 </p>
 
@@ -518,9 +532,7 @@ export default function DashboardPage() {
                   transition={{ delay: 0.2 }}
                 >
                   {Number(summary?.totalIncome ?? 0).toLocaleString()}{" "}
-                  <span className="text-sm font-medium text-slate-500">
-                    TZS
-                  </span>
+                  <span className="text-sm font-medium text-slate-500">TZS</span>
                 </motion.p>
 
                 <div className="mt-3 flex items-center justify-center gap-2 text-xs text-slate-600">
@@ -546,7 +558,6 @@ export default function DashboardPage() {
           >
             <Card className="relative overflow-hidden rounded-2xl border-slate-200/60 bg-white shadow-sm transition hover:shadow-md">
               <div className="absolute inset-0 bg-gradient-to-br from-sky-500/12 via-transparent to-indigo-500/12" />
-
               <CardContent className="relative pt-6">
                 <motion.div
                   className="mx-auto mb-3 grid h-11 w-11 place-items-center rounded-2xl bg-gradient-to-br from-sky-500 to-indigo-500 text-white shadow-sm"
@@ -563,13 +574,7 @@ export default function DashboardPage() {
                 <p className="text-sm font-medium text-slate-600 text-center">
                   Paid Amount{" "}
                   <span className="text-slate-500">
-                    (
-                    {filterType === "day"
-                      ? "Today"
-                      : filterType === "yesterday"
-                        ? "Yesterday"
-                        : "This Month"}
-                    )
+                    ({filterType === "month" ? selectedMonth : activeRangeLabel})
                   </span>
                 </p>
 
@@ -580,9 +585,7 @@ export default function DashboardPage() {
                   transition={{ delay: 0.2 }}
                 >
                   {Number(summary?.totalPaid ?? 0).toLocaleString()}{" "}
-                  <span className="text-sm font-medium text-slate-500">
-                    TZS
-                  </span>
+                  <span className="text-sm font-medium text-slate-500">TZS</span>
                 </motion.p>
 
                 <div className="mt-3 flex items-center justify-center gap-2 text-xs text-slate-600">
@@ -608,7 +611,6 @@ export default function DashboardPage() {
           >
             <Card className="relative overflow-hidden rounded-2xl border-slate-200/60 bg-white shadow-sm transition hover:shadow-md">
               <div className="absolute inset-0 bg-gradient-to-br from-sky-500/12 via-transparent to-indigo-500/12" />
-
               <CardContent className="relative pt-6">
                 <motion.div
                   className="mx-auto mb-3 grid h-11 w-11 place-items-center rounded-2xl bg-gradient-to-br from-sky-500 to-indigo-500 text-white shadow-sm"
@@ -625,13 +627,7 @@ export default function DashboardPage() {
                 <p className="text-sm font-medium text-slate-600 text-center">
                   Total Transactions{" "}
                   <span className="text-slate-500">
-                    (
-                    {filterType === "day"
-                      ? "Today"
-                      : filterType === "yesterday"
-                        ? "Yesterday"
-                        : "This Month"}
-                    )
+                    ({filterType === "month" ? selectedMonth : activeRangeLabel})
                   </span>
                 </p>
 
@@ -667,7 +663,6 @@ export default function DashboardPage() {
           >
             <Card className="relative overflow-hidden rounded-2xl border-slate-200/60 bg-white shadow-sm transition hover:shadow-md">
               <div className="absolute inset-0 bg-gradient-to-br from-amber-500/12 via-transparent to-orange-500/12" />
-
               <CardContent className="relative pt-6">
                 <motion.div
                   className="mx-auto mb-3 grid h-11 w-11 place-items-center rounded-2xl bg-gradient-to-br from-amber-500 to-orange-500 text-white shadow-sm"
@@ -720,10 +715,7 @@ export default function DashboardPage() {
             viewport={{ once: true, amount: 0.2 }}
             variants={{
               hidden: { opacity: 0 },
-              show: {
-                opacity: 1,
-                transition: { staggerChildren: 0.15 },
-              },
+              show: { opacity: 1, transition: { staggerChildren: 0.15 } },
             }}
           >
             {/* Header */}
@@ -796,10 +788,7 @@ export default function DashboardPage() {
                     >
                       <Bar
                         data={barData}
-                        options={{
-                          responsive: true,
-                          maintainAspectRatio: false,
-                        }}
+                        options={{ responsive: true, maintainAspectRatio: false }}
                       />
                     </motion.div>
                   </CardContent>
@@ -916,9 +905,7 @@ export default function DashboardPage() {
           role === "PRINCIPAL") && (
           <section className="space-y-6">
             <div>
-              <h2 className="text-lg font-semibold text-slate-900">
-                Analytics
-              </h2>
+              <h2 className="text-lg font-semibold text-slate-900">Analytics</h2>
               <p className="text-sm text-slate-600">
                 Summary filtered by your center
               </p>
@@ -973,13 +960,8 @@ export default function DashboardPage() {
                     <th className="p-3 font-medium text-slate-700">Center</th>
                     <th className="p-3 font-medium text-slate-700">Zone</th>
                     <th className="p-3 font-medium text-slate-700">Amount</th>
-
-                    {/* ✅ ADDED: paid column */}
                     <th className="p-3 font-medium text-slate-700">Paid</th>
-
-                    <th className="p-3 font-medium text-slate-700">
-                      Date Paid
-                    </th>
+                    <th className="p-3 font-medium text-slate-700">Date Paid</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -998,22 +980,16 @@ export default function DashboardPage() {
                         {p.amountBilled.toLocaleString()}{" "}
                         <span className="font-medium text-slate-500">TZS</span>
                       </td>
-
-                      {/* ✅ ADDED: show amountPaid */}
                       <td className="p-3 font-semibold text-slate-900">
                         {Number(p.amountPaid ?? 0).toLocaleString()}{" "}
                         <span className="font-medium text-slate-500">TZS</span>
                       </td>
-
                       <td className="p-3 text-slate-700">{p.date}</td>
                     </tr>
                   ))}
                   {summary.recentPayments.length === 0 && (
                     <tr>
-                      <td
-                        colSpan={7}
-                        className="p-6 text-center text-slate-500"
-                      >
+                      <td colSpan={7} className="p-6 text-center text-slate-500">
                         No recent payments found
                       </td>
                     </tr>

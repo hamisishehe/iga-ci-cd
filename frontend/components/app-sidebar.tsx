@@ -102,7 +102,20 @@ const NAV_ITEMS = [
   "TESTER"] },
   
   { title: "Use of Proceeds", url: "/user/pages/expenditure", icon: IconCoin, roles: [
-  "BURSAR"] },
+  "ACCOUNT_OFFICER", 
+  "ASSISTANT_ACCOUNT",
+  "PRINCIPAL",
+  "REGIONAL_DIRECTOR",
+  "REGIONAL_FINANCE_MANAGER",
+  "DIRECTOR_GENERAL",
+  "DIRECTOR_OF_FINANCE", 
+  "FINANCE_MANAGER", 
+  "PRODUCTION_CORDINATOR",
+  "CHIEF_ACCOUNTANT", 
+  "DEVELOPER", 
+  "TESTER",
+  "BURSAR"
+] },
 
 
   { title: "Reports", url: "/user/pages/reports", icon: IconReceipt, roles: [

@@ -367,13 +367,13 @@ export default function ApportionmentReport() {
                       <td className="px-4 py-3 text-slate-700">{i + 1}</td>
                       <td className="px-4 py-3 text-slate-900">{row.courseName}</td>
                       <td className="px-4 py-3 font-semibold text-slate-900">
-                        {formatNumber(row.amountRemitted)}
+                       {row.amountRemitted === 0 ? "-" : `${formatNumber(row.amountRemitted)}`}
                       </td>
-                      <td className="px-4 py-3 text-slate-800">{formatNumber(row.executors)}</td>
-                      <td className="px-4 py-3 text-slate-800">{formatNumber(row.supporters)}</td>
-                      <td className="px-4 py-3 text-slate-800">{formatNumber(row.agencyFee)}</td>
+                      <td className="px-4 py-3 text-slate-800"> {row.executors === 0 ? "-" : `${formatNumber(row.executors)}`}</td>
+                      <td className="px-4 py-3 text-slate-800"> {row.supporters === 0 ? "-" : `${formatNumber(row.supporters)}`}</td>
+                      <td className="px-4 py-3 text-slate-800"> {row.agencyFee === 0 ? "-" : `${formatNumber(row.agencyFee)}`}</td>
                       <td className="px-4 py-3 font-semibold text-slate-900">
-                        {formatNumber(row.amountToBePaid)}
+                        {row.amountToBePaid === 0 ? "-" : `${formatNumber(row.amountToBePaid)}`}
                       </td>
                     </tr>
                   ))
@@ -385,39 +385,7 @@ export default function ApportionmentReport() {
                   </tr>
                 )}
 
-                {/* Totals */}
-                {data.length > 0 && (
-                  <>
-                    <tr className="border-t border-slate-200/70 bg-slate-50 font-semibold">
-                      <td colSpan={2} className="px-4 py-3 text-slate-700">
-                        TOTAL
-                      </td>
-                      <td className="px-4 py-3 text-slate-900">
-                        {formatNumber(totals.amountRemitted)}
-                      </td>
-                      <td className="px-4 py-3 text-slate-900">
-                        {formatNumber(totals.executors)}
-                      </td>
-                      <td className="px-4 py-3 text-slate-900">
-                        {formatNumber(totals.supporters)}
-                      </td>
-                      <td className="px-4 py-3 text-slate-900">
-                        {formatNumber(totals.agencyFee)}
-                      </td>
-                      <td className="px-4 py-3 text-slate-900">
-                        {formatNumber(totals.amountToBePaid)}
-                      </td>
-                    </tr>
-
-                    <tr className="border-t border-slate-200/70 bg-slate-50 font-semibold">
-                      <td colSpan={2} className="px-4 py-3 text-slate-700">
-                        REMAINING BALANCE
-                      </td>
-                      <td className="px-4 py-3 text-slate-900">{formatNumber(remaining)}</td>
-                      <td colSpan={4} />
-                    </tr>
-                  </>
-                )}
+               
               </tbody>
             </table>
           </div>

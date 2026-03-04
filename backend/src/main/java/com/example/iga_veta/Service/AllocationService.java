@@ -272,7 +272,7 @@ public class AllocationService {
 
         // ✅ KEEP Tuition Fees rule AS-IS (ONLY Tuition Fees)
         if ("Tuition Fees".equalsIgnoreCase(allocationDescLabel)) {
-            allocation.setExpenditureAmount(totalAmount);
+            allocation.setExpenditureAmount(BigDecimal.ZERO);
             allocation.setProfitAmountPerCentreReport(BigDecimal.ZERO);
             allocation.setContributionToCentralIGA(BigDecimal.ZERO);
             allocation.setFacilitationOfIGAForCentralActivities(BigDecimal.ZERO);

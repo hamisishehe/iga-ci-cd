@@ -76,6 +76,7 @@ public class ApposhmentDistributionService {
             apposhmentDistribution.setDescription(description);
             apposhmentDistribution.setName(service_name);
             apposhmentDistribution.setApposhments(apposhment);
+
             apposhmentDistributionRepository.save(apposhmentDistribution);
             return "apposhment distribution saved";
         }

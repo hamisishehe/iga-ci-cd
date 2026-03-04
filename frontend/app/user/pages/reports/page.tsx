@@ -51,13 +51,13 @@ const REPORTS: Array<{
     href: "/user/pages/reports/distribution-reports",
     icon: IconArrowDownDashed,
   },
-  {
-    id: "apposhment",
-    title: "Apportionment Report",
-    description: "Generate Apportionment reports for approvals, posting, or allocations.",
-    href: "/user/pages/reports/apposhment-reports",
-    icon: IconArrowsShuffle,
-  },
+  // {
+  //   id: "apposhment",
+  //   title: "Apportionment Report",
+  //   description: "Generate Apportionment reports for approvals, posting, or allocations.",
+  //   href: "/user/pages/reports/apposhment-reports",
+  //   icon: IconArrowsShuffle,
+  // },
 ];
 
 export default function ReportsHubPage() {
@@ -183,12 +183,7 @@ export default function ReportsHubPage() {
                         Distributions
                       </div>
                     </SelectItem>
-                    <SelectItem value="apposhment">
-                      <div className="flex items-center gap-2">
-                        <IconArrowsShuffle className="h-4 w-4" />
-                        Apportionment
-                      </div>
-                    </SelectItem>
+               
                   </SelectContent>
                 </Select>
               </div>
@@ -263,7 +258,7 @@ export default function ReportsHubPage() {
         </Card>
 
         {/* Quick links */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {REPORTS.map((r) => {
             const active = r.id === reportType;
             const Icon = r.icon;

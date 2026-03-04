@@ -66,13 +66,25 @@ public class ApposhmentService {
             // Map each service to ServiceItem entity
             List<ServiceItem> serviceItems = services.stream().map(s -> {
                 ServiceItem item = new ServiceItem();
+
                 item.setService_name(s.getService_name());
-                item.setExecutors(BigDecimal.valueOf(s.getService_return_profit() * 0.10));
-                item.setSupporters_to_executors(BigDecimal.valueOf(s.getService_return_profit() * 0.05));
-                item.setAgency_fee(BigDecimal.valueOf(s.getService_return_profit() * 0.05));
-                item.setAmount_paid_to_paid(item.getExecutors().add(item.getSupporters_to_executors()));
+
+                // No calculations
+                item.setExecutors(BigDecimal.ZERO);
+                item.setSupporters_to_executors(BigDecimal.ZERO);
+                item.setAgency_fee(BigDecimal.ZERO);
+
+                // Amount to be paid
+                item.setAmount_paid_to_paid(BigDecimal.valueOf(s.getService_return_profit()));
+
+                // Amount remitted = Amount to be paid
+                item.setService_return_profit(BigDecimal.ZERO);
+
+                // Only this comes from request
                 item.setService_return_profit(BigDecimal.valueOf(s.getService_return_profit()));
-                item.setApposhment(apposhment); // important to link child to parent
+
+                item.setApposhment(apposhment);
+
                 return item;
             }).toList();
 
