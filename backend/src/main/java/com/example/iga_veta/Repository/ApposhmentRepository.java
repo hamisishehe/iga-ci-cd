@@ -26,6 +26,19 @@ public interface ApposhmentRepository extends JpaRepository<Apposhment, Long> {
             @Param("endDate") LocalDate endDate
     );
 
+
+    @Query("""
+        select case when count(a) > 0 then true else false end
+        from Apposhment a
+        where a.centres.id = :centreId
+          and a.start_date <= :monthEnd
+          and a.end_date >= :monthStart
+    """)
+    boolean existsAnyInMonth(
+            @Param("centreId") Long centreId,
+            @Param("monthStart") LocalDate monthStart,
+            @Param("monthEnd") LocalDate monthEnd
+    );
     List<Apposhment> findByCentres(Centre centres);
 
 }

@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.YearMonth;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -40,18 +41,18 @@ public class ApposhmentService {
                                  List<ServiceRequest> services) {
 
         // Check if an Apposhment already exists for the same centre and date range
-        Boolean exist = apposhmentRepository.existsApposhment(
-                centreId,
-                startDate,
-                endDate
-        );
+        YearMonth ym = YearMonth.from(startDate);
+        LocalDate monthStart = ym.atDay(1);
+        LocalDate monthEnd = ym.atEndOfMonth();
 
+        boolean exist = apposhmentRepository.existsAnyInMonth(centreId, monthStart, monthEnd);
+
+        System.out.println("exist: " + monthStart + " " + monthEnd);
         if (exist) {
-            System.out.println("Apposhment already exists!");
-
             return "Apposhment already exists!";
+        }
 
-        } else {
+        else {
 
             // Fetch the centre
             Centre centre = centreRepository.findById(centreId)
