@@ -58,9 +58,12 @@ public class CollectionService {
     private static final String API_URL = "http://41.59.229.41:6092/api/collections/fetch";
     private static final String API_KEY = "Vj7k_Oc7Gm5j2QHqZJ3lJ4UrVzml8GoxT9CwpuG8OqY";
 
+    // kept SPLIT_GFS and added your two codes
     private static final Set<String> SPLIT_GFS = Set.of(
             "142202540053",
-            "142301600001"
+            "142301600001",
+            "142202120086",
+            "142301610001"
     );
 
     private static final DateTimeFormatter FLEX =
@@ -163,11 +166,9 @@ public class CollectionService {
         if (t.isEmpty() || "null".equalsIgnoreCase(t)) return BigDecimal.ZERO;
 
         try {
-            // Handle scientific notation correctly
             return new BigDecimal(t);
         } catch (NumberFormatException e) {
             try {
-                // Remove commas ONLY (not other characters)
                 t = t.replace(",", "");
                 return new BigDecimal(t);
             } catch (Exception ex) {
@@ -181,8 +182,11 @@ public class CollectionService {
         if (s == null) return null;
         String t = s.trim();
         if (t.isEmpty() || "null".equalsIgnoreCase(t)) return null;
-        try { return Long.parseLong(t); }
-        catch (Exception e) { return null; }
+        try {
+            return Long.parseLong(t);
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     private LocalDateTime parseDate(String dateStr) {
@@ -219,6 +223,7 @@ public class CollectionService {
             String gfsCodeValue = safeTrim(row.get("gfsCode"));
             boolean mustSplit = (gfsCodeValue != null && SPLIT_GFS.contains(gfsCodeValue));
 
+            // modified here: these GFS codes are grouped separately
             String groupKey = mustSplit
                     ? (paymentId + "|" + gfsCodeValue)
                     : String.valueOf(paymentId);
@@ -318,11 +323,11 @@ public class CollectionService {
                 totalPaid = totalPaid.add(parseBigDecimalOrZero(line.get("amountPaid")));
             }
 
-            // ✅ FIX: do NOT use getResultStream() (ResultSet closes)
             Payment pay;
-            if (gfs != null) {
+
+            if (gfs != null && SPLIT_GFS.contains(gfsCodeValue)) {
                 List<Payment> found = em.createQuery(
-                                "select p from Payment p where p.paymentId = :pid and p.gfsCode = :gfs",
+                                "select p from Payment p where p.paymentId = :pid and p.gfsCode = :gfs order by p.id asc",
                                 Payment.class
                         )
                         .setParameter("pid", paymentId)
@@ -332,7 +337,15 @@ public class CollectionService {
 
                 pay = found.isEmpty() ? null : found.get(0);
             } else {
-                pay = paymentRepository.findByPaymentId(paymentId).orElse(null);
+                List<Payment> found = em.createQuery(
+                                "select p from Payment p where p.paymentId = :pid order by p.id asc",
+                                Payment.class
+                        )
+                        .setParameter("pid", paymentId)
+                        .setMaxResults(1)
+                        .getResultList();
+
+                pay = found.isEmpty() ? null : found.get(0);
             }
 
             if (pay == null) {
@@ -374,7 +387,7 @@ public class CollectionService {
         if (firstName == null) return "HIGHLAND ZONE";
         String name = firstName.trim().toUpperCase(Locale.ROOT);
 
-        if (name.equals("DODOMA") || name.equals("SINDIDA") || name.equals("MANYARA"))
+        if (name.equals("DODOMA") || name.equals("SINGIDA") || name.equals("MANYARA"))
             return "CENTRAL ZONE";
         if (name.equals("MWANZA") || name.equals("MARA") || name.equals("KAGERA") || name.equals("GEITA"))
             return "LAKE ZONE";
@@ -396,11 +409,26 @@ public class CollectionService {
         return "HIGHLAND ZONE";
     }
 
-    public List<Collections> findAll() { return collectionsRepository.findAll(); }
-    public List<Collections> findAllData() { return collectionsRepository.findAll(); }
-    public List<Collections> findAllByCentre_Name(String centreName) { return collectionsRepository.findByCentreName(centreName); }
-    public List<Collections> findAllByGfsCode_Name(String gfsCodeName) { return collectionsRepository.findCollectionsByGfsCode(gfsCodeName); }
-    public BigDecimal findTotalAmountByGfsCode_Name(String gfsCodeName) { return collectionsRepository.getTotalAmountByGfsCode(gfsCodeName); }
+    public List<Collections> findAll() {
+        return collectionsRepository.findAll();
+    }
+
+    public List<Collections> findAllData() {
+        return collectionsRepository.findAll();
+    }
+
+    public List<Collections> findAllByCentre_Name(String centreName) {
+        return collectionsRepository.findByCentreName(centreName);
+    }
+
+    public List<Collections> findAllByGfsCode_Name(String gfsCodeName) {
+        return collectionsRepository.findCollectionsByGfsCode(gfsCodeName);
+    }
+
+    public BigDecimal findTotalAmountByGfsCode_Name(String gfsCodeName) {
+        return collectionsRepository.getTotalAmountByGfsCode(gfsCodeName);
+    }
+
     public BigDecimal getTotalAmountByCentreAndGfsCode(String gfsCodeName, String centreName) {
         return collectionsRepository.getTotalAmountByCentreAndGfsCode(centreName, gfsCodeName);
     }

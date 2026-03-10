@@ -17,7 +17,9 @@ import java.util.Optional;
 
 public interface PaymentRepository extends JpaRepository<Payment, Long> {
 
-    Optional<Payment> findByPaymentId(Long paymentId);
+    List<Payment> findAllByPaymentId(Long paymentId);
+
+    Optional<Payment> findTopByPaymentIdOrderByIdAsc(Long paymentId);
 
     Optional<Payment> findByPaymentIdAndGfsCode_Id(Long paymentId, Long gfsCodeId);
 
