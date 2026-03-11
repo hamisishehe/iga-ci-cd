@@ -835,6 +835,7 @@ Remaining: ${(serviceBalance - totalForThisService).toLocaleString()} TSH`,
                     className="h-11 rounded-2xl border-slate-200 bg-white shadow-sm focus-visible:ring-emerald-600/15"
                     value={expenseAmount}
                     onChange={(e) => setExpenseAmount(e.target.value)}
+                    min={1000}
                   />
                 </div>
 

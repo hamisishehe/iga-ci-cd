@@ -58,7 +58,6 @@ public class CollectionService {
     private static final String API_URL = "http://41.59.229.41:6092/api/collections/fetch";
     private static final String API_KEY = "Vj7k_Oc7Gm5j2QHqZJ3lJ4UrVzml8GoxT9CwpuG8OqY";
 
-    // kept SPLIT_GFS and added your two codes
     private static final Set<String> SPLIT_GFS = Set.of(
             "142202540053",
             "142301600001",
@@ -115,13 +114,18 @@ public class CollectionService {
         Map<String, Object> responseMap = response.getBody();
 
         LocalDateTime apiLastFetchedDate = parseDate(safeString(responseMap.get("lastFetchedDate")));
-        if (apiLastFetchedDate == null) apiLastFetchedDate = LocalDateTime.now();
+        if (apiLastFetchedDate == null) {
+            apiLastFetchedDate = LocalDateTime.now();
+        }
 
         List<Map<String, Object>> collections =
                 (List<Map<String, Object>>) responseMap.get("collections");
-        if (collections == null) collections = java.util.Collections.emptyList();
+        if (collections == null) {
+            collections = java.util.Collections.emptyList();
+        }
 
-        log.info("CursorSent={}, apiLastFetchedDate={}, API items={}", cursor, apiLastFetchedDate, collections.size());
+        log.info("CursorSent={}, apiLastFetchedDate={}, API items={}",
+                cursor, apiLastFetchedDate, collections.size());
 
         List<Map<String, String>> apiData = new ArrayList<>(collections.size());
         for (Map<String, Object> item : collections) {
@@ -220,13 +224,16 @@ public class CollectionService {
                 continue;
             }
 
+            Long billId = parseLongOrNull(row.get("billId"));
             String gfsCodeValue = safeTrim(row.get("gfsCode"));
             boolean mustSplit = (gfsCodeValue != null && SPLIT_GFS.contains(gfsCodeValue));
 
-            // modified here: these GFS codes are grouped separately
-            String groupKey = mustSplit
-                    ? (paymentId + "|" + gfsCodeValue)
-                    : String.valueOf(paymentId);
+            String groupKey;
+            if (mustSplit) {
+                groupKey = paymentId + "|" + (billId != null ? billId : UUID.randomUUID());
+            } else {
+                groupKey = String.valueOf(paymentId);
+            }
 
             grouped.computeIfAbsent(groupKey, k -> new ArrayList<>()).add(row);
         }
@@ -236,12 +243,17 @@ public class CollectionService {
 
         for (Map.Entry<String, List<Map<String, String>>> entry : grouped.entrySet()) {
             List<Map<String, String>> lines = entry.getValue();
-            if (lines == null || lines.isEmpty()) continue;
+            if (lines == null || lines.isEmpty()) {
+                continue;
+            }
 
             Map<String, String> first = lines.get(0);
 
             Long paymentId = parseLongOrNull(first.get("paymentId"));
-            if (paymentId == null) continue;
+            Long billId = parseLongOrNull(first.get("billId"));
+            if (paymentId == null) {
+                continue;
+            }
 
             String centreName = safeTrim(first.get("centreName"));
             String customerName = safeTrim(first.get("customerName"));
@@ -288,7 +300,7 @@ public class CollectionService {
                 String finalCustomerName = customerName;
                 Centre finalCentre = centre;
                 customer = customerRepository
-                        .findByNameAndCentre_Id(finalCustomerName, centre.getId())
+                        .findByNameAndCentre_Id(finalCustomerName, finalCentre.getId())
                         .orElseGet(() -> {
                             Customer c = new Customer();
                             c.setName(finalCustomerName);
@@ -324,18 +336,10 @@ public class CollectionService {
             }
 
             Payment pay;
+            boolean mustSplit = (gfsCodeValue != null && SPLIT_GFS.contains(gfsCodeValue));
 
-            if (gfs != null && SPLIT_GFS.contains(gfsCodeValue)) {
-                List<Payment> found = em.createQuery(
-                                "select p from Payment p where p.paymentId = :pid and p.gfsCode = :gfs order by p.id asc",
-                                Payment.class
-                        )
-                        .setParameter("pid", paymentId)
-                        .setParameter("gfs", gfs)
-                        .setMaxResults(1)
-                        .getResultList();
-
-                pay = found.isEmpty() ? null : found.get(0);
+            if (mustSplit && billId != null) {
+                pay = paymentRepository.findByPaymentIdAndBillId(paymentId, billId).orElse(null);
             } else {
                 List<Payment> found = em.createQuery(
                                 "select p from Payment p where p.paymentId = :pid order by p.id asc",
@@ -351,9 +355,17 @@ public class CollectionService {
             if (pay == null) {
                 pay = new Payment();
                 pay.setPaymentId(paymentId);
+                if (billId != null) {
+                    pay.setBillId(billId);
+                } else {
+                    pay.setBillId(0L);
+                }
                 inserted++;
             } else {
                 updated++;
+                if (billId != null) {
+                    pay.setBillId(billId);
+                }
             }
 
             pay.setCentre(centre);
@@ -372,7 +384,8 @@ public class CollectionService {
             if ((inserted + updated) % BATCH == 0) {
                 paymentRepository.flush();
                 em.clear();
-                log.info("Progress payments: inserted={}, updated={}, groups={}", inserted, updated, grouped.size());
+                log.info("Progress payments: inserted={}, updated={}, groups={}",
+                        inserted, updated, grouped.size());
             }
         }
 
