@@ -143,7 +143,7 @@ public class AllocationService {
     }
 
     // ==========================
-    // HELPER METHODS
+    // HELPER METHODS FOR CALCULATION
     // ==========================
 
     private List<Payment> filterPaymentsByRange(List<Payment> payments,

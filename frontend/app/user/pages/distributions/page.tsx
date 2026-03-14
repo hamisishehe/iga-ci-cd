@@ -137,7 +137,7 @@ export default function DistributionReportPage() {
   const getDescriptionLabel = (descRaw: string) => {
     const desc = normalizeGfsDesc(descRaw);
 
-    // ✅ NEW
+    // ✅ NEW files may have override codes in gfs_code_description, normalize them into clean labels for UI
     if (desc === "OTHER CONTRIBUTION") return "OTHER CONTRIBUTION";
     if (desc === "Short Course Tuition Fee") return "SHORT COURSE TUITION FEE";
 
