@@ -126,6 +126,8 @@ export default function DistributionReportPage() {
     // ✅ NEW
     if (desc === "OTHER CONTRIBUTION") return "OTHER CONTRIBUTION";
     if (desc === "Short Course Tuition Fee") return "SHORT COURSE TUITION FEE";
+    if (desc === "Rent - Government Quarter and Offices")
+  return "RENT";
 
     if (desc === "Receipts from Application Fee") return "APPLICATION FEE";
     if (desc === "OTH")
@@ -140,6 +142,8 @@ export default function DistributionReportPage() {
     // ✅ NEW files may have override codes in gfs_code_description, normalize them into clean labels for UI
     if (desc === "OTHER CONTRIBUTION") return "OTHER CONTRIBUTION";
     if (desc === "Short Course Tuition Fee") return "SHORT COURSE TUITION FEE";
+    if (desc === "Rent - Government Quarter and Offices")
+  return "RENT - GOVERNMENT QUARTER AND OFFICES";
 
     if (desc === "Receipts from Application Fee")
       return "LONG AND SHORT COURSE APPLICATION FEE";
