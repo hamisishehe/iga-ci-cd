@@ -221,6 +221,7 @@ public class AllocationService {
 
         else if (allocationDescLabel.toUpperCase().contains("APPLICATION")) {
 
+            allocation.setExpenditureAmount(BigDecimal.ZERO);
             allocation.setContributionToCentralIGA(calc(profitMarkupPerCentre, 0.30));
             allocation.setFacilitationOfIGAForCentralActivities(calc(profitMarkupPerCentre, 0.04));
             allocation.setFacilitationZonalActivities(calc(profitMarkupPerCentre, 0.04));
