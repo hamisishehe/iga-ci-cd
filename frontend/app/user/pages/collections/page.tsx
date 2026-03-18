@@ -16,28 +16,20 @@ import {
 import { toast } from "sonner";
 import { motion } from "framer-motion";
 
-/** -------- types from backend (PAYMENTS + GFS MODE) --------
- * rows are LINE-LEVEL:
- * - 1 row = 1 collections row (bill line) joined to its parent paymentId
- * - serviceCode/serviceDesc come from gfs_code
- */
+/** -------- types from backend (PAYMENTS + GFS MODE) -------- */
 interface PaymentRow {
-  id: number; // collections.id (line id)
-  paymentId: number; // payments.payment_id (API)
+  id: number;
+  paymentId: number;
   customerName: string;
   centreName: string;
   zoneName: string;
-
-  // ✅ from gfs_code
-  serviceCode: string; // gfs_code.code
-  serviceDesc: string; // gfs_code.description
-
+  serviceCode: string;
+  serviceDesc: string;
   paymentType?: string;
   controlNumber?: string;
-
-  totalBilled: number; // collections.amount_billed
-  totalPaid?: number; // collections.amount_paid (nullable)
-  paymentDate: string; // payments.payment_date (ISO)
+  totalBilled: number;
+  totalPaid?: number;
+  paymentDate: string;
 }
 
 interface ServiceSummaryRow {
@@ -48,26 +40,21 @@ interface ServiceSummaryRow {
   totalTransactions: number;
 }
 
-/** UI Row (keeps your old table shape) */
 interface ReportRow {
   id: number;
   customerName: string;
   centreName: string;
   zoneName: string;
-
   serviceCode: string;
   serviceDesc: string;
-
   paymentType?: string;
   controlNumber: string;
-
-  amount: number; // billed
-  amountPaid?: number; // paid
-  datePaid: string; // ISO
+  amount: number;
+  amountPaid?: number;
+  datePaid: string;
   paymentId: number;
 }
 
-/** server filters */
 interface ReportFilters {
   centres?: string[];
   zones?: string[];
@@ -75,9 +62,9 @@ interface ReportFilters {
 }
 
 interface ReportResponse extends ReportFilters {
-  totalIncome: number; // billed (sum)
+  totalIncome: number;
   totalTransactions: number;
-  totalPaid: number; // paid (sum)
+  totalPaid: number;
   totalAmount: number;
 
   page: number;
@@ -85,8 +72,8 @@ interface ReportResponse extends ReportFilters {
   totalElements: number;
   totalPages: number;
 
-  rows: PaymentRow[]; // ✅ line rows from server
-  summaryByService: ServiceSummaryRow[]; // ✅ grouped by gfs service
+  rows: PaymentRow[];
+  summaryByService: ServiceSummaryRow[];
 }
 
 /** -------- helpers -------- */
@@ -99,6 +86,7 @@ const toSafeNumber = (v: any) => {
 };
 
 const safeStr = (v: any) => (v == null ? "" : String(v));
+const normalizeText = (v: any) => safeStr(v).trim();
 
 export default function CollectionReport() {
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || "/api";
@@ -109,11 +97,9 @@ export default function CollectionReport() {
 
   const [centre, setCentre] = useState("ALL");
   const [zone, setZone] = useState("ALL");
-
-  // ✅ now this is GFS serviceCode filter
   const [serviceCode, setServiceCode] = useState("ALL");
 
-  // server data (UI-shape)
+  // data
   const [rows, setRows] = useState<ReportRow[]>([]);
   const [summaryByService, setSummaryByService] = useState<ServiceSummaryRow[]>([]);
   const [totalIncome, setTotalIncome] = useState(0);
@@ -127,18 +113,15 @@ export default function CollectionReport() {
   const [serviceOptions, setServiceOptions] = useState<Array<{ serviceCode: string; serviceDesc: string }>>([]);
 
   const [loading, setLoading] = useState(true);
+  const [loadingCentres, setLoadingCentres] = useState(false);
 
   // paging
   const [page, setPage] = useState(0);
-
-  // ✅ user can choose 10/20/30/ALL
-  // -1 means ALL
   const [pageSize, setPageSize] = useState<number>(10);
   const size = pageSize === -1 ? 100000 : pageSize;
-
   const [totalPages, setTotalPages] = useState(1);
 
-  // === User Role & Permissions ===
+  // role
   const userType = (typeof window !== "undefined" ? localStorage.getItem("userType") || "" : "").toUpperCase();
   const userCentre = typeof window !== "undefined" ? localStorage.getItem("centre") || "" : "";
   const userZone = typeof window !== "undefined" ? localStorage.getItem("zone") || "" : "";
@@ -147,11 +130,12 @@ export default function CollectionReport() {
   const isCentreUser = userType === "CENTRE" && Boolean(userCentre);
   const isZoneUser = userType === "ZONE" && Boolean(userZone);
 
-  // === Set default date range to current month ===
+  // init default dates and locked filters
   useEffect(() => {
     const now = new Date();
     const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
     const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+
     setFromDate(formatDate(firstDay));
     setToDate(formatDate(lastDay));
 
@@ -159,7 +143,7 @@ export default function CollectionReport() {
     if (isZoneUser) setZone(userZone);
   }, [isCentreUser, isZoneUser, userCentre, userZone]);
 
-  /** ✅ Effective filters (respect role locks) */
+  /** effective filters */
   const effectiveZone = useMemo(() => {
     if (isZoneUser) return userZone;
     return zone === "ALL" ? null : zone;
@@ -170,88 +154,82 @@ export default function CollectionReport() {
     return centre === "ALL" ? null : centre;
   }, [isCentreUser, userCentre, centre]);
 
-  /** build request payload */
-  const payload = useMemo(() => {
-    return {
+  const payload = useMemo(
+    () => ({
       fromDate,
       toDate,
       centre: effectiveCentre,
       zone: effectiveZone,
-      // ✅ now this is GFS code
       serviceCode: serviceCode === "ALL" ? null : serviceCode,
       page,
       size,
-    };
-  }, [fromDate, toDate, effectiveCentre, effectiveZone, serviceCode, page, size]);
+    }),
+    [fromDate, toDate, effectiveCentre, effectiveZone, serviceCode, page, size]
+  );
 
-  /** debounce fetch */
-  const debounceRef = useRef<number | null>(null);
+  const reportDebounceRef = useRef<number | null>(null);
+  const centresDebounceRef = useRef<number | null>(null);
 
-  useEffect(() => {
-    if (!fromDate || !toDate) return;
+  const fetchCentresByZone = async (zoneValue?: string | null) => {
+    try {
+      setLoadingCentres(true);
 
-    if (debounceRef.current) window.clearTimeout(debounceRef.current);
-    debounceRef.current = window.setTimeout(() => {
-      fetchReport(payload);
-    }, 250);
+      const token = localStorage.getItem("authToken");
+      const apiKey = process.env.NEXT_PUBLIC_API_KEY;
 
-    return () => {
-      if (debounceRef.current) window.clearTimeout(debounceRef.current);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [payload]);
+      if (!token || !apiKey) {
+        toast.error("Missing authentication credentials");
+        setCentreOptions([]);
+        return;
+      }
 
-  /** ✅ centres filtered by zone (UI dependency) */
-  const filteredCentreOptions = useMemo(() => {
-    if (!effectiveZone) return centreOptions;
+      const cleanZone = zoneValue && zoneValue !== "ALL" ? zoneValue : null;
+      const q = cleanZone ? `?zone=${encodeURIComponent(cleanZone)}` : "";
 
-    const centresInThisZone = Array.from(
-      new Set(
-        rows
-          .filter((r) => (r.zoneName || "").trim() === String(effectiveZone).trim())
-          .map((r) => (r.centreName || "").trim())
-          .filter(Boolean)
-      )
-    );
+      console.log("Fetching centres with zone:", cleanZone);
 
-    if (!centresInThisZone.length) return centreOptions;
-    const set = new Set(centresInThisZone);
-    return (centreOptions || []).filter((c) => set.has(String(c).trim()));
-  }, [centreOptions, rows, effectiveZone]);
+      const res = await fetch(`${apiUrl}/payments/centres${q}`, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+          "X-API-KEY": apiKey,
+        },
+        cache: "no-store",
+      });
 
-  /** ✅ If zone changes and selected centre is not valid, reset */
-  useEffect(() => {
-    if (isCentreUser) return;
-    if (centre === "ALL") return;
+      if (!res.ok) {
+        const txt = await res.text().catch(() => "");
+        throw new Error(`HTTP ${res.status} ${txt}`);
+      }
 
-    const exists = filteredCentreOptions.includes(centre);
-    if (!exists) {
-      setCentre("ALL");
-      setPage(0);
+      const data = await res.json();
+      const centres = Array.isArray(data) ? data.map((x) => normalizeText(x)).filter(Boolean) : [];
+
+      setCentreOptions(centres);
+    } catch (error) {
+      console.error(error);
+      setCentreOptions([]);
+      toast.error("Failed to load centres");
+    } finally {
+      setLoadingCentres(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filteredCentreOptions, effectiveZone]);
-
-  /** ✅ Page totals (CLIENT) */
-  const pageBilled = useMemo(() => rows.reduce((sum, r) => sum + toSafeNumber(r.amount), 0), [rows]);
-  const pagePaid = useMemo(() => rows.reduce((sum, r) => sum + toSafeNumber(r.amountPaid), 0), [rows]);
-
-  /** ✅ Server totals (GLOBAL filtered dataset) */
-  const serverBilled = useMemo(() => toSafeNumber(totalIncome), [totalIncome]);
-  const serverPaid = useMemo(() => toSafeNumber(totalPaid), [totalPaid]);
+  };
 
   const fetchReport = async (body: any) => {
     setLoading(true);
+
     try {
       const token = localStorage.getItem("authToken");
       const apiKey = process.env.NEXT_PUBLIC_API_KEY;
 
       if (!token || !apiKey) {
         toast.error("Missing authentication credentials");
+        setLoading(false);
         return;
       }
 
-      const res = await fetch(`${apiUrl}/collections/report`, {
+      const res = await fetch(`${apiUrl}/payments/report`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -272,34 +250,30 @@ export default function CollectionReport() {
 
       const data: ReportResponse = await res.json();
 
-      /** ✅ Map PaymentRow(line) -> ReportRow (keep UI stable) */
       const normalizedRows: ReportRow[] = (data.rows || []).map((p) => {
-        const billed = toSafeNumber((p as any).totalBilled);
-        const paidRaw = (p as any).totalPaid;
+        const billed = toSafeNumber(p.totalBilled);
+        const paidRaw = p.totalPaid;
 
         return {
           id: toSafeNumber(p.id),
-          paymentId: toSafeNumber((p as any).paymentId),
+          paymentId: toSafeNumber(p.paymentId),
           customerName: safeStr(p.customerName),
           centreName: safeStr(p.centreName),
           zoneName: safeStr(p.zoneName),
-
-          serviceCode: safeStr((p as any).serviceCode),
-          serviceDesc: safeStr((p as any).serviceDesc),
-
-          paymentType: safeStr((p as any).paymentType),
-          controlNumber: safeStr((p as any).controlNumber),
-
+          serviceCode: safeStr(p.serviceCode),
+          serviceDesc: safeStr(p.serviceDesc),
+          paymentType: safeStr(p.paymentType),
+          controlNumber: safeStr(p.controlNumber),
           amount: billed,
           amountPaid: paidRaw == null ? undefined : toSafeNumber(paidRaw),
-          datePaid: safeStr((p as any).paymentDate),
+          datePaid: safeStr(p.paymentDate),
         };
       });
 
       setRows(normalizedRows);
 
       setSummaryByService(
-        (data.summaryByService || []).map((s: any) => ({
+        (data.summaryByService || []).map((s) => ({
           serviceCode: safeStr(s.serviceCode),
           serviceDesc: safeStr(s.serviceDesc),
           totalBilled: toSafeNumber(s.totalBilled),
@@ -310,19 +284,19 @@ export default function CollectionReport() {
 
       setTotalIncome(toSafeNumber(data.totalIncome));
       setTotalTransactions(toSafeNumber(data.totalTransactions));
-      setTotalAmount(toSafeNumber((data as any).totalAmount));
-      setTotalPaid(toSafeNumber((data as any).totalPaid));
+      setTotalAmount(toSafeNumber(data.totalAmount));
+      setTotalPaid(toSafeNumber(data.totalPaid));
       setTotalPages(Math.max(1, toSafeNumber(data.totalPages) || 1));
 
-      // options from server or fallback from rows
-      const serverCentres = (data.centres || []).filter(Boolean);
-      const serverZones = (data.zones || []).filter(Boolean);
+      const serverZones = (data.zones || []).map((z) => normalizeText(z)).filter(Boolean);
+      const fallbackZones = Array.from(new Set(normalizedRows.map((r) => normalizeText(r.zoneName)).filter(Boolean)));
 
-      // ✅ services are GFS services (code+desc)
-      const serverServices = (data.services || []).filter((s) => s?.serviceCode && s?.serviceDesc);
-
-      const fallbackCentres = Array.from(new Set(normalizedRows.map((r) => r.centreName).filter(Boolean)));
-      const fallbackZones = Array.from(new Set(normalizedRows.map((r) => r.zoneName).filter(Boolean)));
+      const serverServices = (data.services || [])
+        .filter((s) => s?.serviceCode && s?.serviceDesc)
+        .map((s) => ({
+          serviceCode: safeStr(s.serviceCode),
+          serviceDesc: safeStr(s.serviceDesc),
+        }));
 
       const fallbackServices = Array.from(
         new Map(
@@ -332,8 +306,7 @@ export default function CollectionReport() {
         ).values()
       );
 
-      setCentreOptions(isCentreUser ? [userCentre] : serverCentres.length ? serverCentres : fallbackCentres);
-      setZoneOptions(isZoneUser ? [userZone] : serverZones.length ? serverZones : fallbackZones);
+      setZoneOptions(isZoneUser ? [normalizeText(userZone)] : serverZones.length ? serverZones : fallbackZones);
       setServiceOptions(serverServices.length ? serverServices : fallbackServices);
 
       if (serviceCode !== "ALL") {
@@ -353,15 +326,69 @@ export default function CollectionReport() {
       setTotalPaid(0);
       setTotalPages(1);
 
-      setCentreOptions(isCentreUser ? [userCentre] : []);
-      setZoneOptions(isZoneUser ? [userZone] : []);
+      setZoneOptions(isZoneUser ? [normalizeText(userZone)] : []);
       setServiceOptions([]);
     } finally {
       setLoading(false);
     }
   };
 
-  /** Export current page (or ALL if selected) */
+  // fetch report when report filters change
+  useEffect(() => {
+    if (!fromDate || !toDate) return;
+
+    if (reportDebounceRef.current) window.clearTimeout(reportDebounceRef.current);
+
+    reportDebounceRef.current = window.setTimeout(() => {
+      fetchReport(payload);
+    }, 250);
+
+    return () => {
+      if (reportDebounceRef.current) window.clearTimeout(reportDebounceRef.current);
+    };
+  }, [payload, fromDate, toDate]);
+
+  // fetch centres only when zone context changes
+  useEffect(() => {
+    if (centresDebounceRef.current) window.clearTimeout(centresDebounceRef.current);
+
+    centresDebounceRef.current = window.setTimeout(() => {
+      if (isCentreUser) {
+        setCentreOptions(userCentre ? [normalizeText(userCentre)] : []);
+        return;
+      }
+
+      if (isZoneUser) {
+        fetchCentresByZone(userZone);
+        return;
+      }
+
+      fetchCentresByZone(zone === "ALL" ? null : zone);
+    }, 200);
+
+    return () => {
+      if (centresDebounceRef.current) window.clearTimeout(centresDebounceRef.current);
+    };
+  }, [zone, isCentreUser, isZoneUser, userCentre, userZone]);
+
+  // reset centre if current zone no longer contains it
+  useEffect(() => {
+    if (isCentreUser) return;
+    if (centre === "ALL") return;
+
+    const exists = centreOptions.some((c) => normalizeText(c) === normalizeText(centre));
+    if (!exists) {
+      setCentre("ALL");
+      setPage(0);
+    }
+  }, [centreOptions, centre, isCentreUser]);
+
+  const pageBilled = useMemo(() => rows.reduce((sum, r) => sum + toSafeNumber(r.amount), 0), [rows]);
+  const pagePaid = useMemo(() => rows.reduce((sum, r) => sum + toSafeNumber(r.amountPaid), 0), [rows]);
+
+  const serverBilled = useMemo(() => toSafeNumber(totalIncome), [totalIncome]);
+  const serverPaid = useMemo(() => toSafeNumber(totalPaid), [totalPaid]);
+
   const exportCurrentPageToExcel = () => {
     try {
       const ws = XLSX.utils.json_to_sheet(
@@ -379,6 +406,7 @@ export default function CollectionReport() {
           Zone: r.zoneName,
         }))
       );
+
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Payments");
 
@@ -409,7 +437,6 @@ export default function CollectionReport() {
       transition={{ duration: 0.5, ease: "easeOut" }}
     >
       <motion.div className="p-6 space-y-6">
-        {/* Breadcrumb */}
         <motion.div className="flex items-center justify-between" initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }}>
           <Breadcrumb className="px-1 sm:px-2">
             <BreadcrumbList>
@@ -440,7 +467,6 @@ export default function CollectionReport() {
           )}
         </motion.div>
 
-        {/* Stats */}
         <motion.div className="grid gap-4 sm:grid-cols-3" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
           <Card className="rounded-2xl border border-slate-200/60 bg-gradient-to-br from-blue-50 via-white to-blue-100 shadow-sm">
             <CardHeader>
@@ -470,16 +496,14 @@ export default function CollectionReport() {
           </Card>
         </motion.div>
 
-        {/* Filter + Table */}
         <Card className="relative overflow-hidden rounded-2xl border-slate-200/60 bg-white shadow-sm">
           <CardHeader>
             <CardDescription className="text-slate-600">Filter by date, service (GFS), centre and zone</CardDescription>
           </CardHeader>
 
           <CardContent>
-            {/* Filters */}
             <div className="rounded-2xl border border-slate-200/70 bg-gradient-to-b from-slate-50 to-white p-4 sm:p-5">
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-6 gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-6">
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-slate-700">From</label>
                   <Input
@@ -506,7 +530,6 @@ export default function CollectionReport() {
                   />
                 </div>
 
-                {/* SERVICE (GFS) */}
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-slate-700">Service (GFS)</label>
                   <Select
@@ -530,7 +553,6 @@ export default function CollectionReport() {
                   </Select>
                 </div>
 
-                {/* CENTRE */}
                 {(!isCentreUser || isHQUser) && (
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-slate-700">Centre</label>
@@ -540,14 +562,14 @@ export default function CollectionReport() {
                         setPage(0);
                         setCentre(v);
                       }}
-                      disabled={isCentreUser}
+                      disabled={isCentreUser || loadingCentres}
                     >
                       <SelectTrigger className="h-10 rounded-xl border-slate-200 bg-white">
-                        <SelectValue placeholder="All" />
+                        <SelectValue placeholder={loadingCentres ? "Loading centres..." : "All"} />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="ALL">All</SelectItem>
-                        {(filteredCentreOptions || []).map((c) => (
+                        {(centreOptions || []).map((c) => (
                           <SelectItem key={c} value={c}>
                             {c}
                           </SelectItem>
@@ -557,7 +579,6 @@ export default function CollectionReport() {
                   </div>
                 )}
 
-                {/* ZONE */}
                 {isHQUser && (
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-slate-700">Zone</label>
@@ -584,7 +605,6 @@ export default function CollectionReport() {
                   </div>
                 )}
 
-                {/* ✅ ROWS: 10 / 20 / 30 / ALL */}
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-slate-700">Rows</label>
                   <Select
@@ -606,11 +626,9 @@ export default function CollectionReport() {
                   </Select>
                 </div>
 
-              
               </div>
             </div>
 
-            {/* Table */}
             <div className="mt-6 overflow-auto rounded-2xl border border-slate-200/70 bg-white">
               <table className="min-w-full text-sm text-left">
                 <thead className="sticky top-0 z-10 bg-slate-900 text-white">
@@ -639,14 +657,12 @@ export default function CollectionReport() {
                         <td className="p-3 text-right font-semibold text-slate-900">
                           {row.amountPaid == null ? "-" : toSafeNumber(row.amountPaid).toLocaleString()}
                         </td>
-                        <td className="p-3 text-slate-700">
-                          {row.datePaid ? String(row.datePaid).split("T")[0] : ""}
-                        </td>
+                        <td className="p-3 text-slate-700">{row.datePaid ? String(row.datePaid).split("T")[0] : ""}</td>
                       </tr>
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={9} className="p-10 text-center text-slate-500">
+                      <td colSpan={7} className="p-10 text-center text-slate-500">
                         No records found.
                       </td>
                     </tr>
@@ -655,7 +671,6 @@ export default function CollectionReport() {
               </table>
             </div>
 
-            {/* Pagination (hide when ALL) */}
             {pageSize !== -1 && (
               <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <Button
@@ -683,7 +698,6 @@ export default function CollectionReport() {
               </div>
             )}
 
-            {/* Summary by GFS Service */}
             <div className="mt-10">
               <div className="flex items-end justify-between gap-4">
                 <div>
@@ -693,12 +707,10 @@ export default function CollectionReport() {
 
                 <div className="flex gap-2 flex-wrap justify-end">
                   <div className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-700 shadow-sm">
-                    Billed (all filtered):{" "}
-                    <span className="font-semibold">{serverBilled.toLocaleString()} TZS</span>
+                    Billed (all filtered): <span className="font-semibold">{serverBilled.toLocaleString()} TZS</span>
                   </div>
                   <div className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-700 shadow-sm">
-                    Paid (all filtered):{" "}
-                    <span className="font-semibold">{serverPaid.toLocaleString()} TZS</span>
+                    Paid (all filtered): <span className="font-semibold">{serverPaid.toLocaleString()} TZS</span>
                   </div>
                 </div>
               </div>
@@ -743,8 +755,7 @@ export default function CollectionReport() {
               </div>
             </div>
 
-            {/* Optional: small footer showing current page totals */}
-            <div className="mt-6 text-sm text-slate-600 flex flex-wrap gap-3">
+            <div className="mt-6 flex flex-wrap gap-3 text-sm text-slate-600">
               <div className="rounded-full border border-slate-200 bg-white px-3 py-1">
                 Page billed: <span className="font-semibold text-slate-900">{pageBilled.toLocaleString()} TZS</span>
               </div>
@@ -752,10 +763,10 @@ export default function CollectionReport() {
                 Page paid: <span className="font-semibold text-slate-900">{pagePaid.toLocaleString()} TZS</span>
               </div>
               <div className="rounded-full border border-slate-200 bg-white px-3 py-1">
-                Showing:{" "}
-                <span className="font-semibold text-slate-900">
-                  {pageSize === -1 ? "All" : pageSize}
-                </span>
+                Showing: <span className="font-semibold text-slate-900">{pageSize === -1 ? "All" : pageSize}</span>
+              </div>
+              <div className="rounded-full border border-slate-200 bg-white px-3 py-1">
+                Total amount: <span className="font-semibold text-slate-900">{toSafeNumber(totalAmount).toLocaleString()} TZS</span>
               </div>
             </div>
           </CardContent>

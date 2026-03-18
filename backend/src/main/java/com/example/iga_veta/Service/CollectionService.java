@@ -86,7 +86,7 @@ public class CollectionService {
 
         LocalDateTime cursor = paymentRepository
                 .findMaxPaymentDate()
-                .orElse(LocalDateTime.of(2025, 11, 30, 0, 0))
+                .orElse(LocalDateTime.of(2024, 11, 30, 0, 0))
                 .minusMinutes(5);
 
         DateTimeFormatter iso = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss");

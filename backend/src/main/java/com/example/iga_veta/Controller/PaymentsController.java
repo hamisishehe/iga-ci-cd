@@ -105,6 +105,21 @@ public class PaymentsController {
         return ResponseEntity.ok(out);
     }
 
+
+    @GetMapping("/centres")
+    public ResponseEntity<List<String>> getCentresByZone(
+            @RequestParam(required = false) String zone
+    ) {
+        trackUsage("/centres", "GET");
+
+        String cleanZone = (zone == null || zone.trim().isEmpty() || "ALL".equalsIgnoreCase(zone))
+                ? null
+                : zone.trim();
+
+        List<String> centres = collectionRepository.centreOptionsByZone(cleanZone);
+        return ResponseEntity.ok(centres);
+    }
+
     @GetMapping("/get")
     public List<Collections> getCollections() {
         return collectionDataService.findAll();

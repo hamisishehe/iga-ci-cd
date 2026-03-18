@@ -58,7 +58,7 @@ public class SecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
 
-        config.setAllowedOrigins(List.of("http://vets.veta.go.tz","http://localhost","http://localhost:3000","http://10.10.11.12:3000", "https://vets.veta.go.tz","http://10.10.11.12"));
+        config.setAllowedOrigins(List.of("http://vets.veta.go.tz","http://localhost","http://localhost:3000","http://10.10.11.12:3000", "https://vets.veta.go.tz","http://10.10.11.12", "http://41.59.57.5:3000", "http://41.59.57.5"));
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of(
                 "Authorization",

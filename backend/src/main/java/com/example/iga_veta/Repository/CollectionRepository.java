@@ -443,4 +443,16 @@ public interface CollectionRepository extends JpaRepository<Collections, Long> {
 
 
 
+
+    @Query("""
+    select distinct p.centre.name
+    from Payment p
+    where (:zoneName is null or p.centre.zones.name = :zoneName)
+    order by p.centre.name
+""")
+    List<String> centreOptionsByZone(@Param("zoneName") String zoneName);
+
+
+
+
 }

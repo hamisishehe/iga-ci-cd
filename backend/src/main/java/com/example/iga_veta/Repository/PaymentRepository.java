@@ -17,7 +17,6 @@ import java.util.Optional;
 
 public interface PaymentRepository extends JpaRepository<Payment, Long> {
 
-
     Optional<Payment> findByPaymentIdAndBillId(Long paymentId, Long billId);
     List<Payment> findAllByPaymentId(Long paymentId);
 
@@ -30,9 +29,6 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
     @Query("select max(p.paymentDate) from Payment p")
     Optional<LocalDateTime> findMaxPaymentDate();
 
-    /**
-     * totals -> [sum(totalBilled), count(*), sum(totalPaid)]
-     */
     @Query("""
         select
           coalesce(sum(p.totalBilled), 0),
@@ -50,11 +46,6 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
             @Param("zoneName") String zoneName
     );
 
-    /**
-     * TOP SERVICES (payments-only):
-     * Option A: group by paymentType (recommended if using only payments table)
-     * returns [paymentType, sum(totalBilled)]
-     */
     @Query("""
         select
           coalesce(p.paymentType, 'UNKNOWN') as paymentType,
@@ -74,9 +65,6 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
             Pageable pageable
     );
 
-    /**
-     * TOP CENTERS -> [centreName, sum(totalBilled)]
-     */
     @Query("""
         select
           p.centre.name as centreName,
@@ -96,9 +84,6 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
             Pageable pageable
     );
 
-    /**
-     * BOTTOM CENTERS -> [centreName, sum(totalBilled)]
-     */
     @Query("""
         select
           p.centre.name as centreName,
@@ -118,11 +103,6 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
             Pageable pageable
     );
 
-    /**
-     * RECENT PAYMENTS -> for dashboard list
-     * returns:
-     * [customerName, centreName, zoneName, paymentType, totalBilled, totalPaid, paymentDate]
-     */
     @Query("""
         select
           p.customer.name,
@@ -146,11 +126,8 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
             Pageable pageable
     );
 
-
-    // paymentType options (used as service dropdown in payments-only report)
     @Query("select distinct coalesce(p.paymentType, 'UNKNOWN') from Payment p order by coalesce(p.paymentType, 'UNKNOWN')")
     List<String> paymentTypeOptions();
-
 
     @Query("""
         select
@@ -171,7 +148,6 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
             @Param("gfsCode") String gfsCode
     );
 
-    // ✅ report rows page (THIS feeds the table)
     @Query("""
         select
           p.id as id,
@@ -202,7 +178,6 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
             Pageable pageable
     );
 
-    // ✅ summary by GFS code/desc (bottom table)
     @Query("""
         select
           coalesce(p.gfsCode.code, 'UNKNOWN') as serviceCode,
@@ -226,14 +201,14 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
             @Param("gfsCode") String gfsCode
     );
 
-    // ✅ options
     @Query("select distinct p.centre.name from Payment p order by p.centre.name")
     List<String> centreOptions();
+
+
 
     @Query("select distinct p.centre.zones.name from Payment p order by p.centre.zones.name")
     List<String> zoneOptions();
 
-    // ✅ dropdown services from gfs_code present in payments
     @Query("""
         select distinct
           coalesce(p.gfsCode.code, 'UNKNOWN'),
@@ -243,7 +218,6 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
     """)
     List<Object[]> serviceOptions();
 
-    // optional if you still need totalAmount separately
     @Query("""
         select coalesce(sum(p.totalBilled), 0)
         from Payment p
@@ -259,4 +233,14 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
             @Param("zoneName") String zoneName,
             @Param("gfsCode") String gfsCode
     );
+
+
+    @Query("""
+    select distinct p.centre.name
+    from Payment p
+    where (:zoneName is null or p.centre.zones.name = :zoneName)
+    order by p.centre.name
+""")
+    List<String> centreOptionsByZone(@Param("zoneName") String zoneName);
+
 }

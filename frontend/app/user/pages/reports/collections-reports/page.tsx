@@ -32,28 +32,20 @@ import { toast } from "sonner";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
-/** -------- types from backend (PAYMENTS + GFS MODE) --------
- * rows are LINE-LEVEL:
- * - 1 row = 1 collections row (bill line) joined to its parent paymentId
- * - serviceCode/serviceDesc come from gfs_code
- */
+/** -------- types from backend (PAYMENTS + GFS MODE) -------- */
 interface PaymentRow {
-  id: number; // collections.id (line id)
-  paymentId: number; // payments.payment_id (API)
+  id: number;
+  paymentId: number;
   customerName: string;
   centreName: string;
   zoneName: string;
-
-  // ✅ from gfs_code
-  serviceCode: string; // gfs_code.code
-  serviceDesc: string; // gfs_code.description
-
+  serviceCode: string;
+  serviceDesc: string;
   paymentType?: string;
   controlNumber?: string;
-
-  totalBilled: number; // collections.amount_billed
-  totalPaid?: number; // collections.amount_paid (nullable)
-  paymentDate: string; // payments.payment_date (ISO)
+  totalBilled: number;
+  totalPaid?: number;
+  paymentDate: string;
 }
 
 interface ServiceSummaryRow {
@@ -64,24 +56,19 @@ interface ServiceSummaryRow {
   totalTransactions: number;
 }
 
-/** UI Row (export/status shape) */
 interface ReportRow {
   id: number;
   paymentId: number;
-
   customerName: string;
   centreName: string;
   zoneName: string;
-
   serviceCode: string;
   serviceDesc: string;
-
   paymentType?: string;
   controlNumber?: string;
-
-  amount: number; // billed
-  amountPaid?: number; // paid
-  datePaid: string; // ISO
+  amount: number;
+  amountPaid?: number;
+  datePaid: string;
 }
 
 interface ReportFilters {
@@ -91,9 +78,9 @@ interface ReportFilters {
 }
 
 interface ReportResponse extends ReportFilters {
-  totalIncome: number; // billed (sum)
+  totalIncome: number;
   totalTransactions: number;
-  totalPaid: number; // paid (sum)
+  totalPaid: number;
   totalAmount: number;
 
   page: number;
@@ -101,8 +88,8 @@ interface ReportResponse extends ReportFilters {
   totalElements: number;
   totalPages: number;
 
-  rows: PaymentRow[]; // ✅ line rows from server
-  summaryByService: ServiceSummaryRow[]; // ✅ grouped by gfs service
+  rows: PaymentRow[];
+  summaryByService: ServiceSummaryRow[];
 }
 
 /** -------- helpers -------- */
@@ -116,12 +103,13 @@ const toSafeNumber = (v: any) => {
 };
 
 const safeStr = (v: any) => (v == null ? "" : String(v));
+const normalizeText = (v: any) => safeStr(v).trim();
 
 const fileStamp = () => {
   const d = new Date();
-  return `${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}_${pad2(
-    d.getHours()
-  )}${pad2(d.getMinutes())}${pad2(d.getSeconds())}`;
+  return `${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(
+    d.getDate()
+  )}_${pad2(d.getHours())}${pad2(d.getMinutes())}${pad2(d.getSeconds())}`;
 };
 
 const sanitizeName = (s: string) =>
@@ -142,16 +130,13 @@ export default function CollectionReport() {
   // filters
   const [centre, setCentre] = useState("ALL");
   const [zone, setZone] = useState("ALL");
-
-  // ✅ GFS serviceCode filter
   const [serviceCode, setServiceCode] = useState("ALL");
 
-  // server data (UI-shape)
+  // server data
   const [rows, setRows] = useState<ReportRow[]>([]);
   const [summaryByService, setSummaryByService] = useState<ServiceSummaryRow[]>(
     []
   );
-
   const [totalIncome, setTotalIncome] = useState(0);
   const [totalTransactions, setTotalTransactions] = useState(0);
   const [totalPaid, setTotalPaid] = useState(0);
@@ -164,13 +149,16 @@ export default function CollectionReport() {
     Array<{ serviceCode: string; serviceDesc: string }>
   >([]);
 
-  // paging (large export fetch)
+  // paging
   const [page, setPage] = useState(0);
   const size = 2000;
   const [totalPages, setTotalPages] = useState(1);
-  const [loading, setLoading] = useState(true);
 
-  // role & user
+  // loading
+  const [loading, setLoading] = useState(true);
+  const [loadingCentres, setLoadingCentres] = useState(false);
+
+  // user
   const [userType, setUserType] = useState("");
   const [userCentre, setUserCentre] = useState("");
   const [userZone, setUserZone] = useState("");
@@ -206,14 +194,13 @@ export default function CollectionReport() {
     setToDate(formatDate(lastDay));
   }, []);
 
-  // lock based on role
+  // lock by role
   useEffect(() => {
     if (!userType) return;
     if (isCentreUser) setCentre(userCentre || "ALL");
     if (isZoneUser) setZone(userZone || "ALL");
   }, [userType, isCentreUser, isZoneUser, userCentre, userZone]);
 
-  /** ✅ Effective role-safe values (match ya juu) */
   const effectiveZone = useMemo(() => {
     if (isZoneUser) return userZone;
     return zone === "ALL" ? null : zone;
@@ -224,7 +211,6 @@ export default function CollectionReport() {
     return centre === "ALL" ? null : centre;
   }, [isCentreUser, userCentre, centre]);
 
-  /** build request payload (match ya juu) */
   const payload = useMemo(() => {
     return {
       fromDate,
@@ -235,62 +221,57 @@ export default function CollectionReport() {
       page,
       size,
     };
-  }, [fromDate, toDate, effectiveCentre, effectiveZone, serviceCode, page, size]);
+  }, [fromDate, toDate, effectiveCentre, effectiveZone, serviceCode, page]);
 
-  /** debounce fetch */
-  const debounceRef = useRef<number | null>(null);
+  const reportDebounceRef = useRef<number | null>(null);
+  const centresDebounceRef = useRef<number | null>(null);
 
-  useEffect(() => {
-    if (!userType) return;
-    if (!fromDate || !toDate) return;
+  const fetchCentresByZone = async (zoneValue?: string | null) => {
+    try {
+      setLoadingCentres(true);
 
-    if (debounceRef.current) window.clearTimeout(debounceRef.current);
-    debounceRef.current = window.setTimeout(() => {
-      fetchReport(payload);
-    }, 250);
+      const token = localStorage.getItem("authToken");
+      const apiKey = process.env.NEXT_PUBLIC_API_KEY;
 
-    return () => {
-      if (debounceRef.current) window.clearTimeout(debounceRef.current);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [payload, userType]);
+      if (!token || !apiKey) {
+        toast.error("Missing authentication credentials");
+        setCentreOptions([]);
+        return;
+      }
 
-  /** ✅ centres filtered by zone (UI dependency) - same logic as ya juu */
-  const filteredCentreOptions = useMemo(() => {
-    if (isCentreUser) return [userCentre].filter(Boolean);
+      const cleanZone =
+        zoneValue && zoneValue !== "ALL" ? normalizeText(zoneValue) : null;
+      const q = cleanZone ? `?zone=${encodeURIComponent(cleanZone)}` : "";
 
-    if (!effectiveZone) return centreOptions;
+      const res = await fetch(`${apiUrl}/payments/centres${q}`, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+          "X-API-KEY": apiKey,
+        },
+        cache: "no-store",
+      });
 
-    const centresInThisZone = Array.from(
-      new Set(
-        rows
-          .filter(
-            (r) =>
-              (r.zoneName || "").trim() === String(effectiveZone).trim()
-          )
-          .map((r) => (r.centreName || "").trim())
-          .filter(Boolean)
-      )
-    );
+      if (!res.ok) {
+        const txt = await res.text().catch(() => "");
+        throw new Error(`HTTP ${res.status} ${txt}`);
+      }
 
-    if (!centresInThisZone.length) return centreOptions;
+      const data = await res.json();
+      const centres = Array.isArray(data)
+        ? data.map((x) => normalizeText(x)).filter(Boolean)
+        : [];
 
-    const set = new Set(centresInThisZone.map((x) => String(x).trim()));
-    return (centreOptions || []).filter((c) => set.has(String(c).trim()));
-  }, [isCentreUser, userCentre, centreOptions, rows, effectiveZone]);
-
-  /** ✅ If zone changes and selected centre is not valid, reset */
-  useEffect(() => {
-    if (isCentreUser) return;
-    if (centre === "ALL") return;
-
-    const exists = filteredCentreOptions.includes(centre);
-    if (!exists) {
-      setCentre("ALL");
-      setPage(0);
+      setCentreOptions(centres);
+    } catch (error) {
+      console.error(error);
+      setCentreOptions([]);
+      toast.error("Failed to load centres");
+    } finally {
+      setLoadingCentres(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filteredCentreOptions, effectiveZone]);
+  };
 
   const fetchReport = async (body: any) => {
     setLoading(true);
@@ -303,7 +284,7 @@ export default function CollectionReport() {
         return;
       }
 
-      const res = await fetch(`${apiUrl}/collections/report`, {
+      const res = await fetch(`${apiUrl}/payments/report`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -324,28 +305,23 @@ export default function CollectionReport() {
 
       const data: ReportResponse = await res.json();
 
-      /** ✅ Map PaymentRow(line) -> ReportRow (same as ya juu) */
       const normalizedRows: ReportRow[] = (data.rows || []).map((p) => {
-        const billed = toSafeNumber((p as any).totalBilled);
-        const paidRaw = (p as any).totalPaid;
+        const billed = toSafeNumber(p.totalBilled);
+        const paidRaw = p.totalPaid;
 
         return {
           id: toSafeNumber(p.id),
-          paymentId: toSafeNumber((p as any).paymentId),
-
+          paymentId: toSafeNumber(p.paymentId),
           customerName: safeStr(p.customerName),
           centreName: safeStr(p.centreName),
           zoneName: safeStr(p.zoneName),
-
-          serviceCode: safeStr((p as any).serviceCode),
-          serviceDesc: safeStr((p as any).serviceDesc),
-
-          paymentType: safeStr((p as any).paymentType),
-          controlNumber: safeStr((p as any).controlNumber),
-
+          serviceCode: safeStr(p.serviceCode),
+          serviceDesc: safeStr(p.serviceDesc),
+          paymentType: safeStr(p.paymentType),
+          controlNumber: safeStr(p.controlNumber),
           amount: billed,
           amountPaid: paidRaw == null ? undefined : toSafeNumber(paidRaw),
-          datePaid: safeStr((p as any).paymentDate),
+          datePaid: safeStr(p.paymentDate),
         };
       });
 
@@ -363,24 +339,24 @@ export default function CollectionReport() {
 
       setTotalIncome(toSafeNumber(data.totalIncome));
       setTotalTransactions(toSafeNumber(data.totalTransactions));
-      setTotalAmount(toSafeNumber((data as any).totalAmount));
-      setTotalPaid(toSafeNumber((data as any).totalPaid));
+      setTotalAmount(toSafeNumber(data.totalAmount));
+      setTotalPaid(toSafeNumber(data.totalPaid));
       setTotalPages(Math.max(1, toSafeNumber(data.totalPages) || 1));
 
-      // dropdown options from server or fallback from rows
-      const serverCentres = (data.centres || []).filter(Boolean);
-      const serverZones = (data.zones || []).filter(Boolean);
+      const serverZones = (data.zones || [])
+        .map((z) => normalizeText(z))
+        .filter(Boolean);
 
-      const serverServices = (data.services || []).filter(
-        (s) => s?.serviceCode && s?.serviceDesc
-      );
-
-      const fallbackCentres = Array.from(
-        new Set(normalizedRows.map((r) => r.centreName).filter(Boolean))
-      );
       const fallbackZones = Array.from(
-        new Set(normalizedRows.map((r) => r.zoneName).filter(Boolean))
+        new Set(normalizedRows.map((r) => normalizeText(r.zoneName)).filter(Boolean))
       );
+
+      const serverServices = (data.services || [])
+        .filter((s) => s?.serviceCode && s?.serviceDesc)
+        .map((s) => ({
+          serviceCode: safeStr(s.serviceCode),
+          serviceDesc: safeStr(s.serviceDesc),
+        }));
 
       const fallbackServices = Array.from(
         new Map(
@@ -393,19 +369,16 @@ export default function CollectionReport() {
         ).values()
       ).sort((a, b) => a.serviceDesc.localeCompare(b.serviceDesc));
 
-      setCentreOptions(
-        isCentreUser
-          ? [userCentre]
-          : serverCentres.length
-          ? serverCentres
-          : fallbackCentres
-      );
       setZoneOptions(
-        isZoneUser ? [userZone] : serverZones.length ? serverZones : fallbackZones
+        isZoneUser
+          ? [normalizeText(userZone)]
+          : serverZones.length
+          ? serverZones
+          : fallbackZones
       );
+
       setServiceOptions(serverServices.length ? serverServices : fallbackServices);
 
-      // if selected service not available, reset
       if (serviceCode !== "ALL") {
         const list = serverServices.length ? serverServices : fallbackServices;
         const exists = list.some((s) => s.serviceCode === serviceCode);
@@ -423,275 +396,330 @@ export default function CollectionReport() {
       setTotalPaid(0);
       setTotalPages(1);
 
-      setCentreOptions(isCentreUser ? [userCentre] : []);
-      setZoneOptions(isZoneUser ? [userZone] : []);
+      setZoneOptions(isZoneUser ? [normalizeText(userZone)] : []);
       setServiceOptions([]);
     } finally {
       setLoading(false);
     }
   };
 
-  /** ✅ PDF export (uses same normalized rows) */
- const exportPdf = () => {
-  if (!rows.length) {
-    toast.error("No data to export");
-    return;
-  }
+  // report fetch
+  useEffect(() => {
+    if (!userType) return;
+    if (!fromDate || !toDate) return;
 
-  const doc = new jsPDF("l", "mm", "a4");
+    if (reportDebounceRef.current) window.clearTimeout(reportDebounceRef.current);
 
-  const titleMain = "VETA";
-  const titleSub = "COLLECTIONS REPORT";
-  const dateRange = `From ${fromDate || "-"}  To ${toDate || "-"}`;
-  const meta = `Centre: ${effectiveCentre ?? "ALL"} | Zone: ${
-    effectiveZone ?? "ALL"
-  } | Service: ${serviceCode === "ALL" ? "ALL" : serviceCode}`;
+    reportDebounceRef.current = window.setTimeout(() => {
+      fetchReport(payload);
+    }, 250);
 
-  doc.setFillColor(15, 23, 42);
-  doc.rect(10, 10, 277, 30, "F");
-  doc.setDrawColor(203, 213, 225);
-  doc.rect(10, 10, 277, 30);
+    return () => {
+      if (reportDebounceRef.current) window.clearTimeout(reportDebounceRef.current);
+    };
+  }, [payload, userType]);
 
-  const img = new Image();
-  img.src = "/veta.png";
-  try {
-    doc.addImage(img as any, "PNG", 14, 13, 18, 18);
-    doc.addImage(img as any, "PNG", 255, 13, 18, 18);
-  } catch {}
+  // centre fetch depends only on zone
+  useEffect(() => {
+    if (!userType) return;
 
-  doc.setTextColor(255, 255, 255);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(15);
-  doc.text(titleMain, 148.5, 18, { align: "center" });
+    if (centresDebounceRef.current) window.clearTimeout(centresDebounceRef.current);
 
-  doc.setFontSize(11);
-  doc.text(titleSub, 148.5, 25, { align: "center" });
+    centresDebounceRef.current = window.setTimeout(() => {
+      if (isCentreUser) {
+        setCentreOptions(userCentre ? [normalizeText(userCentre)] : []);
+        return;
+      }
 
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(9);
-  doc.text(dateRange, 148.5, 31, { align: "center" });
+      if (isZoneUser) {
+        fetchCentresByZone(userZone);
+        return;
+      }
 
-  doc.setFontSize(8.5);
-  doc.text(meta, 148.5, 37, { align: "center" });
+      fetchCentresByZone(zone === "ALL" ? null : zone);
+    }, 200);
 
-  const head = [
-    [
+    return () => {
+      if (centresDebounceRef.current) window.clearTimeout(centresDebounceRef.current);
+    };
+  }, [userType, zone, isCentreUser, isZoneUser, userCentre, userZone]);
+
+  // if zone changes and selected centre is no longer valid
+  useEffect(() => {
+    if (isCentreUser) return;
+    if (centre === "ALL") return;
+
+    const exists = centreOptions.some(
+      (c) => normalizeText(c) === normalizeText(centre)
+    );
+
+    if (!exists) {
+      setCentre("ALL");
+      setPage(0);
+    }
+  }, [centreOptions, centre, isCentreUser]);
+
+  const exportPdf = () => {
+    if (!rows.length) {
+      toast.error("No data to export");
+      return;
+    }
+
+    const doc = new jsPDF("l", "mm", "a4");
+
+    const titleMain = "VETA";
+    const titleSub = "COLLECTIONS REPORT";
+    const dateRange = `From ${fromDate || "-"}  To ${toDate || "-"}`;
+    const meta = `Centre: ${effectiveCentre ?? "ALL"} | Zone: ${
+      effectiveZone ?? "ALL"
+    } | Service: ${serviceCode === "ALL" ? "ALL" : serviceCode}`;
+
+    doc.setFillColor(15, 23, 42);
+    doc.rect(10, 10, 277, 30, "F");
+    doc.setDrawColor(203, 213, 225);
+    doc.rect(10, 10, 277, 30);
+
+    const img = new Image();
+    img.src = "/veta.png";
+    try {
+      doc.addImage(img as any, "PNG", 14, 13, 18, 18);
+      doc.addImage(img as any, "PNG", 255, 13, 18, 18);
+    } catch {}
+
+    doc.setTextColor(255, 255, 255);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(15);
+    doc.text(titleMain, 148.5, 18, { align: "center" });
+
+    doc.setFontSize(11);
+    doc.text(titleSub, 148.5, 25, { align: "center" });
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.text(dateRange, 148.5, 31, { align: "center" });
+
+    doc.setFontSize(8.5);
+    doc.text(meta, 148.5, 37, { align: "center" });
+
+    const head = [
+      [
+        "#",
+        "Customer",
+        "Centre",
+        "Zone",
+        "Payment Type",
+        "Control No",
+        "Billed (TZS)",
+        "Paid (TZS)",
+        "Date Paid",
+      ],
+    ];
+
+    const body = rows.map((r, i) => [
+      i + 1,
+      r.customerName || "N/A",
+      r.centreName || "N/A",
+      r.zoneName || "N/A",
+      r.paymentType || "-",
+      r.controlNumber || "N/A",
+      toSafeNumber(r.amount).toLocaleString(),
+      r.amountPaid == null ? "-" : toSafeNumber(r.amountPaid).toLocaleString(),
+      r.datePaid ? String(r.datePaid).split("T")[0] : "",
+    ]);
+
+    body.push([
+      "",
+      "",
+      "",
+      "",
+      "",
+      "TOTALS",
+      toSafeNumber(totalAmount).toLocaleString(),
+      toSafeNumber(totalPaid).toLocaleString(),
+      "",
+    ]);
+
+    autoTable(doc, {
+      startY: 45,
+      head,
+      body,
+      styles: {
+        fontSize: 8,
+        cellPadding: 2,
+        lineWidth: 0.2,
+        lineColor: [203, 213, 225],
+      },
+      headStyles: {
+        fillColor: [37, 99, 235],
+        textColor: 255,
+        fontStyle: "bold",
+        halign: "center",
+      },
+      alternateRowStyles: { fillColor: [248, 250, 252] },
+      columnStyles: {
+        0: { halign: "center", cellWidth: 10 },
+        1: { cellWidth: 38 },
+        2: { cellWidth: 32 },
+        3: { cellWidth: 28 },
+        4: { cellWidth: 28 },
+        5: { cellWidth: 35 },
+        6: { halign: "right", cellWidth: 28 },
+        7: { halign: "right", cellWidth: 28 },
+        8: { halign: "center", cellWidth: 22 },
+      },
+      didParseCell: (d) => {
+        if (d.row.index === body.length - 1) {
+          d.cell.styles.fontStyle = "bold";
+          d.cell.styles.fillColor = [220, 252, 231];
+        }
+      },
+      margin: { left: 10, right: 10 },
+    });
+
+    const pages = doc.internal.getNumberOfPages();
+    for (let i = 1; i <= pages; i++) {
+      doc.setPage(i);
+      doc.setFontSize(8);
+      doc.setTextColor(100);
+      doc.text(`Generated on ${new Date().toLocaleString()}`, 10, 200);
+      doc.text(`Page ${i} of ${pages}`, 287, 200, { align: "right" });
+    }
+
+    const fname = `collection_report_${sanitizeName(
+      effectiveCentre ?? username ?? "ALL"
+    )}_${fileStamp()}.pdf`;
+    doc.save(fname);
+  };
+
+  const exportExcel = () => {
+    if (!rows.length) {
+      toast.error("No data to export");
+      return;
+    }
+
+    const title1 = "VETA";
+    const title2 = "COLLECTIONS REPORT";
+    const rangeLabel = `Date Range: ${fromDate || "-"} to ${toDate || "-"}`;
+    const metaLabel = `Centre: ${effectiveCentre ?? "ALL"} | Zone: ${
+      effectiveZone ?? "ALL"
+    } | Service: ${serviceCode === "ALL" ? "ALL" : serviceCode}`;
+
+    const header = [
       "#",
       "Customer",
       "Centre",
       "Zone",
       "Payment Type",
-      "Control No",
-      "Billed (TZS)",
-      "Paid (TZS)",
+      "Control Number",
+      "Amount Billed (TZS)",
+      "Amount Paid (TZS)",
       "Date Paid",
-    ],
-  ];
+    ];
 
-  const body = rows.map((r, i) => [
-    i + 1,
-    r.customerName || "N/A",
-    r.centreName || "N/A",
-    r.zoneName || "N/A",
-    r.paymentType || "-",
-    r.controlNumber || "N/A",
-    toSafeNumber(r.amount).toLocaleString(),
-    r.amountPaid == null ? "-" : toSafeNumber(r.amountPaid).toLocaleString(),
-    r.datePaid ? String(r.datePaid).split("T")[0] : "",
-  ]);
+    const body = rows.map((r, i) => [
+      i + 1,
+      r.customerName || "N/A",
+      r.centreName || "N/A",
+      r.zoneName || "N/A",
+      r.paymentType || "-",
+      r.controlNumber || "N/A",
+      toSafeNumber(r.amount),
+      r.amountPaid == null ? "" : toSafeNumber(r.amountPaid),
+      r.datePaid ? String(r.datePaid).split("T")[0] : "",
+    ]);
 
-  body.push([
-    "",
-    "",
-    "",
-    "",
-    "",
-    "TOTALS",
-    toSafeNumber(totalAmount).toLocaleString(),
-    toSafeNumber(totalPaid).toLocaleString(),
-    "",
-  ]);
+    const totalsRow: any[] = [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "TOTALS",
+      toSafeNumber(totalAmount),
+      toSafeNumber(totalPaid),
+      "",
+    ];
 
-  autoTable(doc, {
-    startY: 45,
-    head,
-    body,
-    styles: {
-      fontSize: 8,
-      cellPadding: 2,
-      lineWidth: 0.2,
-      lineColor: [203, 213, 225],
-    },
-    headStyles: {
-      fillColor: [37, 99, 235],
-      textColor: 255,
-      fontStyle: "bold",
-      halign: "center",
-    },
-    alternateRowStyles: { fillColor: [248, 250, 252] },
-    columnStyles: {
-      0: { halign: "center", cellWidth: 10 },
-      1: { cellWidth: 38 },
-      2: { cellWidth: 32 },
-      3: { cellWidth: 28 },
-      4: { cellWidth: 28 },
-      5: { cellWidth: 35 },
-      6: { halign: "right", cellWidth: 28 },
-      7: { halign: "right", cellWidth: 28 },
-      8: { halign: "center", cellWidth: 22 },
-    },
-    didParseCell: (d) => {
-      if (d.row.index === body.length - 1) {
-        d.cell.styles.fontStyle = "bold";
-        d.cell.styles.fillColor = [220, 252, 231];
+    const wsData: any[][] = [
+      [title1],
+      [title2],
+      [rangeLabel],
+      [metaLabel],
+      header,
+      ...body,
+      totalsRow,
+    ];
+
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+
+    const lastCol = header.length - 1;
+
+    ws["!merges"] = [
+      { s: { r: 0, c: 0 }, e: { r: 0, c: lastCol } },
+      { s: { r: 1, c: 0 }, e: { r: 1, c: lastCol } },
+      { s: { r: 2, c: 0 }, e: { r: 2, c: lastCol } },
+      { s: { r: 3, c: 0 }, e: { r: 3, c: lastCol } },
+    ];
+
+    ws["!cols"] = [
+      { wch: 5 },
+      { wch: 24 },
+      { wch: 22 },
+      { wch: 18 },
+      { wch: 18 },
+      { wch: 22 },
+      { wch: 18 },
+      { wch: 18 },
+      { wch: 14 },
+    ];
+
+    const dataStartRow = 5;
+
+    for (let r = 0; r < body.length; r++) {
+      const excelRow = dataStartRow + r;
+
+      const billedCell = ws[XLSX.utils.encode_cell({ r: excelRow, c: 6 })];
+      if (billedCell) {
+        billedCell.t = "n";
+        billedCell.z = "#,##0.00";
       }
-    },
-    margin: { left: 10, right: 10 },
-  });
 
-  const pages = doc.internal.getNumberOfPages();
-  for (let i = 1; i <= pages; i++) {
-    doc.setPage(i);
-    doc.setFontSize(8);
-    doc.setTextColor(100);
-    doc.text(`Generated on ${new Date().toLocaleString()}`, 10, 200);
-    doc.text(`Page ${i} of ${pages}`, 287, 200, { align: "right" });
-  }
-
-  const fname = `collection_report_${sanitizeName(
-    effectiveCentre ?? "ALL"
-  )}_${fileStamp()}.pdf`;
-  doc.save(fname);
-};
-
-  /** ✅ Excel export */
-  const exportExcel = () => {
-  if (!rows.length) {
-    toast.error("No data to export");
-    return;
-  }
-
-  const title1 = "VETA";
-  const title2 = "COLLECTIONS REPORT";
-  const rangeLabel = `Date Range: ${fromDate || "-"} to ${toDate || "-"}`;
-  const metaLabel = `Centre: ${effectiveCentre ?? "ALL"} | Zone: ${
-    effectiveZone ?? "ALL"
-  } | Service: ${serviceCode === "ALL" ? "ALL" : serviceCode}`;
-
-  const header = [
-    "#",
-    "Customer",
-    "Centre",
-    "Zone",
-    "Payment Type",
-    "Control Number",
-    "Amount Billed (TZS)",
-    "Amount Paid (TZS)",
-    "Date Paid",
-  ];
-
-  const body = rows.map((r, i) => [
-    i + 1,
-    r.customerName || "N/A",
-    r.centreName || "N/A",
-    r.zoneName || "N/A",
-    r.paymentType || "-",
-    r.controlNumber || "N/A",
-    toSafeNumber(r.amount),
-    r.amountPaid == null ? "" : toSafeNumber(r.amountPaid),
-    r.datePaid ? String(r.datePaid).split("T")[0] : "",
-  ]);
-
-  const totalsRow: any[] = [
-    "",
-    "",
-    "",
-    "",
-    "",
-    "TOTALS",
-    toSafeNumber(totalAmount),
-    toSafeNumber(totalPaid),
-    "",
-  ];
-
-  const wsData: any[][] = [
-    [title1],
-    [title2],
-    [rangeLabel],
-    [metaLabel],
-    header,
-    ...body,
-    totalsRow,
-  ];
-
-  const ws = XLSX.utils.aoa_to_sheet(wsData);
-
-  const lastCol = header.length - 1;
-
-  ws["!merges"] = [
-    { s: { r: 0, c: 0 }, e: { r: 0, c: lastCol } },
-    { s: { r: 1, c: 0 }, e: { r: 1, c: lastCol } },
-    { s: { r: 2, c: 0 }, e: { r: 2, c: lastCol } },
-    { s: { r: 3, c: 0 }, e: { r: 3, c: lastCol } },
-  ];
-
-  ws["!cols"] = [
-    { wch: 5 },   // #
-    { wch: 24 },  // Customer
-    { wch: 22 },  // Centre
-    { wch: 18 },  // Zone
-    { wch: 18 },  // Payment Type
-    { wch: 22 },  // Control Number
-    { wch: 18 },  // Amount Billed
-    { wch: 18 },  // Amount Paid
-    { wch: 14 },  // Date Paid
-  ];
-
-  // Data starts at row index 5 in Excel sheet
-  const dataStartRow = 5;
-
-  for (let r = 0; r < body.length; r++) {
-    const excelRow = dataStartRow + r;
-
-    // Amount Billed column = index 6
-    const billedCell = ws[XLSX.utils.encode_cell({ r: excelRow, c: 6 })];
-    if (billedCell) {
-      billedCell.t = "n";
-      billedCell.z = "#,##0.00";
+      const paidCell = ws[XLSX.utils.encode_cell({ r: excelRow, c: 7 })];
+      if (paidCell && paidCell.v !== "") {
+        paidCell.t = "n";
+        paidCell.z = "#,##0.00";
+      }
     }
 
-    // Amount Paid column = index 7
-    const paidCell = ws[XLSX.utils.encode_cell({ r: excelRow, c: 7 })];
-    if (paidCell && paidCell.v !== "") {
-      paidCell.t = "n";
-      paidCell.z = "#,##0.00";
+    const totalsExcelRow = dataStartRow + body.length;
+
+    const totalsBilledCell = ws[XLSX.utils.encode_cell({
+      r: totalsExcelRow,
+      c: 6,
+    })];
+    if (totalsBilledCell) {
+      totalsBilledCell.t = "n";
+      totalsBilledCell.z = "#,##0.00";
     }
-  }
 
-  // Format totals row too
-  const totalsExcelRow = dataStartRow + body.length;
+    const totalsPaidCell = ws[XLSX.utils.encode_cell({
+      r: totalsExcelRow,
+      c: 7,
+    })];
+    if (totalsPaidCell) {
+      totalsPaidCell.t = "n";
+      totalsPaidCell.z = "#,##0.00";
+    }
 
-  const totalsBilledCell = ws[XLSX.utils.encode_cell({ r: totalsExcelRow, c: 6 })];
-  if (totalsBilledCell) {
-    totalsBilledCell.t = "n";
-    totalsBilledCell.z = "#,##0.00";
-  }
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Collections");
 
-  const totalsPaidCell = ws[XLSX.utils.encode_cell({ r: totalsExcelRow, c: 7 })];
-  if (totalsPaidCell) {
-    totalsPaidCell.t = "n";
-    totalsPaidCell.z = "#,##0.00";
-  }
+    const fname = `collection_report_${sanitizeName(
+      effectiveCentre ?? username ?? "ALL"
+    )}_${fileStamp()}.xlsx`;
 
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Collections");
-
-  const fname = `collection_report_${sanitizeName(
-    effectiveCentre ?? "ALL"
-  )}_${fileStamp()}.xlsx`;
-
-  XLSX.writeFile(wb, fname);
-};
+    XLSX.writeFile(wb, fname);
+  };
 
   if (loading && !rows.length) {
     return (
@@ -739,8 +767,7 @@ export default function CollectionReport() {
                 Collections Report
               </CardTitle>
               <CardDescription className="text-slate-600">
-                Same report logic as dashboard report (line-level payments + GFS),
-                exports use filtered result.
+                Payments report with zone-dependent centre loading and export by filtered result.
               </CardDescription>
             </div>
 
@@ -765,7 +792,6 @@ export default function CollectionReport() {
           </CardHeader>
 
           <CardContent className="relative">
-            {/* Filters */}
             <div className="rounded-2xl border border-slate-200/70 bg-gradient-to-b from-slate-50 to-white p-4 sm:p-5">
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-6 gap-4 items-end">
                 <div className="space-y-1.5">
@@ -798,7 +824,6 @@ export default function CollectionReport() {
                   />
                 </div>
 
-                {/* SERVICE (GFS) */}
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-slate-700">
                     Service (GFS)
@@ -824,7 +849,6 @@ export default function CollectionReport() {
                   </Select>
                 </div>
 
-                {/* Centre */}
                 {(!isCentreUser || isHQUser) && (
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-slate-700">
@@ -836,15 +860,17 @@ export default function CollectionReport() {
                         setPage(0);
                         setCentre(v);
                       }}
-                      disabled={isCentreUser}
+                      disabled={isCentreUser || loadingCentres}
                     >
                       <SelectTrigger className="h-10 rounded-xl border-slate-200 bg-white">
-                        <SelectValue placeholder="All" />
+                        <SelectValue
+                          placeholder={loadingCentres ? "Loading centres..." : "All"}
+                        />
                       </SelectTrigger>
 
                       <SelectContent>
                         <SelectItem value="ALL">All</SelectItem>
-                        {(filteredCentreOptions || []).map((c) => (
+                        {(centreOptions || []).map((c) => (
                           <SelectItem key={c} value={c}>
                             {c}
                           </SelectItem>
@@ -854,7 +880,6 @@ export default function CollectionReport() {
                   </div>
                 )}
 
-                {/* Zone */}
                 {isHQUser && (
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-slate-700">
@@ -865,7 +890,7 @@ export default function CollectionReport() {
                       onValueChange={(v) => {
                         setPage(0);
                         setZone(v);
-                        setCentre("ALL"); // same behavior as ya juu
+                        setCentre("ALL");
                       }}
                     >
                       <SelectTrigger className="h-10 rounded-xl border-slate-200 bg-white">
@@ -891,7 +916,6 @@ export default function CollectionReport() {
               </div>
             </div>
 
-            {/* Status */}
             <div className="mt-4 rounded-2xl border border-slate-200/70 bg-white p-4">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                 <div className="text-sm text-slate-700">
@@ -931,12 +955,9 @@ export default function CollectionReport() {
                   </div>
                 </div>
               </div>
-
-              {/* (optional) summaryByService exists now (same as ya juu) but UI not shown */}
-              {/* You can show it later if you want */}
             </div>
 
-            {/* NOTE: Table intentionally removed */}
+            {/* table intentionally omitted */}
           </CardContent>
         </Card>
       </div>
