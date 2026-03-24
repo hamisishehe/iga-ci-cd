@@ -74,91 +74,105 @@ export default function ApportionmentReport() {
     setStartDate(firstDay);
     setEndDate(lastDay);
 
-    fetchData(firstDay, lastDay, userCentre || "all");
+    
   }, []);
 
-  const fetchData = async (start: string, end: string, centreName: string) => {
-    setLoading(true);
-    setError("");
-    try {
-      const token = localStorage.getItem("authToken");
-      const apiKey = process.env.NEXT_PUBLIC_API_KEY;
+ const fetchData = async (
+  start: string,
+  end: string,
+  centreName: string,
+  currentUserType = userType,
+  currentUserCentre = userCentre,
+  currentUserZone = userZone
+) => {
+  setLoading(true);
+  setError("");
 
-      if (!token || !apiKey) {
-        toast("Missing authentication credentials");
-        return;
-      }
+  try {
+    const token = localStorage.getItem("authToken");
+    const apiKey = process.env.NEXT_PUBLIC_API_KEY;
 
-      const res = await fetch(`${apiUrl}/apposhments/all`, {
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`,
-          "X-API-KEY": apiKey,
-        },
-      });
+    if (!token || !apiKey) {
+      toast("Missing authentication credentials");
+      setLoading(false);
+      return;
+    }
 
-  
-      const rows = await res.json();
+    const res = await fetch(`${apiUrl}/apposhments/all`, {
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+        "X-API-KEY": apiKey,
+      },
+    });
 
-      let filteredRows = [...rows];
+    const rows = await res.json();
 
-      if (userType === "CENTRE" && userCentre) {
-        filteredRows = filteredRows.filter(
-          (r: any) => r.centre?.name?.toLowerCase() === userCentre.toLowerCase()
-        );
-      } else if (userType === "ZONE" && userZone) {
-        filteredRows = filteredRows.filter(
-          (r: any) => r.centre?.zone?.toLowerCase() === userZone.toLowerCase()
-        );
-      }
+    let filteredRows = [...rows];
 
-      if (centreName !== "all" && userType !== "CENTRE") {
-        filteredRows = filteredRows.filter(
-          (r: any) => r.centre?.name === centreName
-        );
-      }
+    if (currentUserType === "CENTRE" && currentUserCentre) {
+      filteredRows = filteredRows.filter(
+        (r: any) =>
+          r.centre?.name?.toLowerCase() === currentUserCentre.toLowerCase()
+      );
+    } else if (currentUserType === "ZONE" && currentUserZone) {
+      filteredRows = filteredRows.filter(
+        (r: any) =>
+          r.centre?.zone?.toLowerCase() === currentUserZone.toLowerCase()
+      );
+    }
 
-      const requestedStart = new Date(start).getTime();
-      const requestedEnd = new Date(end).getTime();
-      const finalRows = filteredRows.filter((row: any) => {
-        if (!row.startDate || !row.endDate) return false;
-        const rowStart = new Date(row.startDate).getTime();
-        const rowEnd = new Date(row.endDate).getTime();
-        return rowEnd >= requestedStart && rowStart <= requestedEnd;
-      });
+    if (centreName !== "all" && currentUserType !== "CENTRE") {
+      filteredRows = filteredRows.filter(
+        (r: any) => r.centre?.name === centreName
+      );
+    }
 
-      const uniqueCentres = [
-        ...new Set(rows.map((r: any) => r.centre?.name).filter(Boolean)),
-      ];
-      setCentres(uniqueCentres as string[]);
+    // make end date include the full day
+    const requestedStart = new Date(`${start}T00:00:00`).getTime();
+    const requestedEnd = new Date(`${end}T23:59:59.999`).getTime();
 
-      const flat: ServiceData[] = [];
-      finalRows.forEach((apportionment: any) => {
-        (apportionment.services || []).forEach((service: any) => {
-          flat.push({
-            apportionmentId: apportionment.id,
-            date: service.createdAt || null,
-            courseName: service.serviceName || "-",
-            centre: apportionment.centre?.name || "-",
-            amountRemitted: Number(service.serviceReturnProfit || 0),
-            executors: Number(service.executors || 0),
-            supporters: Number(service.supporters_to_executors || 0),
-            agencyFee: Number(service.agency_fee || 0),
-            amountToBePaid: Number(service.amount_paid_to_paid || 0),
-          });
+    const finalRows = filteredRows.filter((row: any) => {
+      if (!row.startDate || !row.endDate) return false;
+
+      const rowStart = new Date(row.startDate).getTime();
+      const rowEnd = new Date(row.endDate).getTime();
+
+      return rowEnd >= requestedStart && rowStart <= requestedEnd;
+    });
+
+    const uniqueCentres = [
+      ...new Set(rows.map((r: any) => r.centre?.name).filter(Boolean)),
+    ];
+    setCentres(uniqueCentres as string[]);
+
+    const flat: ServiceData[] = [];
+    finalRows.forEach((apportionment: any) => {
+      (apportionment.services || []).forEach((service: any) => {
+        flat.push({
+          apportionmentId: apportionment.id,
+          date: service.createdAt || null,
+          courseName: service.serviceName || "-",
+          centre: apportionment.centre?.name || "-",
+          amountRemitted: Number(service.serviceReturnProfit || 0),
+          executors: Number(service.executors || 0),
+          supporters: Number(service.supporters_to_executors || 0),
+          agencyFee: Number(service.agency_fee || 0),
+          amountToBePaid: Number(service.amount_paid_to_paid || 0),
         });
       });
+    });
 
-      setData(flat);
-    } catch (err: any) {
-      console.error(err);
-      setData([]);
-      setCentres([]);
-      setError(err?.message || "Unable to fetch apportionment data.");
-    } finally {
-      setLoading(false);
-    }
-  };
+    setData(flat);
+  } catch (err: any) {
+    console.error(err);
+    setData([]);
+    setCentres([]);
+    setError(err?.message || "Unable to fetch apportionment data.");
+  } finally {
+    setLoading(false);
+  }
+};
 
   const formatNumber = (val: number | undefined) =>
     val != null ? Number(val).toLocaleString() : "-";
@@ -308,11 +322,18 @@ export default function ApportionmentReport() {
 
             <div className="lg:col-span-1">
               <Button
-                className="h-10 w-full rounded-xl bg-slate-900 text-white hover:bg-slate-800 shadow-sm"
-                onClick={() => fetchData(startDate, endDate, centre)}
-              >
-                Filter
-              </Button>
+  className="h-10 w-full rounded-xl bg-slate-900 text-white hover:bg-slate-800 shadow-sm"
+  onClick={() => {
+    if (!startDate || !endDate) {
+      toast("Please select start date and end date");
+      return;
+    }
+
+    fetchData(startDate, endDate, centre);
+  }}
+>
+  Filter
+</Button>
             </div>
 
             <div className="hidden lg:block lg:col-span-2">
@@ -398,7 +419,7 @@ export default function ApportionmentReport() {
           )}
           {loading && (
             <div className="mt-4 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600">
-              Loading...
+              
             </div>
           )}
         </CardContent>
