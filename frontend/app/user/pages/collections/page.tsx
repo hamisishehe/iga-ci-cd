@@ -2,6 +2,10 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
+import { FileSpreadsheet } from "lucide-react";
+
 import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -88,6 +92,21 @@ const toSafeNumber = (v: any) => {
 const safeStr = (v: any) => (v == null ? "" : String(v));
 const normalizeText = (v: any) => safeStr(v).trim();
 
+const fileStamp = () => {
+  const d = new Date();
+  return `${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}_${pad2(d.getHours())}${pad2(
+    d.getMinutes()
+  )}${pad2(d.getSeconds())}`;
+};
+
+const sanitizeName = (s: string) =>
+  (s || "user")
+    .toString()
+    .trim()
+    .replace(/\s+/g, "_")
+    .replace(/[^a-zA-Z0-9_-]/g, "")
+    .slice(0, 30);
+
 export default function CollectionReport() {
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || "/api";
 
@@ -125,6 +144,13 @@ export default function CollectionReport() {
   const userType = (typeof window !== "undefined" ? localStorage.getItem("userType") || "" : "").toUpperCase();
   const userCentre = typeof window !== "undefined" ? localStorage.getItem("centre") || "" : "";
   const userZone = typeof window !== "undefined" ? localStorage.getItem("zone") || "" : "";
+  const username =
+    typeof window !== "undefined"
+      ? localStorage.getItem("name") ||
+        localStorage.getItem("username") ||
+        localStorage.getItem("email") ||
+        "user"
+      : "user";
 
   const isHQUser = userType === "HQ";
   const isCentreUser = userType === "CENTRE" && Boolean(userCentre);
@@ -186,8 +212,6 @@ export default function CollectionReport() {
       const cleanZone = zoneValue && zoneValue !== "ALL" ? zoneValue : null;
       const q = cleanZone ? `?zone=${encodeURIComponent(cleanZone)}` : "";
 
-      console.log("Fetching centres with zone:", cleanZone);
-
       const res = await fetch(`${apiUrl}/payments/centres${q}`, {
         method: "GET",
         headers: {
@@ -239,8 +263,6 @@ export default function CollectionReport() {
         cache: "no-store",
         body: JSON.stringify(body),
       });
-
-      console.log("Report fetch payload:", body);
 
       if (!res.ok) {
         const txt = await res.text().catch(() => "");
@@ -389,33 +411,252 @@ export default function CollectionReport() {
   const serverBilled = useMemo(() => toSafeNumber(totalIncome), [totalIncome]);
   const serverPaid = useMemo(() => toSafeNumber(totalPaid), [totalPaid]);
 
-  const exportCurrentPageToExcel = () => {
-    try {
-      const ws = XLSX.utils.json_to_sheet(
-        rows.map((r) => ({
-          Customer: r.customerName,
-          "Service Code": r.serviceCode,
-          Service: r.serviceDesc,
-          "Payment Type": r.paymentType || "",
-          "Control Number": r.controlNumber || "",
-          "Amount Billed": toSafeNumber(r.amount),
-          "Amount Paid": r.amountPaid == null ? "" : toSafeNumber(r.amountPaid),
-          "Date Paid": r.datePaid ? String(r.datePaid).split("T")[0] : "",
-          "Payment ID": r.paymentId,
-          Centre: r.centreName,
-          Zone: r.zoneName,
-        }))
-      );
-
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "Payments");
-
-      const sizeLabel = pageSize === -1 ? "ALL" : `size${pageSize}`;
-      XLSX.writeFile(wb, `payments_${fromDate}_${toDate}_${sizeLabel}_page${page + 1}.xlsx`);
-    } catch (e) {
-      console.error(e);
-      toast.error("Export failed");
+  const exportPdf = () => {
+    if (!rows.length) {
+      toast.error("No data to export");
+      return;
     }
+
+    const doc = new jsPDF("l", "mm", "a4");
+
+    const titleMain = "VETA";
+    const titleSub = "COLLECTIONS REPORT";
+    const dateRange = `From ${fromDate || "-"}  To ${toDate || "-"}`;
+    const meta = `Centre: ${effectiveCentre ?? "ALL"} | Zone: ${effectiveZone ?? "ALL"} | Service: ${
+      serviceCode === "ALL" ? "ALL" : serviceCode
+    }`;
+
+    doc.setFillColor(15, 23, 42);
+    doc.rect(10, 10, 277, 30, "F");
+    doc.setDrawColor(203, 213, 225);
+    doc.rect(10, 10, 277, 30);
+
+    const img = new Image();
+    img.src = "/veta.png";
+    try {
+      doc.addImage(img as any, "PNG", 14, 13, 18, 18);
+      doc.addImage(img as any, "PNG", 255, 13, 18, 18);
+    } catch {}
+
+    doc.setTextColor(255, 255, 255);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(15);
+    doc.text(titleMain, 148.5, 18, { align: "center" });
+
+    doc.setFontSize(11);
+    doc.text(titleSub, 148.5, 25, { align: "center" });
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.text(dateRange, 148.5, 31, { align: "center" });
+
+    doc.setFontSize(8.5);
+    doc.text(meta, 148.5, 37, { align: "center" });
+
+    const head = [[
+      "#",
+      "Customer",
+      "Centre",
+      "Zone",
+      "Payment Type",
+      "Control No",
+      "Billed (TZS)",
+      "Paid (TZS)",
+      "Date Paid",
+    ]];
+
+    const body: any[] = rows.map((r, i) => [
+      i + 1,
+      r.customerName || "N/A",
+      r.centreName || "N/A",
+      r.zoneName || "N/A",
+      r.paymentType || "-",
+      r.controlNumber || "N/A",
+      toSafeNumber(r.amount).toLocaleString(),
+      r.amountPaid == null ? "-" : toSafeNumber(r.amountPaid).toLocaleString(),
+      r.datePaid ? String(r.datePaid).split("T")[0] : "",
+    ]);
+
+    body.push([
+      "",
+      "",
+      "",
+      "",
+      "",
+      "TOTALS",
+      toSafeNumber(totalAmount).toLocaleString(),
+      toSafeNumber(totalPaid).toLocaleString(),
+      "",
+    ]);
+
+    autoTable(doc, {
+      startY: 45,
+      head,
+      body,
+      styles: {
+        fontSize: 8,
+        cellPadding: 2,
+        lineWidth: 0.2,
+        lineColor: [203, 213, 225],
+      },
+      headStyles: {
+        fillColor: [37, 99, 235],
+        textColor: 255,
+        fontStyle: "bold",
+        halign: "center",
+      },
+      alternateRowStyles: { fillColor: [248, 250, 252] },
+      columnStyles: {
+        0: { halign: "center", cellWidth: 10 },
+        1: { cellWidth: 38 },
+        2: { cellWidth: 32 },
+        3: { cellWidth: 28 },
+        4: { cellWidth: 28 },
+        5: { cellWidth: 35 },
+        6: { halign: "right", cellWidth: 28 },
+        7: { halign: "right", cellWidth: 28 },
+        8: { halign: "center", cellWidth: 22 },
+      },
+      didParseCell: (d) => {
+        if (d.row.index === body.length - 1) {
+          d.cell.styles.fontStyle = "bold";
+          d.cell.styles.fillColor = [220, 252, 231];
+        }
+      },
+      margin: { left: 10, right: 10 },
+    });
+
+    const pages = doc.internal.getNumberOfPages();
+    for (let i = 1; i <= pages; i++) {
+      doc.setPage(i);
+      doc.setFontSize(8);
+      doc.setTextColor(100);
+      doc.text(`Generated on ${new Date().toLocaleString()}`, 10, 200);
+      doc.text(`Page ${i} of ${pages}`, 287, 200, { align: "right" });
+    }
+
+    const fname = `collection_report_${sanitizeName(effectiveCentre ?? userType ?? "ALL")}_${fileStamp()}.pdf`;
+    doc.save(fname);
+  };
+
+  const exportExcel = () => {
+    if (!rows.length) {
+      toast.error("No data to export");
+      return;
+    }
+
+    const title1 = "VETA";
+    const title2 = "COLLECTIONS REPORT";
+    const rangeLabel = `Date Range: ${fromDate || "-"} to ${toDate || "-"}`;
+    const metaLabel = `Centre: ${effectiveCentre ?? "ALL"} | Zone: ${effectiveZone ?? "ALL"} | Service: ${
+      serviceCode === "ALL" ? "ALL" : serviceCode
+    }`;
+
+    const header = [
+      "#",
+      "Customer",
+      "Centre",
+      "Zone",
+      "Payment Type",
+      "Control Number",
+      "Amount Billed (TZS)",
+      "Amount Paid (TZS)",
+      "Date Paid",
+    ];
+
+    const body = rows.map((r, i) => [
+      i + 1,
+      r.customerName || "N/A",
+      r.centreName || "N/A",
+      r.zoneName || "N/A",
+      r.paymentType || "-",
+      r.controlNumber || "N/A",
+      toSafeNumber(r.amount),
+      r.amountPaid == null ? "" : toSafeNumber(r.amountPaid),
+      r.datePaid ? String(r.datePaid).split("T")[0] : "",
+    ]);
+
+    const totalsRow: any[] = [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "TOTALS",
+      toSafeNumber(totalAmount),
+      toSafeNumber(totalPaid),
+      "",
+    ];
+
+    const wsData: any[][] = [
+      [title1],
+      [title2],
+      [rangeLabel],
+      [metaLabel],
+      header,
+      ...body,
+      totalsRow,
+    ];
+
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+    const lastCol = header.length - 1;
+
+    ws["!merges"] = [
+      { s: { r: 0, c: 0 }, e: { r: 0, c: lastCol } },
+      { s: { r: 1, c: 0 }, e: { r: 1, c: lastCol } },
+      { s: { r: 2, c: 0 }, e: { r: 2, c: lastCol } },
+      { s: { r: 3, c: 0 }, e: { r: 3, c: lastCol } },
+    ];
+
+    ws["!cols"] = [
+      { wch: 5 },
+      { wch: 24 },
+      { wch: 22 },
+      { wch: 18 },
+      { wch: 18 },
+      { wch: 22 },
+      { wch: 18 },
+      { wch: 18 },
+      { wch: 14 },
+    ];
+
+    const dataStartRow = 5;
+
+    for (let r = 0; r < body.length; r++) {
+      const excelRow = dataStartRow + r;
+
+      const billedCell = ws[XLSX.utils.encode_cell({ r: excelRow, c: 6 })];
+      if (billedCell) {
+        billedCell.t = "n";
+        billedCell.z = "#,##0.00";
+      }
+
+      const paidCell = ws[XLSX.utils.encode_cell({ r: excelRow, c: 7 })];
+      if (paidCell && paidCell.v !== "") {
+        paidCell.t = "n";
+        paidCell.z = "#,##0.00";
+      }
+    }
+
+    const totalsExcelRow = dataStartRow + body.length;
+
+    const totalsBilledCell = ws[XLSX.utils.encode_cell({ r: totalsExcelRow, c: 6 })];
+    if (totalsBilledCell) {
+      totalsBilledCell.t = "n";
+      totalsBilledCell.z = "#,##0.00";
+    }
+
+    const totalsPaidCell = ws[XLSX.utils.encode_cell({ r: totalsExcelRow, c: 7 })];
+    if (totalsPaidCell) {
+      totalsPaidCell.t = "n";
+      totalsPaidCell.z = "#,##0.00";
+    }
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Collections");
+
+    const fname = `collection_report_${sanitizeName(effectiveCentre ?? userType ?? "ALL")}_${fileStamp()}.xlsx`;
+    XLSX.writeFile(wb, fname);
   };
 
   if (loading) {
@@ -450,21 +691,40 @@ export default function CollectionReport() {
             </BreadcrumbList>
           </Breadcrumb>
 
-          {isCentreUser && (
-            <motion.div
-              className="hidden sm:inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-700 shadow-sm"
-              initial={{ opacity: 0, scale: 0.98 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 0.4, delay: 0.15 }}
+          <div className="flex items-center gap-2">
+            <Button
+              onClick={exportPdf}
+              className="h-10 rounded-xl bg-slate-900 text-white hover:bg-slate-800 shadow-sm disabled:opacity-60"
+              disabled={!rows.length}
             >
-              <motion.span
-                className="h-2 w-2 rounded-full bg-emerald-500"
-                animate={{ scale: [1, 1.4, 1] }}
-                transition={{ duration: 1.2, repeat: Infinity }}
-              />
-              {userCentre}
-            </motion.div>
-          )}
+              Print PDF
+            </Button>
+
+            <Button
+              onClick={exportExcel}
+              className="h-10 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm disabled:opacity-60"
+              disabled={!rows.length}
+            >
+              <FileSpreadsheet className="mr-2 h-4 w-4" />
+              Export Excel
+            </Button>
+
+            {isCentreUser && (
+              <motion.div
+                className="hidden sm:inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-700 shadow-sm"
+                initial={{ opacity: 0, scale: 0.98 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.4, delay: 0.15 }}
+              >
+                <motion.span
+                  className="h-2 w-2 rounded-full bg-emerald-500"
+                  animate={{ scale: [1, 1.4, 1] }}
+                  transition={{ duration: 1.2, repeat: Infinity }}
+                />
+                {userCentre}
+              </motion.div>
+            )}
+          </div>
         </motion.div>
 
         <motion.div className="grid gap-4 sm:grid-cols-3" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
@@ -625,7 +885,6 @@ export default function CollectionReport() {
                     </SelectContent>
                   </Select>
                 </div>
-
               </div>
             </div>
 
