@@ -49,7 +49,7 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
     @Query("""
         select
           coalesce(p.paymentType, 'UNKNOWN') as paymentType,
-          coalesce(sum(p.totalBilled), 0) as total
+          coalesce(sum(p.totalPaid), 0) as total
         from Payment p
         where p.paymentDate >= :start and p.paymentDate < :end
           and (:centreName is null or p.centre.name = :centreName)
@@ -68,7 +68,7 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
     @Query("""
         select
           p.centre.name as centreName,
-          coalesce(sum(p.totalBilled), 0) as total
+          coalesce(sum(p.totalPaid), 0) as total
         from Payment p
         where p.paymentDate >= :start and p.paymentDate < :end
           and (:centreName is null or p.centre.name = :centreName)
@@ -87,7 +87,7 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
     @Query("""
         select
           p.centre.name as centreName,
-          coalesce(sum(p.totalBilled), 0) as total
+          coalesce(sum(p.totalPaid), 0) as total
         from Payment p
         where p.paymentDate >= :start and p.paymentDate < :end
           and (:centreName is null or p.centre.name = :centreName)

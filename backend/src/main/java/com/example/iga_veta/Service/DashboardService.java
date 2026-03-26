@@ -7,7 +7,6 @@ import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.YearMonth;
 import java.util.*;
 
 @Service
@@ -23,15 +22,21 @@ public class DashboardService {
         if (v == null) return BigDecimal.ZERO;
         if (v instanceof BigDecimal bd) return bd;
         if (v instanceof Number n) return BigDecimal.valueOf(n.doubleValue());
-        try { return new BigDecimal(String.valueOf(v)); }
-        catch (Exception e) { return BigDecimal.ZERO; }
+        try {
+            return new BigDecimal(String.valueOf(v));
+        } catch (Exception e) {
+            return BigDecimal.ZERO;
+        }
     }
 
     private static long toLong(Object v) {
         if (v == null) return 0L;
         if (v instanceof Number n) return n.longValue();
-        try { return Long.parseLong(String.valueOf(v)); }
-        catch (Exception e) { return 0L; }
+        try {
+            return Long.parseLong(String.valueOf(v));
+        } catch (Exception e) {
+            return 0L;
+        }
     }
 
     private static String toStr(Object v) {
@@ -89,16 +94,12 @@ public class DashboardService {
             topServices.add(m);
         }
 
-        // top/bottom centers CURRENT MONTH
-        YearMonth ym = YearMonth.now();
-        LocalDateTime monthStart = ym.atDay(1).atStartOfDay();
-        LocalDateTime monthEnd = ym.plusMonths(1).atDay(1).atStartOfDay();
-
+        // top/bottom centers -> USE SELECTED DATE RANGE
         List<Object[]> topCentersRows =
-                repo.topCenters(monthStart, monthEnd, centreName, zoneName, PageRequest.of(0, 3));
+                repo.topCenters(start, endExclusive, centreName, zoneName, PageRequest.of(0, 3));
 
         List<Object[]> bottomCentersRows =
-                repo.bottomCenters(monthStart, monthEnd, centreName, zoneName, PageRequest.of(0, 3));
+                repo.bottomCenters(start, endExclusive, centreName, zoneName, PageRequest.of(0, 3));
 
         List<Map<String, Object>> topCenters = new ArrayList<>();
         for (Object[] r : topCentersRows) {
@@ -123,16 +124,15 @@ public class DashboardService {
         List<Map<String, Object>> recentPayments = new ArrayList<>();
         for (Object[] r : recentRows) {
             Map<String, Object> m = new LinkedHashMap<>();
-            m.put("name",   toStr(r != null && r.length > 0 ? r[0] : null));
+            m.put("name", toStr(r != null && r.length > 0 ? r[0] : null));
             m.put("center", toStr(r != null && r.length > 1 ? r[1] : null));
-            m.put("zone",   toStr(r != null && r.length > 2 ? r[2] : null));
+            m.put("zone", toStr(r != null && r.length > 2 ? r[2] : null));
 
             m.put("serviceCode", null);
             m.put("service", toStr(r != null && r.length > 3 ? r[3] : null));
 
-            // ✅ billed + paid
             m.put("amount", toBigDecimal(r != null && r.length > 4 ? r[4] : null));
-            m.put("paid",   toBigDecimal(r != null && r.length > 5 ? r[5] : null));
+            m.put("paid", toBigDecimal(r != null && r.length > 5 ? r[5] : null));
 
             m.put("datePaid", r != null && r.length > 6 ? r[6] : null);
 
@@ -141,7 +141,7 @@ public class DashboardService {
 
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("totalIncome", totalIncome);
-        out.put("totalPaid", totalPaid); // ✅
+        out.put("totalPaid", totalPaid);
         out.put("totalTransactions", totalTransactions);
         out.put("topServices", topServices);
         out.put("topCenters", topCenters);

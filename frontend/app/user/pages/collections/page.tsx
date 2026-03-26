@@ -411,133 +411,251 @@ export default function CollectionReport() {
   const serverBilled = useMemo(() => toSafeNumber(totalIncome), [totalIncome]);
   const serverPaid = useMemo(() => toSafeNumber(totalPaid), [totalPaid]);
 
-  const exportPdf = () => {
-    if (!rows.length) {
-      toast.error("No data to export");
-      return;
-    }
+const exportPdf = () => {
+  if (!rows.length && !summaryByService.length) {
+    toast.error("No data to export");
+    return;
+  }
 
-    const doc = new jsPDF("l", "mm", "a4");
+  const doc = new jsPDF("l", "mm", "a4");
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const marginX = 10;
+  const usableWidth = pageWidth - marginX * 2;
 
-    const titleMain = "VETA";
-    const titleSub = "COLLECTIONS REPORT";
-    const dateRange = `From ${fromDate || "-"}  To ${toDate || "-"}`;
-    const meta = `Centre: ${effectiveCentre ?? "ALL"} | Zone: ${effectiveZone ?? "ALL"} | Service: ${
-      serviceCode === "ALL" ? "ALL" : serviceCode
-    }`;
+  const titleMain = "VETA";
+  const titleSub = "COLLECTIONS REPORT";
+  const dateRange = `From ${fromDate || "-"}  To ${toDate || "-"}`;
+  const meta = `Centre: ${effectiveCentre ?? "ALL"} | Zone: ${effectiveZone ?? "ALL"} | Service: ${
+    serviceCode === "ALL" ? "ALL" : serviceCode
+  }`;
 
-    doc.setFillColor(15, 23, 42);
-    doc.rect(10, 10, 277, 30, "F");
-    doc.setDrawColor(203, 213, 225);
-    doc.rect(10, 10, 277, 30);
+  doc.setFillColor(15, 23, 42);
+  doc.rect(marginX, 10, usableWidth, 30, "F");
+  doc.setDrawColor(203, 213, 225);
+  doc.rect(marginX, 10, usableWidth, 30);
 
-    const img = new Image();
-    img.src = "/veta.png";
-    try {
-      doc.addImage(img as any, "PNG", 14, 13, 18, 18);
-      doc.addImage(img as any, "PNG", 255, 13, 18, 18);
-    } catch {}
+  const img = new Image();
+  img.src = "/veta.png";
+  try {
+    doc.addImage(img as any, "PNG", 14, 13, 18, 18);
+    doc.addImage(img as any, "PNG", pageWidth - 32, 13, 18, 18);
+  } catch {}
 
-    doc.setTextColor(255, 255, 255);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(15);
-    doc.text(titleMain, 148.5, 18, { align: "center" });
+  doc.setTextColor(255, 255, 255);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(15);
+  doc.text(titleMain, pageWidth / 2, 18, { align: "center" });
 
-    doc.setFontSize(11);
-    doc.text(titleSub, 148.5, 25, { align: "center" });
+  doc.setFontSize(11);
+  doc.text(titleSub, pageWidth / 2, 25, { align: "center" });
 
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(9);
-    doc.text(dateRange, 148.5, 31, { align: "center" });
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.text(dateRange, pageWidth / 2, 31, { align: "center" });
 
-    doc.setFontSize(8.5);
-    doc.text(meta, 148.5, 37, { align: "center" });
+  doc.setFontSize(8.5);
+  doc.text(meta, pageWidth / 2, 37, { align: "center" });
 
-    const head = [[
-      "#",
-      "Customer",
-      "Centre",
-      "Zone",
-      "Payment Type",
-      "Control No",
-      "Billed (TZS)",
-      "Paid (TZS)",
-      "Date Paid",
-    ]];
+  let currentY = 45;
 
-    const body: any[] = rows.map((r, i) => [
-      i + 1,
-      r.customerName || "N/A",
-      r.centreName || "N/A",
-      r.zoneName || "N/A",
-      r.paymentType || "-",
-      r.controlNumber || "N/A",
-      toSafeNumber(r.amount).toLocaleString(),
-      r.amountPaid == null ? "-" : toSafeNumber(r.amountPaid).toLocaleString(),
-      r.datePaid ? String(r.datePaid).split("T")[0] : "",
-    ]);
-
-    body.push([
-      "",
-      "",
-      "",
-      "",
-      "",
-      "TOTALS",
-      toSafeNumber(totalAmount).toLocaleString(),
+  // overall summary
+  autoTable(doc, {
+    startY: currentY,
+    margin: { left: marginX, right: marginX },
+    tableWidth: usableWidth,
+    head: [[
+      "Total Billed (TZS)",
+      "Total Paid (TZS)",
+      "Total Transactions",
+      "Total Amount (TZS)",
+    ]],
+    body: [[
+      toSafeNumber(totalIncome).toLocaleString(),
       toSafeNumber(totalPaid).toLocaleString(),
-      "",
-    ]);
+      toSafeNumber(totalTransactions).toLocaleString(),
+      toSafeNumber(totalAmount).toLocaleString(),
+    ]],
+    theme: "grid",
+    styles: {
+      fontSize: 9,
+      cellPadding: 3,
+      halign: "center",
+      valign: "middle",
+      overflow: "linebreak",
+      lineWidth: 0.2,
+      lineColor: [203, 213, 225],
+    },
+    headStyles: {
+      fillColor: [22, 163, 74],
+      textColor: 255,
+      fontStyle: "bold",
+    },
+    columnStyles: {
+      0: { cellWidth: usableWidth / 4 },
+      1: { cellWidth: usableWidth / 4 },
+      2: { cellWidth: usableWidth / 4 },
+      3: { cellWidth: usableWidth / 4 },
+    },
+  });
 
-    autoTable(doc, {
-      startY: 45,
-      head,
-      body,
-      styles: {
-        fontSize: 8,
-        cellPadding: 2,
-        lineWidth: 0.2,
-        lineColor: [203, 213, 225],
-      },
-      headStyles: {
-        fillColor: [37, 99, 235],
-        textColor: 255,
-        fontStyle: "bold",
-        halign: "center",
-      },
-      alternateRowStyles: { fillColor: [248, 250, 252] },
-      columnStyles: {
-        0: { halign: "center", cellWidth: 10 },
-        1: { cellWidth: 38 },
-        2: { cellWidth: 32 },
-        3: { cellWidth: 28 },
-        4: { cellWidth: 28 },
-        5: { cellWidth: 35 },
-        6: { halign: "right", cellWidth: 28 },
-        7: { halign: "right", cellWidth: 28 },
-        8: { halign: "center", cellWidth: 22 },
-      },
-      didParseCell: (d) => {
-        if (d.row.index === body.length - 1) {
-          d.cell.styles.fontStyle = "bold";
-          d.cell.styles.fillColor = [220, 252, 231];
-        }
-      },
-      margin: { left: 10, right: 10 },
-    });
+  currentY = (doc as any).lastAutoTable.finalY + 8;
 
-    const pages = doc.internal.getNumberOfPages();
-    for (let i = 1; i <= pages; i++) {
-      doc.setPage(i);
-      doc.setFontSize(8);
-      doc.setTextColor(100);
-      doc.text(`Generated on ${new Date().toLocaleString()}`, 10, 200);
-      doc.text(`Page ${i} of ${pages}`, 287, 200, { align: "right" });
-    }
+  // detail table
+  const detailHead = [[
+    "#",
+    "Customer",
+    "Centre",
+    "Zone",
+    "Payment Type",
+    "Control No",
+    "Billed (TZS)",
+    "Paid (TZS)",
+    "Date Paid",
+  ]];
 
-    const fname = `collection_report_${sanitizeName(effectiveCentre ?? userType ?? "ALL")}_${fileStamp()}.pdf`;
-    doc.save(fname);
+  const detailBody: any[] = rows.map((r, i) => [
+    i + 1,
+    r.customerName || "N/A",
+    r.centreName || "N/A",
+    r.zoneName || "N/A",
+    r.paymentType || "-",
+    r.controlNumber || "N/A",
+    toSafeNumber(r.amount).toLocaleString(),
+    r.amountPaid == null ? "-" : toSafeNumber(r.amountPaid).toLocaleString(),
+    r.datePaid ? String(r.datePaid).split("T")[0] : "",
+  ]);
+
+  detailBody.push([
+    "",
+    "",
+    "",
+    "",
+    "",
+    "TOTALS",
+    toSafeNumber(totalIncome).toLocaleString(),
+    toSafeNumber(totalPaid).toLocaleString(),
+    "",
+  ]);
+
+  // exact-fit widths: total must equal usableWidth (277mm on A4 landscape with 10mm margins)
+  const detailColumnStyles = {
+    0: { halign: "center" as const, cellWidth: 10 },
+    1: { cellWidth: 40 },
+    2: { cellWidth: 35 },
+    3: { cellWidth: 30 },
+    4: { cellWidth: 30 },
+    5: { cellWidth: 45 },
+    6: { halign: "right" as const, cellWidth: 30 },
+    7: { halign: "right" as const, cellWidth: 30 },
+    8: { halign: "center" as const, cellWidth: 27 },
   };
+
+  autoTable(doc, {
+    startY: currentY,
+    margin: { left: marginX, right: marginX },
+    tableWidth: usableWidth,
+    head: detailHead,
+    body: detailBody,
+    styles: {
+      fontSize: 7.5,
+      cellPadding: 2,
+      overflow: "linebreak",
+      lineWidth: 0.2,
+      lineColor: [203, 213, 225],
+      valign: "middle",
+    },
+    headStyles: {
+      fillColor: [37, 99, 235],
+      textColor: 255,
+      fontStyle: "bold",
+      halign: "center",
+    },
+    alternateRowStyles: { fillColor: [248, 250, 252] },
+    columnStyles: detailColumnStyles,
+    didParseCell: (data) => {
+      if (data.row.index === detailBody.length - 1) {
+        data.cell.styles.fontStyle = "bold";
+        data.cell.styles.fillColor = [220, 252, 231];
+      }
+    },
+  });
+
+  currentY = (doc as any).lastAutoTable.finalY + 10;
+
+  // summary title
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(11);
+  doc.setTextColor(15, 23, 42);
+  doc.text("Summary Per Service (GFS)", marginX, currentY);
+
+  // summary table exact-fit widths
+  autoTable(doc, {
+    startY: currentY + 3,
+    margin: { left: marginX, right: marginX },
+    tableWidth: usableWidth,
+    head: [[
+      "Service Code",
+      "Service Name",
+      "Total Billed (TZS)",
+      "Total Paid (TZS)",
+      "Transactions",
+    ]],
+    body: summaryByService.map((s) => [
+      s.serviceCode,
+      s.serviceDesc,
+      toSafeNumber(s.totalBilled).toLocaleString(),
+      toSafeNumber(s.totalPaid).toLocaleString(),
+      toSafeNumber(s.totalTransactions).toLocaleString(),
+    ]),
+    styles: {
+      fontSize: 8,
+      cellPadding: 2.2,
+      overflow: "linebreak",
+      lineWidth: 0.2,
+      lineColor: [203, 213, 225],
+      valign: "middle",
+    },
+    headStyles: {
+      fillColor: [88, 28, 135],
+      textColor: 255,
+      fontStyle: "bold",
+      halign: "center",
+    },
+    alternateRowStyles: { fillColor: [250, 245, 255] },
+    columnStyles: {
+      0: { cellWidth: 30 },
+      1: { cellWidth: 107 },
+      2: { halign: "right", cellWidth: 45 },
+      3: { halign: "right", cellWidth: 45 },
+      4: { halign: "right", cellWidth: 50 },
+    },
+  });
+
+  const pages = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= pages; i++) {
+    doc.setPage(i);
+    doc.setFontSize(8);
+    doc.setTextColor(100);
+    doc.text(`Generated on ${new Date().toLocaleString()}`, marginX, pageHeight - 10);
+    doc.text(`Page ${i} of ${pages}`, pageWidth - marginX, pageHeight - 10, { align: "right" });
+  }
+
+  const fname = `collection_report_${sanitizeName(effectiveCentre ?? userType ?? "ALL")}_${fileStamp()}.pdf`;
+  doc.save(fname);
+};
+
+
+
+
+
+
+
+
+
+
+
+
 
   const exportExcel = () => {
     if (!rows.length) {
